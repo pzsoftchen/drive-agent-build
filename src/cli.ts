@@ -5,6 +5,7 @@ import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
 import { ExitCode } from './core/exit-codes.ts';
 import { stableJson } from './core/json.ts';
+import { runDetect } from './commands/detect.ts';
 import { runNormalize } from './commands/normalize.ts';
 
 export const PROGRAM_VERSION = '0.1.0';
@@ -67,11 +68,15 @@ function dispatchInit(rest: string[]): number {
   );
 }
 
-function dispatchDetect(rest: string[]): number {
+async function dispatchDetect(
+  rest: string[],
+  ctx: CliContext,
+  json: boolean,
+): Promise<number> {
   rejectUnknownOptions(rest, []);
-  throw new UsageError(
-    'dab detect is not available in this development build yet',
-    'usage.not-implemented',
+  return runDetect(
+    { cwd: ctx.cwd, json, platform: process.platform },
+    { stdout: ctx.stdout, stderr: ctx.stderr },
   );
 }
 
@@ -124,7 +129,7 @@ async function dispatch(args: string[], ctx: CliContext, json: boolean): Promise
     case 'init':
       return dispatchInit(rest);
     case 'detect':
-      return dispatchDetect(rest);
+      return dispatchDetect(rest, ctx, json);
     case 'normalize':
       return dispatchNormalize(rest, ctx, json);
     case 'policy':

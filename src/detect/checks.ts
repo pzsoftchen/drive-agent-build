@@ -1,0 +1,531 @@
+import { readdir, readlink } from 'node:fs/promises';
+import { dirname, extname, join, relative, resolve } from 'node:path';
+import type { Diagnostic } from '../core/diagnostics.ts';
+import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
+import { sha256 } from '../core/hash.ts';
+import { extractMarkdownLinks } from '../core/markdown-links.ts';
+import { isPathInside, toPosix } from '../core/paths.ts';
+import { scanSecrets } from '../core/security.ts';
+import { renderClaudeMdShim } from '../adapter/claude-code/projection.ts';
+import { checkAgentsMd } from '../model/agents-md.ts';
+import { discoverMemory } from '../model/memory.ts';
+import type {
+  LoadedHook,
+  ProjectManifest,
+  ProjectPaths,
+  Projection,
+} from '../model/types.ts';
+import { findAncestorInstructionFiles } from './ancestor-claude-md.ts';
+
+function relativeFile(root: string, absolute: string): string {
+  return toPosix(relative(root, absolute));
+}
+
+export async function checkSettings(
+  root: string,
+  paths: ProjectPaths,
+  manifest: ProjectManifest,
+  expected: string,
+): Promise<Diagnostic[]> {
+  const absolute = join(paths.claude, 'settings.json');
+  const file = relativeFile(root, absolute);
+  const info = await lstatOrNull(absolute);
+  if (info === null) {
+    return [{
+      code: 'generated.missing',
+      severity: 'error',
+      message: 'generated settings file is missing',
+      file,
+      hint: 'Run dab normalize to build .claude/settings.json.',
+    }];
+  }
+  if (!info.isFile() || info.isSymbolicLink()) {
+    return [{
+      code: 'claude-settings.unmanaged',
+      severity: 'error',
+      message: 'generated settings path is not a regular file',
+      file,
+    }];
+  }
+
+  const actual = await readTextFile(absolute);
+  if (actual !== expected) {
+    return [{
+      code: manifest.generated?.settings === undefined
+        ? 'claude-settings.unmanaged'
+        : 'generated.drift',
+      severity: 'error',
+      message: 'generated settings do not match the current authored sources',
+      file,
+      hint: 'Run dab normalize to rebuild them; do not edit generated files by hand.',
+    }];
+  }
+
+  const diagnostics: Diagnostic[] = [];
+  const expectedHash = sha256(expected);
+  if (manifest.generated?.settings === undefined) {
+    diagnostics.push({
+      code: 'generated.manifest-stale',
+      severity: 'warning',
+      message: 'settings match but dab.yaml has no generated settings record',
+      file: 'dab.yaml',
+    });
+  } else if (
+    manifest.generated.settings.sha256 !== expectedHash
+    || manifest.generated.settings.path !== '.claude/settings.json'
+  ) {
+    diagnostics.push({
+      code: 'generated.manifest-stale',
+      severity: 'warning',
+      message: 'dab.yaml records a stale settings hash',
+      file: 'dab.yaml',
+    });
+  }
+  return diagnostics;
+}
+
+export async function checkShim(
+  root: string,
+  manifest: ProjectManifest,
+  home?: string,
+): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
+
+  if ((await lstatOrNull(join(root, 'CLAUDE.md'))) !== null) {
+    diagnostics.push({
+      code: 'claude-md.unmanaged',
+      severity: 'error',
+      message: 'root CLAUDE.md is user-owned and blocks DAB instructions',
+      file: 'CLAUDE.md',
+      hint: 'Merge its content into AGENTS.md and remove the file.',
+    });
+  }
+  if ((await lstatOrNull(join(root, 'CLAUDE.local.md'))) !== null) {
+    diagnostics.push({
+      code: 'claude-md.ancestor',
+      severity: 'warning',
+      message: 'CLAUDE.local.md in the project root can block AGENTS.md loading',
+      file: 'CLAUDE.local.md',
+    });
+  }
+  for (const file of await findAncestorInstructionFiles(root, home)) {
+    diagnostics.push({
+      code: 'claude-md.ancestor',
+      severity: 'warning',
+      message: 'an ancestor instruction file can affect Claude Code sessions in this project',
+      file: toPosix(relative(root, file)),
+    });
+  }
+
+  const shimPath = join(root, '.claude', 'CLAUDE.md');
+  const info = await lstatOrNull(shimPath);
+  const managed = manifest.generated?.instructions !== undefined
+    && manifest.generated.instructions !== null;
+  const enabled = manifest.target.claudeMdShim;
+
+  if (enabled) {
+    if (info === null) {
+      diagnostics.push({
+        code: 'claude-md.shim-missing',
+        severity: 'error',
+        message: 'generated .claude/CLAUDE.md shim is missing',
+        file: '.claude/CLAUDE.md',
+        hint: 'Run dab normalize to generate the AGENTS.md import shim.',
+      });
+    } else if (!info.isFile() || info.isSymbolicLink()) {
+      diagnostics.push({
+        code: 'claude-md.unmanaged',
+        severity: 'error',
+        message: '.claude/CLAUDE.md is not a regular generated file',
+        file: '.claude/CLAUDE.md',
+      });
+    } else if ((await readTextFile(shimPath)) !== renderClaudeMdShim()) {
+      diagnostics.push({
+        code: managed ? 'claude-md.shim-drift' : 'claude-md.unmanaged',
+        severity: 'error',
+        message: 'generated .claude/CLAUDE.md shim has drifted',
+        file: '.claude/CLAUDE.md',
+        hint: 'Run dab normalize; do not edit the shim by hand.',
+      });
+    }
+    if (!managed) {
+      diagnostics.push({
+        code: 'generated.manifest-stale',
+        severity: 'warning',
+        message: 'dab.yaml does not record the generated CLAUDE.md shim',
+        file: 'dab.yaml',
+      });
+    }
+  } else {
+    if (info !== null) {
+      diagnostics.push({
+        code: managed ? 'claude-md.shim-drift' : 'claude-md.unmanaged',
+        severity: 'error',
+        message: 'shim exists while target.claudeMdShim is false',
+        file: '.claude/CLAUDE.md',
+      });
+    }
+    if (managed) {
+      diagnostics.push({
+        code: 'generated.manifest-stale',
+        severity: 'warning',
+        message: 'dab.yaml records a shim while target.claudeMdShim is false',
+        file: 'dab.yaml',
+      });
+    }
+  }
+
+  return diagnostics;
+}
+
+export async function checkProjections(
+  root: string,
+  paths: ProjectPaths,
+  projections: readonly Projection[],
+  manifest: ProjectManifest,
+): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
+  const managed = new Map(
+    (manifest.generated?.projections ?? []).map((projection) => [projection.target, projection]),
+  );
+  const expected = new Set(projections.map((projection) => projection.target));
+
+  for (const projection of projections) {
+    const absolute = join(root, projection.target);
+    const info = await lstatOrNull(absolute);
+    if (info === null) {
+      diagnostics.push({
+        code: 'projection.broken',
+        severity: 'error',
+        message: 'projection target is missing',
+        file: projection.target,
+        hint: 'Run dab normalize.',
+      });
+    } else if (info.isSymbolicLink()) {
+      const raw = await readlink(absolute);
+      const resolved = resolve(dirname(absolute), raw);
+      const expectedSource = resolve(root, projection.source);
+      if (resolved !== expectedSource || !isPathInside(root, resolved)) {
+        diagnostics.push({
+          code: 'projection.broken',
+          severity: 'error',
+          message: 'projection symlink does not point at its authored source',
+          file: projection.target,
+        });
+      }
+    } else {
+      diagnostics.push({
+        code: 'projection.physical-copy',
+        severity: 'error',
+        message: 'projection target is a physical copy, not a DAB symlink',
+        file: projection.target,
+        hint: 'Remove the copy and run dab normalize; use --fix to back it up automatically.',
+      });
+    }
+
+    const record = managed.get(projection.target);
+    if (record === undefined) {
+      diagnostics.push({
+        code: 'projection.unmanaged',
+        severity: 'warning',
+        message: 'projection is not recorded in dab.yaml',
+        file: projection.target,
+      });
+    } else if (record.sourceSha256 !== projection.sourceSha256) {
+      diagnostics.push({
+        code: 'generated.manifest-stale',
+        severity: 'warning',
+        message: 'dab.yaml records a stale source hash for this projection',
+        file: 'dab.yaml',
+        hint: 'Run dab normalize to refresh the manifest.',
+      });
+    }
+  }
+
+  for (const [target, projection] of managed) {
+    if (expected.has(target)) {
+      continue;
+    }
+    const info = await lstatOrNull(join(root, target));
+    if (info === null) {
+      diagnostics.push({
+        code: 'generated.manifest-stale',
+        severity: 'warning',
+        message: 'managed projection has no source and no target',
+        file: 'dab.yaml',
+        hint: `Stale projection: ${projection.source}`,
+      });
+    } else if (info.isSymbolicLink()) {
+      diagnostics.push({
+        code: 'projection.broken',
+        severity: 'error',
+        message: 'managed projection source was removed',
+        file: target,
+      });
+    } else {
+      diagnostics.push({
+        code: 'projection.physical-copy',
+        severity: 'error',
+        message: 'target of a removed source is not a DAB symlink',
+        file: target,
+      });
+    }
+  }
+
+  const directories = [
+    { dir: 'agents', prefix: '.claude/agents' },
+    { dir: 'skills', prefix: '.claude/skills' },
+    { dir: 'rules', prefix: '.claude/rules' },
+  ] as const;
+  for (const { dir, prefix } of directories) {
+    let entries;
+    try {
+      entries = await readdir(join(paths.claude, dir), { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        continue;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      const target = `${prefix}/${entry.name}`;
+      if (!expected.has(target) && !managed.has(target)) {
+        diagnostics.push({
+          code: 'projection.unmanaged',
+          severity: 'warning',
+          message: 'unmanaged entry in the generated Claude Code tree',
+          file: target,
+          hint: 'Move the fact into .agents/ or remove it; DAB never modifies unmanaged files.',
+        });
+      }
+    }
+  }
+
+  if (manifest.generated !== undefined) {
+    const fingerprint = (items: readonly Projection[]): string =>
+      items
+        .map((item) => `${item.target}|${item.source}|${item.sourceSha256}`)
+        .sort()
+        .join('\n');
+    if (fingerprint(projections) !== fingerprint(manifest.generated.projections)) {
+      diagnostics.push({
+        code: 'generated.manifest-stale',
+        severity: 'warning',
+        message: 'projection manifest is stale',
+        file: 'dab.yaml',
+        hint: 'Run dab normalize to refresh the generated section.',
+      });
+    }
+  }
+
+  return diagnostics;
+}
+
+export async function checkHookSafety(hooks: readonly LoadedHook[]): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
+  for (const hook of hooks) {
+    const file = `${hook.dir}/${toPosix(hook.spec.entry)}`;
+    const info = await lstatOrNull(hook.entryPath);
+    if (info === null || !info.isFile()) {
+      diagnostics.push({
+        code: 'hook.unsafe',
+        severity: 'error',
+        message: 'hook entry is not a regular file',
+        file,
+      });
+      continue;
+    }
+    let text: string;
+    try {
+      text = await readTextFile(hook.entryPath);
+    } catch (error) {
+      diagnostics.push({
+        code: 'hook.unsafe',
+        severity: 'error',
+        message: `hook entry cannot be read safely: ${error instanceof Error ? error.message : String(error)}`,
+        file,
+      });
+      continue;
+    }
+    if (text.includes('\0')) {
+      diagnostics.push({
+        code: 'hook.unsafe',
+        severity: 'error',
+        message: 'hook entry contains a NUL byte',
+        file,
+      });
+    }
+    if (text.includes('\r\n')) {
+      diagnostics.push({
+        code: 'hook.unsafe',
+        severity: 'error',
+        message: 'hook entry must use LF line endings',
+        file,
+      });
+    }
+    if (hook.spec.runner === 'exec') {
+      if ((info.mode & 0o111) === 0) {
+        diagnostics.push({
+          code: 'hook.unsafe',
+          severity: 'error',
+          message: 'exec hook is not executable',
+          file,
+        });
+      }
+      if (!(text.split('\n')[0] ?? '').startsWith('#!')) {
+        diagnostics.push({
+          code: 'hook.unsafe',
+          severity: 'error',
+          message: 'exec hook is missing a shebang',
+          file,
+        });
+      }
+    }
+  }
+  return diagnostics;
+}
+
+const SECRET_EXTENSIONS = new Set([
+  '.md',
+  '.yaml',
+  '.yml',
+  '.json',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.sh',
+  '.txt',
+]);
+
+const SKIP_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'coverage', '.dab', '.superpowers']);
+
+async function walkFiles(dir: string, depth = 0): Promise<string[]> {
+  if (depth > 6) {
+    return [];
+  }
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+  const files: string[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+    const absolute = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!SKIP_DIRECTORIES.has(entry.name)) {
+        files.push(...(await walkFiles(absolute, depth + 1)));
+      }
+    } else if (entry.isFile() && SECRET_EXTENSIONS.has(extname(entry.name))) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
+export async function checkSecrets(root: string, paths: ProjectPaths): Promise<Diagnostic[]> {
+  const candidates = new Set<string>([
+    join(root, 'AGENTS.md'),
+    join(root, 'dab.yaml'),
+    ...(await walkFiles(paths.agents)),
+  ]);
+  const diagnostics: Diagnostic[] = [];
+  for (const file of [...candidates].sort()) {
+    if ((await lstatOrNull(file)) === null) {
+      continue;
+    }
+    try {
+      const text = await readTextFile(file, 262_144);
+      diagnostics.push(...scanSecrets(text, relativeFile(root, file)));
+    } catch {
+      // Unreadable or oversized files are handled by their owning check.
+    }
+  }
+  return diagnostics;
+}
+
+export async function checkMemory(
+  root: string,
+  paths: ProjectPaths,
+  now?: Date,
+): Promise<Diagnostic[]> {
+  const memory = await discoverMemory(root, paths.agents, now);
+  const diagnostics = [...memory.diagnostics];
+  const paragraphs = new Map<string, string>();
+
+  for (const item of memory.items) {
+    for (const paragraph of item.body.split(/\n\s*\n/)) {
+      const normalized = paragraph.replace(/\s+/g, ' ').trim();
+      if (normalized.length < 20) {
+        continue;
+      }
+      const hash = sha256(normalized);
+      const existing = paragraphs.get(hash);
+      if (existing !== undefined) {
+        diagnostics.push({
+          code: 'memory.duplicate-paragraph',
+          severity: 'error',
+          message: 'duplicate memory paragraph',
+          file: item.file,
+          hint: `The same paragraph also appears in ${existing}.`,
+        });
+      } else {
+        paragraphs.set(hash, item.file);
+      }
+    }
+  }
+
+  for (const dir of ['agent-memory', 'agent-memory-local', 'memory', 'projects']) {
+    const absolute = join(paths.claude, dir);
+    if ((await lstatOrNull(absolute)) !== null) {
+      diagnostics.push({
+        code: 'memory.project-artifact',
+        severity: 'error',
+        message: `team memory or auto memory artifact exists in the repository: ${dir}`,
+        file: toPosix(relative(root, absolute)),
+        hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/memory/.',
+      });
+    }
+  }
+
+  return diagnostics;
+}
+
+export async function checkAgentsMdState(root: string): Promise<Diagnostic[]> {
+  const size = await checkAgentsMd(root);
+  const diagnostics = [...size.diagnostics];
+  const path = join(root, 'AGENTS.md');
+  if ((await lstatOrNull(path)) === null) {
+    return diagnostics;
+  }
+
+  const text = await readTextFile(path);
+  for (const link of extractMarkdownLinks(text)) {
+    const target = link.target.split('#')[0] ?? '';
+    if (
+      target.length === 0
+      || target.startsWith('http://')
+      || target.startsWith('https://')
+      || target.startsWith('mailto:')
+    ) {
+      continue;
+    }
+    const absolute = target.startsWith('/') ? target : resolve(root, target);
+    if (!isPathInside(root, absolute) || (await lstatOrNull(absolute)) === null) {
+      diagnostics.push({
+        code: 'agents-md.broken-link',
+        severity: 'error',
+        message: `AGENTS.md link does not resolve: ${link.target}`,
+        file: 'AGENTS.md',
+        line: link.line,
+      });
+    }
+  }
+  return diagnostics;
+}
