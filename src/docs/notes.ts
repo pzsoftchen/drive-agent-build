@@ -57,8 +57,52 @@ function isSkippedSource(name: string): boolean {
     || name === 'INDEX.md';
 }
 
+async function misplacedNotes(root: string): Promise<string[]> {
+  const base = join(root, '.agents/notes');
+  const misplaced: string[] = [];
+
+  let rootEntries;
+  try {
+    rootEntries = await readdir(base, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+  for (const entry of rootEntries) {
+    if (entry.isFile() && entry.name.endsWith('.md') && !isSkippedSource(entry.name)) {
+      misplaced.push(entry.name);
+    }
+  }
+
+  for (const lifecycle of NOTE_LIFECYCLES) {
+    let entries;
+    try {
+      entries = await readdir(join(base, lifecycle), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md') && !isSkippedSource(entry.name)) {
+        misplaced.push(`${lifecycle}/${entry.name}`);
+      }
+    }
+  }
+
+  return misplaced;
+}
+
 export async function verifyAgentNotes(root: string): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
+  for (const relative of await misplacedNotes(root)) {
+    diagnostics.push({
+      code: 'note.class',
+      severity: 'error',
+      message: 'Agent Note must live under a lifecycle/class folder',
+      file: `.agents/notes/${relative}`,
+    });
+  }
   const files = await listNoteFiles(root);
 
   for (const relativeFile of files) {

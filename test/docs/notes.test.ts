@@ -76,6 +76,17 @@ describe('verifyAgentNotes', () => {
     expect((await verifyAgentNotes(root)).map((item) => item.code)).toContain('note.status');
   });
 
+  it('rejects a note placed directly under a lifecycle folder', async () => {
+    const root = await tempDir();
+    await writeNote(
+      root,
+      '.agents/notes/implemented/2026-11-16-example.md',
+      note(),
+    );
+
+    expect((await verifyAgentNotes(root)).map((item) => item.code)).toContain('note.class');
+  });
+
   it('rejects unknown classes and date-less filenames', async () => {
     const root = await tempDir();
     await writeNote(
