@@ -9,7 +9,7 @@ import {
   writeFileAtomic,
 } from '../../core/fs-atomic.ts';
 import { sha256 } from '../../core/hash.ts';
-import { relativeLink, resolveInside, toPosix } from '../../core/paths.ts';
+import { assertParentInsideRoot, relativeLink, resolveInside, toPosix } from '../../core/paths.ts';
 import { discoverAgents } from '../../model/agents.ts';
 import { discoverRules } from '../../model/rules.ts';
 import { discoverSkills } from '../../model/skills.ts';
@@ -42,7 +42,7 @@ export interface ProjectionPlan {
 }
 
 export interface ClaudeMdPlan {
-  action: 'create' | 'repair' | 'none' | 'remove';
+  action: 'create' | 'repair' | 'none' | 'remove' | 'backup-and-repair' | 'backup-and-remove';
   conflict?: Diagnostic;
 }
 
@@ -301,6 +301,7 @@ export async function applyProjectionActions(
     if (action.type === 'add-manifest' || action.type === 'remove-manifest') {
       continue;
     }
+    await assertParentInsideRoot(root, action.projection.target);
     const targetAbs = resolveInside(root, action.projection.target);
     switch (action.type) {
       case 'create-link':
@@ -357,6 +358,7 @@ function unmanagedClaudeConflict(message: string): Diagnostic {
 export async function planClaudeMdShim(
   root: string,
   manifest: ProjectManifest,
+  options: { fix?: boolean } = {},
 ): Promise<ClaudeMdPlan> {
   const rootClaude = join(root, 'CLAUDE.md');
   if ((await lstatOrNull(rootClaude)) !== null) {
@@ -379,6 +381,9 @@ export async function planClaudeMdShim(
     if (managed) {
       return { action: 'remove' };
     }
+    if (options.fix === true) {
+      return { action: 'backup-and-remove' };
+    }
     return {
       action: 'none',
       conflict: unmanagedClaudeConflict('unmanaged .claude/CLAUDE.md exists while the shim is disabled'),
@@ -389,6 +394,9 @@ export async function planClaudeMdShim(
     return { action: 'create' };
   }
   if (!actual.isFile() || actual.isSymbolicLink()) {
+    if (options.fix === true) {
+      return { action: 'backup-and-repair' };
+    }
     return {
       action: 'none',
       conflict: unmanagedClaudeConflict('.claude/CLAUDE.md is not a regular generated file'),
@@ -402,6 +410,9 @@ export async function planClaudeMdShim(
   if (managed) {
     return { action: 'repair' };
   }
+  if (options.fix === true) {
+    return { action: 'backup-and-repair' };
+  }
   return {
     action: 'none',
     conflict: unmanagedClaudeConflict('.claude/CLAUDE.md exists but is not DAB-managed'),
@@ -411,14 +422,26 @@ export async function planClaudeMdShim(
 export async function applyClaudeMdShim(
   root: string,
   action: ClaudeMdPlan['action'],
+  options: { backupRoot?: string } = {},
 ): Promise<void> {
   if (action === 'none') {
     return;
   }
   const target = join(root, '.claude', 'CLAUDE.md');
+  await assertParentInsideRoot(root, '.claude/CLAUDE.md');
   if (action === 'remove') {
     await rm(target, { force: true });
     return;
+  }
+  if (action === 'backup-and-remove' || action === 'backup-and-repair') {
+    if (options.backupRoot === undefined) {
+      throw new Error('backupRoot is required for shim backup actions');
+    }
+    await backupPath(root, '.claude/CLAUDE.md', options.backupRoot);
+    if (action === 'backup-and-remove') {
+      await rm(target, { recursive: true, force: true });
+      return;
+    }
   }
   await writeFileAtomic(target, renderClaudeMdShim());
 }

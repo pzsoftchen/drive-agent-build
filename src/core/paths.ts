@@ -1,4 +1,5 @@
 import { dirname, isAbsolute as isNativeAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { lstat, realpath } from 'node:fs/promises';
 import { ConfigError } from './errors.ts';
 
 export function toPosix(value: string): string {
@@ -44,6 +45,40 @@ export function resolveInside(root: string, relativePath: string): string {
 
 export function relativeLink(fromTarget: string, toSource: string): string {
   return toPosix(relative(dirname(fromTarget), toSource));
+}
+
+async function lstatOrNullPath(path: string): Promise<Awaited<ReturnType<typeof lstat>> | null> {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function assertParentInsideRoot(root: string, relativePath: string): Promise<void> {
+  const absolute = resolveInside(root, relativePath);
+  let parent = dirname(absolute);
+  let info = await lstatOrNullPath(parent);
+  while (info === null) {
+    const next = dirname(parent);
+    if (next === parent) {
+      break;
+    }
+    parent = next;
+    info = await lstatOrNullPath(parent);
+  }
+
+  const realRoot = await realpath(root);
+  const realParent = await realpath(parent);
+  if (!isPathInside(realRoot, realParent)) {
+    throw new ConfigError(
+      `path escapes through a symlinked parent: ${relativePath}`,
+      'path.symlink-escape',
+    );
+  }
 }
 
 export function joinPosix(...parts: string[]): string {

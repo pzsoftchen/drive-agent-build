@@ -5,6 +5,7 @@ import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
 import { ExitCode } from './core/exit-codes.ts';
 import { stableJson } from './core/json.ts';
+import { runNormalize } from './commands/normalize.ts';
 
 export const PROGRAM_VERSION = '0.1.0';
 
@@ -74,11 +75,21 @@ function dispatchDetect(rest: string[]): number {
   );
 }
 
-function dispatchNormalize(rest: string[]): number {
+async function dispatchNormalize(
+  rest: string[],
+  ctx: CliContext,
+  json: boolean,
+): Promise<number> {
   rejectUnknownOptions(rest, ['--dry-run', '--fix']);
-  throw new UsageError(
-    'dab normalize is not available in this development build yet',
-    'usage.not-implemented',
+  return runNormalize(
+    {
+      cwd: ctx.cwd,
+      dryRun: rest.includes('--dry-run'),
+      fix: rest.includes('--fix'),
+      json,
+      platform: process.platform,
+    },
+    { stdout: ctx.stdout, stderr: ctx.stderr },
   );
 }
 
@@ -98,7 +109,7 @@ function dispatchPolicy(rest: string[]): number {
   );
 }
 
-async function dispatch(args: string[], ctx: CliContext): Promise<number> {
+async function dispatch(args: string[], ctx: CliContext, json: boolean): Promise<number> {
   const [command, ...rest] = args;
   if (command === undefined || command === '--help' || command === '-h' || command === 'help') {
     ctx.stdout(HELP);
@@ -115,7 +126,7 @@ async function dispatch(args: string[], ctx: CliContext): Promise<number> {
     case 'detect':
       return dispatchDetect(rest);
     case 'normalize':
-      return dispatchNormalize(rest);
+      return dispatchNormalize(rest, ctx, json);
     case 'policy':
       return dispatchPolicy(rest);
     default:
@@ -132,7 +143,7 @@ export async function runCli(argv: string[], ctx: CliContext): Promise<number> {
   const args = argv.filter((arg) => arg !== '--json');
 
   try {
-    return await dispatch(args, ctx);
+    return await dispatch(args, ctx, json);
   } catch (error) {
     if (error instanceof DabError) {
       if (json) {

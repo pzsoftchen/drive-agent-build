@@ -1,8 +1,13 @@
 import { cp, lstat, mkdir, open, readFile, rename, rm, symlink, chmod } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { basename, dirname, join } from 'node:path';
-import { assertRelativePath, isPathInside } from './paths.ts';
+import { basename, dirname, join, relative } from 'node:path';
+import {
+  assertParentInsideRoot,
+  assertRelativePath,
+  isPathInside,
+  toPosix,
+} from './paths.ts';
 
 function temporaryName(filePath: string, suffix: string): string {
   return join(
@@ -86,6 +91,9 @@ export async function backupPath(
   if (!isPathInside(root, source)) {
     throw new Error(`backup source escapes the project: ${relativePath}`);
   }
+  await assertParentInsideRoot(root, normalized);
+  const destinationRelative = toPosix(relative(root, destination));
+  await assertParentInsideRoot(root, destinationRelative);
   await ensureDir(dirname(destination));
   await cp(source, destination, {
     recursive: true,
