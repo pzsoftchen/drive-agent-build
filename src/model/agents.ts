@@ -1,0 +1,274 @@
+import { readdir } from 'node:fs/promises';
+import { join, relative } from 'node:path';
+import type { Diagnostic } from '../core/diagnostics.ts';
+import { readTextFile } from '../core/fs-atomic.ts';
+import { toPosix } from '../core/paths.ts';
+import { DiagnosticCodes } from './diagnostics-codes.ts';
+import { parseFrontmatter } from './frontmatter.ts';
+import { AgentFrontmatterSchema, CLAUDE_HOOK_EVENTS, KEBAB_CASE } from './schemas.ts';
+import type {
+  AgentDefinition,
+  AgentHookDefinition,
+  DiscoveryResult,
+} from './types.ts';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeList(value: string | string[] | undefined): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  const values = Array.isArray(value) ? value : value.split(/[\s,]+/);
+  return values.map((item) => item.trim()).filter((item) => item.length > 0);
+}
+
+function zodMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.map(String).join('.');
+      return path.length === 0 ? issue.message : `${path}: ${issue.message}`;
+    })
+    .join('; ');
+}
+
+function validateAgentHooks(
+  raw: unknown,
+  agentName: string,
+  file: string,
+): { items: AgentHookDefinition[]; diagnostics: Diagnostic[] } {
+  const items: AgentHookDefinition[] = [];
+  const diagnostics: Diagnostic[] = [];
+  if (raw === undefined) {
+    return { items, diagnostics };
+  }
+  if (!isRecord(raw)) {
+    diagnostics.push({
+      code: DiagnosticCodes.agentHookHandler,
+      severity: 'error',
+      message: `agent ${agentName} hooks must be an event map`,
+      file,
+    });
+    return { items, diagnostics };
+  }
+
+  const ids = new Set<string>();
+  for (const [event, matchers] of Object.entries(raw)) {
+    if (!CLAUDE_HOOK_EVENTS.includes(event as (typeof CLAUDE_HOOK_EVENTS)[number])) {
+      diagnostics.push({
+        code: DiagnosticCodes.agentHookEvent,
+        severity: 'error',
+        message: `agent ${agentName} uses unknown hook event ${event}`,
+        file,
+      });
+      continue;
+    }
+    if (!Array.isArray(matchers)) {
+      diagnostics.push({
+        code: DiagnosticCodes.agentHookHandler,
+        severity: 'error',
+        message: `agent ${agentName} hook event ${event} must be an array`,
+        file,
+      });
+      continue;
+    }
+
+    matchers.forEach((matcher, matcherIndex) => {
+      if (!isRecord(matcher)) {
+        diagnostics.push({
+          code: DiagnosticCodes.agentHookHandler,
+          severity: 'error',
+          message: `agent ${agentName} hook matcher for ${event} must be an object`,
+          file,
+        });
+        return;
+      }
+      const matcherValue = typeof matcher.matcher === 'string' ? matcher.matcher : undefined;
+      const handlers = matcher.hooks;
+      if (!Array.isArray(handlers)) {
+        diagnostics.push({
+          code: DiagnosticCodes.agentHookHandler,
+          severity: 'error',
+          message: `agent ${agentName} hook matcher for ${event} needs a hooks array`,
+          file,
+        });
+        return;
+      }
+      handlers.forEach((handler, handlerIndex) => {
+        if (!isRecord(handler) || handler.type !== 'command' || typeof handler.command !== 'string'
+          || handler.command.trim().length === 0) {
+          diagnostics.push({
+            code: DiagnosticCodes.agentHookHandler,
+            severity: 'error',
+            message: `agent ${agentName} only supports command hooks for ${event}`,
+            file,
+          });
+          return;
+        }
+        const explicitId = typeof handler.id === 'string' ? handler.id : undefined;
+        const id = explicitId
+          ?? `agent-${agentName}-${event.toLowerCase()}-${matcherIndex}-${handlerIndex}`;
+        if (!KEBAB_CASE.test(id)) {
+          diagnostics.push({
+            code: DiagnosticCodes.hookInvalid,
+            severity: 'error',
+            message: `agent ${agentName} hook id is not kebab-case: ${id}`,
+            file,
+          });
+          return;
+        }
+        if (ids.has(id)) {
+          diagnostics.push({
+            code: DiagnosticCodes.hookDuplicateId,
+            severity: 'error',
+            message: `agent ${agentName} reuses hook id ${id}`,
+            file,
+          });
+          return;
+        }
+        ids.add(id);
+        items.push({
+          id,
+          event,
+          ...(matcherValue === undefined ? {} : { matcher: matcherValue }),
+          command: handler.command,
+          ...(typeof handler.timeout === 'number' ? { timeout: handler.timeout } : {}),
+          source: file,
+        });
+      });
+    });
+  }
+
+  return { items, diagnostics };
+}
+
+export async function discoverAgents(
+  root: string,
+  agentsDir: string,
+): Promise<DiscoveryResult<AgentDefinition>> {
+  const sourceDir = join(agentsDir, 'agents');
+  let entries;
+  try {
+    entries = await readdir(sourceDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { items: [], diagnostics: [] };
+    }
+    throw error;
+  }
+
+  const items: AgentDefinition[] = [];
+  const diagnostics: Diagnostic[] = [];
+  const names = new Map<string, string>();
+
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.name.endsWith('.md')) {
+      continue;
+    }
+    const absolute = join(sourceDir, entry.name);
+    const file = toPosix(relative(root, absolute));
+    if (entry.isSymbolicLink()) {
+      diagnostics.push({
+        code: DiagnosticCodes.agentSymlink,
+        severity: 'warning',
+        message: `agent file is a symlink and was skipped: ${file}`,
+        file,
+      });
+      continue;
+    }
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    let parsed;
+    try {
+      parsed = parseFrontmatter(await readTextFile(absolute), file);
+    } catch (error) {
+      diagnostics.push({
+        code: DiagnosticCodes.agentInvalidFrontmatter,
+        severity: 'error',
+        message: `invalid agent frontmatter: ${error instanceof Error ? error.message : String(error)}`,
+        file,
+        line: 1,
+      });
+      continue;
+    }
+
+    if (Object.keys(parsed.data).length === 0) {
+      diagnostics.push({
+        code: DiagnosticCodes.agentInvalidFrontmatter,
+        severity: 'error',
+        message: 'agent file is missing YAML frontmatter',
+        file,
+        line: 1,
+      });
+      continue;
+    }
+
+    const validated = AgentFrontmatterSchema.safeParse(parsed.data);
+    if (!validated.success) {
+      diagnostics.push({
+        code: DiagnosticCodes.agentInvalidFrontmatter,
+        severity: 'error',
+        message: `invalid agent frontmatter: ${zodMessage(validated.error)}`,
+        file,
+        line: 1,
+      });
+      continue;
+    }
+
+    const data = validated.data;
+    if (data.memory === 'project') {
+      diagnostics.push({
+        code: DiagnosticCodes.agentMemoryProject,
+        severity: 'error',
+        message: `agent ${data.name} uses memory: project, which creates a second team memory store`,
+        file,
+        line: 1,
+        hint: 'Use memory: user or memory: local, and put shared knowledge in .agents/memory/.',
+      });
+    }
+    if (data.permissionMode === 'auto' || data.permissionMode === 'bypassPermissions') {
+      diagnostics.push({
+        code: DiagnosticCodes.agentPermissionMode,
+        severity: 'error',
+        message: `agent ${data.name} uses unsupported permissionMode: ${data.permissionMode}`,
+        file,
+        line: 1,
+        hint: 'v0.1 allows default, manual, plan, acceptEdits and dontAsk for role definitions.',
+      });
+    }
+
+    const existing = names.get(data.name);
+    if (existing !== undefined) {
+      diagnostics.push({
+        code: DiagnosticCodes.agentDuplicateName,
+        severity: 'error',
+        message: `duplicate agent name ${data.name}`,
+        file,
+        hint: `The name is already used by ${existing}.`,
+      });
+    } else {
+      names.set(data.name, file);
+    }
+
+    const hooks = validateAgentHooks(data.hooks, data.name, file);
+    diagnostics.push(...hooks.diagnostics);
+    items.push({
+      file,
+      name: data.name,
+      description: data.description,
+      tools: normalizeList(data.tools),
+      disallowedTools: normalizeList(data.disallowedTools),
+      ...(data.model === undefined ? {} : { model: data.model }),
+      ...(data.permissionMode === undefined ? {} : { permissionMode: data.permissionMode }),
+      ...(data.memory === undefined ? {} : { memory: data.memory }),
+      hooks: hooks.items,
+      body: parsed.body,
+      frontmatter: data,
+    });
+  }
+
+  return { items, diagnostics };
+}

@@ -1,0 +1,131 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { rm } from 'node:fs/promises';
+import { discoverAgents } from '../../src/model/agents.ts';
+import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
+
+const projects: ProjectFixture[] = [];
+
+async function project(): Promise<ProjectFixture> {
+  const fixture = await makeProject();
+  projects.push(fixture);
+  return fixture;
+}
+
+afterEach(async () => {
+  await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
+});
+
+function agent(name: string, extra = ''): string {
+  return `---
+name: ${name}
+description: Does ${name} things.
+${extra}---
+Prompt for ${name}.
+`;
+}
+
+describe('agent discovery', () => {
+  it('parses a valid agent and normalizes tool lists', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/reviewer.md',
+      agent('reviewer', 'tools: Read, Grep, Glob\ndisallowedTools: [Write, Edit]\nmemory: user\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      name: 'reviewer',
+      tools: ['Read', 'Grep', 'Glob'],
+      disallowedTools: ['Write', 'Edit'],
+      memory: 'user',
+    });
+  });
+
+  it('rejects memory: project with a specific diagnostic', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/reviewer.md',
+      agent('reviewer', 'memory: project\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.memory-project');
+  });
+
+  it('rejects auto and bypass permission modes', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/auto.md',
+      agent('auto', 'permissionMode: auto\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/bypass.md',
+      agent('bypass', 'permissionMode: bypassPermissions\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.diagnostics.filter((item) => item.code === 'agent.permission-mode')).toHaveLength(2);
+  });
+
+  it('rejects duplicate agent names', async () => {
+    const fixture = await project();
+    await writeProjectFile(fixture.root, '.agents/agents/one.md', agent('reviewer'));
+    await writeProjectFile(fixture.root, '.agents/agents/two.md', agent('reviewer'));
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.duplicate-name');
+  });
+
+  it('rejects malformed frontmatter and unknown fields', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/bad.md',
+      '---\nname: bad\n---\nNo description.\n',
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/typo.md',
+      agent('typo', 'toolz: Read\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.diagnostics.filter((item) => item.code === 'agent.invalid-frontmatter')).toHaveLength(2);
+  });
+
+  it('rejects an agent hook with a non-command handler', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/hooked.md',
+      agent(
+        'hooked',
+        [
+          'hooks:',
+          '  PreToolUse:',
+          '    - matcher: Bash',
+          '      hooks:',
+          '        - type: http',
+          '          url: https://example.com',
+          '',
+        ].join('\n'),
+      ),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.hook-handler');
+  });
+});
