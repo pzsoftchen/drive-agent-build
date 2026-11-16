@@ -9,6 +9,7 @@ DAB 使用 TypeScript ESM 和 Node `>=24.9`。仓库本身也使用自己的 Age
 ```bash
 pnpm install
 pnpm build
+node dist/cli.js normalize
 pnpm test
 ```
 

@@ -70,3 +70,4 @@ Every human-facing document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`. The 
 - DAB does not import Claude Code internals.
 - DAB never edits `.claude/settings.local.json`.
 - Unsupported provider semantics fail loudly instead of silently widening permissions.
+- v0.1 accepts only the default `.agents` and `.claude` paths.

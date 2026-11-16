@@ -1,3 +1,4 @@
+import { stringify } from 'yaml';
 import type { ScanResult } from './scanner.ts';
 import type { AiProposalAgent } from './ai-proposal.ts';
 
@@ -261,9 +262,12 @@ paths:
 }
 
 export function renderAgentFromProposal(agent: AiProposalAgent): string {
+  const frontmatter = stringify({
+    name: agent.name,
+    description: agent.description,
+  }).trimEnd();
   return `---
-name: ${agent.name}
-description: ${agent.description}
+${frontmatter}
 ---
 ${agent.body.trim()}
 `;

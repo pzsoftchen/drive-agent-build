@@ -9,7 +9,13 @@ import {
   writeFileAtomic,
 } from '../../core/fs-atomic.ts';
 import { sha256 } from '../../core/hash.ts';
-import { assertParentInsideRoot, relativeLink, resolveInside, toPosix } from '../../core/paths.ts';
+import {
+  assertParentInsideRoot,
+  assertRealPathNotInside,
+  relativeLink,
+  resolveInside,
+  toPosix,
+} from '../../core/paths.ts';
 import { discoverAgents } from '../../model/agents.ts';
 import { discoverRules } from '../../model/rules.ts';
 import { discoverSkills } from '../../model/skills.ts';
@@ -292,7 +298,7 @@ export async function planProjectionActions(
 export async function applyProjectionActions(
   root: string,
   actions: readonly ProjectionAction[],
-  options: { backupRoot?: string } = {},
+  options: { backupRoot?: string; sourceRoot?: string } = {},
 ): Promise<{ applied: number; backups: string[] }> {
   let applied = 0;
   const backups: string[] = [];
@@ -302,6 +308,9 @@ export async function applyProjectionActions(
       continue;
     }
     await assertParentInsideRoot(root, action.projection.target);
+    if (options.sourceRoot !== undefined) {
+      await assertRealPathNotInside(root, action.projection.target, options.sourceRoot);
+    }
     const targetAbs = resolveInside(root, action.projection.target);
     switch (action.type) {
       case 'create-link':
@@ -423,25 +432,34 @@ export async function applyClaudeMdShim(
   root: string,
   action: ClaudeMdPlan['action'],
   options: { backupRoot?: string } = {},
-): Promise<void> {
+): Promise<string[]> {
+  const backups: string[] = [];
   if (action === 'none') {
-    return;
+    return backups;
   }
   const target = join(root, '.claude', 'CLAUDE.md');
   await assertParentInsideRoot(root, '.claude/CLAUDE.md');
-  if (action === 'remove') {
-    await rm(target, { force: true });
-    return;
-  }
-  if (action === 'backup-and-remove' || action === 'backup-and-repair') {
-    if (options.backupRoot === undefined) {
+  const info = await lstatOrNull(target);
+
+  if (info !== null) {
+    if (
+      (action === 'backup-and-remove' || action === 'backup-and-repair')
+      && options.backupRoot === undefined
+    ) {
       throw new Error('backupRoot is required for shim backup actions');
     }
-    await backupPath(root, '.claude/CLAUDE.md', options.backupRoot);
-    if (action === 'backup-and-remove') {
-      await rm(target, { recursive: true, force: true });
-      return;
+    if (options.backupRoot !== undefined) {
+      backups.push(await backupPath(root, '.claude/CLAUDE.md', options.backupRoot));
     }
   }
+
+  if (action === 'remove' || action === 'backup-and-remove') {
+    await rm(target, { recursive: true, force: true });
+    return backups;
+  }
+  if (info !== null && !info.isFile()) {
+    await rm(target, { recursive: true, force: true });
+  }
   await writeFileAtomic(target, renderClaudeMdShim());
+  return backups;
 }

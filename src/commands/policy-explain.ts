@@ -6,9 +6,13 @@ import {
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
-import { DabError, UsageError } from '../core/errors.ts';
+import { DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { stableJson } from '../core/json.ts';
+import {
+  assertRealPathInsideRoot,
+  assertRealPathsDisjoint,
+} from '../core/paths.ts';
 import { readClaudeVersion } from '../core/version-check.ts';
 import { compilePolicy, type EffectivePolicy } from '../adapter/claude-code/policy-compile.ts';
 import { discoverAgents } from '../model/agents.ts';
@@ -106,6 +110,30 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
   const root = resolve(options.cwd);
   const loaded = await loadProjectManifest(root);
   const paths = resolveProjectPaths(root, loaded.manifest);
+  try {
+    await assertRealPathInsideRoot(root, '.claude');
+    await assertRealPathInsideRoot(root, '.agents');
+    await assertRealPathsDisjoint(root, '.agents', '.claude');
+    for (const directory of [
+      '.agents/agents',
+      '.agents/skills',
+      '.agents/rules',
+      '.agents/policies',
+      '.agents/adapters',
+      '.agents/hooks',
+      '.agents/memory',
+      '.claude/agents',
+      '.claude/skills',
+      '.claude/rules',
+    ]) {
+      await assertRealPathInsideRoot(root, directory);
+    }
+  } catch (error) {
+    if (error instanceof DabError) {
+      throw new ValidationError(error.message, error.code, { hint: error.hint });
+    }
+    throw error;
+  }
   const policies = await loadPolicySources(paths);
   const hooks = await discoverHooks(root, paths.agents);
   const diagnostics: Diagnostic[] = [...hooks.diagnostics];

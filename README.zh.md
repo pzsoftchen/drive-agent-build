@@ -26,6 +26,7 @@ DAB 是面向使用 Agent 构建软件的个人开发者的项目级控制面。
 ```bash
 pnpm install
 pnpm build
+pnpm link --global
 node dist/cli.js init /path/to/project
 cd /path/to/project
 dab detect
@@ -44,7 +45,7 @@ dab detect
 
 1. `dab init` 扫描仓库并写入最小的 `AGENTS.md`、角色、Skill、规则和策略骨架。
 2. `dab normalize` 把策略编译为 `.claude/settings.json`，把编写条目投影为符号链接，并把哈希记录到 `dab.yaml`。
-3. `dab detect` 在不写入的前提下比较生成字节、链接目标、frontmatter、敏感信息、记忆和文档。
+3. `dab detect` 在不写入的前提下比较生成字节、链接目标、frontmatter、敏感信息、记忆和 AGENTS.md。
 4. `dab policy explain` 展示最终生效的权限和 hooks，包括角色收窄和运行时限制。
 
 ## 状态与边界

@@ -32,8 +32,9 @@ export function buildHookCommand(hook: LoadedHook): string {
   const dir = assertRelativePath(hook.dir, 'hook directory');
   const entry = assertRelativePath(hook.spec.entry, 'hook entry');
   const path = joinPosix(dir, entry);
+  const commandPath = `\${CLAUDE_PROJECT_DIR}/${path}`;
   if (hook.spec.runner === 'exec') {
-    return `"\${CLAUDE_PROJECT_DIR}/${path}"`;
+    return JSON.stringify(commandPath);
   }
-  return `node "\${CLAUDE_PROJECT_DIR}/${path}"`;
+  return `node ${JSON.stringify(commandPath)}`;
 }

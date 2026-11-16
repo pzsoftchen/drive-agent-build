@@ -8,6 +8,7 @@ DAB 使用它自己推荐的工作流开发。请先阅读 `AGENTS.md`。
 
 - 使用 Node `>=24.9` 和 pnpm。
 - 运行 `pnpm install` 和 `pnpm build`。
+- 构建后运行 `node dist/cli.js normalize`。
 - 阅读 `docs/development.md`。
 
 ## 开发循环

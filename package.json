@@ -8,7 +8,6 @@
   },
   "files": [
     "dist",
-    "templates",
     "LICENSE",
     "README.md",
     "README.zh.md",
@@ -30,6 +29,7 @@
   ],
   "packageManager": "pnpm@11.9.0",
   "scripts": {
+    "prepack": "pnpm build",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",

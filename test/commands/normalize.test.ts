@@ -309,9 +309,9 @@ describe('normalizeProject', () => {
       await rm(join(project.root, '.claude'), { recursive: true, force: true });
       await symlink(outside, join(project.root, '.claude'), 'dir');
 
-      await expect(normalizeProject({ cwd: project.root })).rejects.toMatchObject({
-        code: 'path.symlink-escape',
-      });
+      const result = await normalizeProject({ cwd: project.root });
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics.map((item) => item.code)).toContain('path.symlink-escape');
       expect(await readdir(outside)).toEqual([]);
     } finally {
       await rm(outside, { recursive: true, force: true });

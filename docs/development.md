@@ -9,6 +9,7 @@ DAB uses TypeScript ESM and Node `>=24.9`. The repository dogfoods its own agent
 ```bash
 pnpm install
 pnpm build
+node dist/cli.js normalize
 pnpm test
 ```
 

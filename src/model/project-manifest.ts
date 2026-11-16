@@ -43,6 +43,16 @@ export async function loadProjectManifest(root: string): Promise<LoadedProjectMa
       { details: parsed.error.issues },
     );
   }
+  if (parsed.data.paths.agents !== '.agents' || parsed.data.paths.claude !== '.claude') {
+    throw new ConfigError(
+      'custom paths are not supported in v0.1',
+      'config.paths-unsupported',
+      {
+        details: parsed.data.paths,
+        hint: 'Use the default .agents and .claude paths.',
+      },
+    );
+  }
   return { manifest: parsed.data, document, path };
 }
 

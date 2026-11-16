@@ -10,6 +10,7 @@ import { renderClaudeMdShim } from '../adapter/claude-code/projection.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverMemory } from '../model/memory.ts';
 import type {
+  AgentDefinition,
   LoadedHook,
   ProjectManifest,
   ProjectPaths,
@@ -379,6 +380,35 @@ export async function checkHookSafety(hooks: readonly LoadedHook[]): Promise<Dia
           message: 'exec hook is missing a shebang',
           file,
         });
+      }
+    }
+    diagnostics.push(...scanSecrets(text, file));
+  }
+  return diagnostics;
+}
+
+export function checkAgentHookIds(
+  agents: readonly AgentDefinition[],
+  hooks: readonly LoadedHook[],
+): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const used = new Map<string, string>();
+  for (const hook of hooks) {
+    used.set(hook.spec.id, hook.metadataPath);
+  }
+  for (const agent of agents) {
+    for (const hook of agent.hooks) {
+      const existing = used.get(hook.id);
+      if (existing !== undefined) {
+        diagnostics.push({
+          code: 'hook.duplicate-id',
+          severity: 'error',
+          message: `agent ${agent.name} reuses hook id ${hook.id}`,
+          file: hook.source,
+          hint: `The id is already used by ${existing}.`,
+        });
+      } else {
+        used.set(hook.id, hook.source);
       }
     }
   }

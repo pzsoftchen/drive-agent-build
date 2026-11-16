@@ -31,6 +31,8 @@ jobs:
         run: pnpm typecheck
       - name: Normalize generated config
         run: node dist/cli.js normalize
+      - name: Check generated manifest is current
+        run: git diff --exit-code
       - name: Test
         run: pnpm test
       - name: Documentation gates

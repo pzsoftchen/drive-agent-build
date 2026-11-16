@@ -32,6 +32,7 @@ describe('release metadata', () => {
       'pnpm test',
       'pnpm doc-sync',
       'node dist/cli.js normalize',
+      'git diff --exit-code',
       'node dist/cli.js detect --json',
       'node dist/cli.js normalize --dry-run --json',
       'node dist/cli.js policy explain --json',

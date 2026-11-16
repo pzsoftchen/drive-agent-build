@@ -8,6 +8,7 @@ DAB is developed with the same workflow it recommends. Read `AGENTS.md` first.
 
 - Use Node `>=24.9` and pnpm.
 - Run `pnpm install` and `pnpm build`.
+- Run `node dist/cli.js normalize` after building.
 - Read `docs/development.md`.
 
 ## Development loop

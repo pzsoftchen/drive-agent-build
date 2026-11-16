@@ -81,6 +81,71 @@ export async function assertParentInsideRoot(root: string, relativePath: string)
   }
 }
 
+export async function realPathNearest(root: string, relativePath: string): Promise<string> {
+  const absolute = resolveInside(root, relativePath);
+  let current = absolute;
+  let info = await lstatOrNullPath(current);
+  while (info === null) {
+    const next = dirname(current);
+    if (next === current) {
+      break;
+    }
+    current = next;
+    info = await lstatOrNullPath(current);
+  }
+  return realpath(current);
+}
+
+export async function assertRealPathInsideRoot(
+  root: string,
+  relativePath: string,
+): Promise<void> {
+  const realRoot = await realpath(root);
+  const real = await realPathNearest(root, relativePath);
+  if (!isPathInside(realRoot, real)) {
+    throw new ConfigError(
+      `path escapes through a symlink: ${relativePath}`,
+      'path.symlink-escape',
+    );
+  }
+}
+
+export async function assertRealPathsDisjoint(
+  root: string,
+  first: string,
+  second: string,
+): Promise<void> {
+  const firstAbsolute = resolveInside(root, first);
+  const secondAbsolute = resolveInside(root, second);
+  if ((await lstatOrNullPath(firstAbsolute)) === null
+    || (await lstatOrNullPath(secondAbsolute)) === null) {
+    return;
+  }
+  const realFirst = await realPathNearest(root, first);
+  const realSecond = await realPathNearest(root, second);
+  if (isPathInside(realFirst, realSecond) || isPathInside(realSecond, realFirst)) {
+    throw new ConfigError(
+      `authored and generated trees overlap: ${first} and ${second}`,
+      'path.overlap',
+    );
+  }
+}
+
+export async function assertRealPathNotInside(
+  root: string,
+  candidate: string,
+  protectedPath: string,
+): Promise<void> {
+  const realCandidate = await realPathNearest(root, candidate);
+  const realProtected = await realPathNearest(root, protectedPath);
+  if (isPathInside(realProtected, realCandidate)) {
+    throw new ConfigError(
+      `refusing to write a generated path inside an authored source tree: ${candidate}`,
+      'path.overlap',
+    );
+  }
+}
+
 export function joinPosix(...parts: string[]): string {
   return parts
     .filter((part) => part.length > 0)

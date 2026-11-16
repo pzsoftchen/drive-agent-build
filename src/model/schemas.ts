@@ -64,6 +64,7 @@ export const NOTE_STATUSES = ['proposed', 'implemented', 'rejected'] as const;
 export const KEBAB_CASE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export const SHA256_HEX = /^[a-f0-9]{64}$/;
+export const SAFE_HOOK_ENTRY = /^[A-Za-z0-9._/-]+$/;
 
 export const ProjectionSchema = z
   .object({
@@ -175,7 +176,7 @@ export const HookSpecSchema = z
     id: z.string().regex(KEBAB_CASE),
     event: z.enum(NEUTRAL_HOOK_EVENTS),
     matcher: z.string().min(1).optional(),
-    entry: z.string().min(1),
+    entry: z.string().min(1).regex(SAFE_HOOK_ENTRY),
     runner: z.enum(['node', 'exec']).default('node'),
     timeout: z.number().int().min(1).max(300).default(30),
     order: z.number().int().min(0).max(1000).default(100),

@@ -9,12 +9,16 @@ import {
 import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { stableJson } from '../core/json.ts';
-import { assertParentInsideRoot } from '../core/paths.ts';
+import {
+  assertRealPathInsideRoot,
+  assertRealPathsDisjoint,
+} from '../core/paths.ts';
 import { compilePolicy } from '../adapter/claude-code/policy-compile.ts';
 import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { renderSettings } from '../adapter/claude-code/settings.ts';
 import { checkClaudeCode } from '../adapter/claude-code/version.ts';
 import {
+  checkAgentHookIds,
   checkAgentsMdState,
   checkHookSafety,
   checkMemory,
@@ -23,6 +27,7 @@ import {
   checkSettings,
   checkShim,
 } from '../detect/checks.ts';
+import { discoverAgents } from '../model/agents.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { loadPolicySources } from '../model/policy.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
@@ -103,8 +108,24 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   const diagnostics: Diagnostic[] = [];
 
   try {
-    await assertParentInsideRoot(root, '.claude/settings.json');
-    await assertParentInsideRoot(root, '.agents/policies/project.yaml');
+    await assertRealPathInsideRoot(root, '.claude');
+    await assertRealPathInsideRoot(root, '.agents');
+    await assertRealPathsDisjoint(root, '.agents', '.claude');
+    for (const directory of [
+      '.agents/agents',
+      '.agents/skills',
+      '.agents/rules',
+      '.agents/policies',
+      '.agents/adapters',
+      '.agents/hooks',
+      '.agents/memory',
+      '.agents/notes',
+      '.claude/agents',
+      '.claude/skills',
+      '.claude/rules',
+    ]) {
+      await assertRealPathInsideRoot(root, directory);
+    }
   } catch (error) {
     if (error instanceof DabError) {
       diagnostics.push({
@@ -122,12 +143,14 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   diagnostics.push(...backend.diagnostics);
 
   const discovered = await discoverProjections(root, paths);
+  const agents = await discoverAgents(root, paths.agents);
+  const hooks = await discoverHooks(root, paths.agents);
   diagnostics.push(...discovered.diagnostics);
+  diagnostics.push(...agents.diagnostics);
+  diagnostics.push(...hooks.diagnostics);
+  diagnostics.push(...checkAgentHookIds(agents.items, hooks.items));
 
   const policies = await loadPolicySources(paths);
-  const hooks = await discoverHooks(root, paths.agents);
-  diagnostics.push(...hooks.diagnostics);
-
   const compiled = compilePolicy(policies.project, policies.adapter, hooks.items);
   diagnostics.push(...compiled.diagnostics);
   const expectedSettings = renderSettings(compiled.effective);

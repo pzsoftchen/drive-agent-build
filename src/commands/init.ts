@@ -7,15 +7,30 @@ import { ConfigError, DabError, UsageError, ValidationError } from '../core/erro
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, readTextFile, writeFileAtomic } from '../core/fs-atomic.ts';
 import { stableJson } from '../core/json.ts';
-import { assertParentInsideRoot, toPosix } from '../core/paths.ts';
+import {
+  assertParentInsideRoot,
+  assertRealPathInsideRoot,
+  assertRealPathsDisjoint,
+} from '../core/paths.ts';
+import { loadYamlDocument } from '../core/yaml.ts';
 import {
   discoverProjections,
   renderClaudeMdShim,
 } from '../adapter/claude-code/projection.ts';
+import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
+import { discoverAgents } from '../model/agents.ts';
+import { parseFrontmatter } from '../model/frontmatter.ts';
+import { discoverHooks } from '../model/hooks.ts';
+import { discoverMemory } from '../model/memory.ts';
 import {
   loadProjectManifest,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
+import {
+  AgentFrontmatterSchema,
+  ClaudeCodePolicySchema,
+  PolicySpecSchema,
+} from '../model/schemas.ts';
 import type { ProjectManifest, ProjectPaths, Projection } from '../model/types.ts';
 import {
   formatProposal,
@@ -138,6 +153,22 @@ async function findInitConflicts(
   }
 
   for (const [target, source] of targets) {
+    try {
+      await assertRealPathInsideRoot(root, target);
+      await assertParentInsideRoot(root, target);
+    } catch (error) {
+      if (error instanceof DabError) {
+        conflicts.push({
+          code: error.code,
+          severity: 'error',
+          message: error.message,
+          file: target,
+        });
+        continue;
+      }
+      throw error;
+    }
+
     const absolute = join(root, target);
     const info = await lstatOrNull(absolute);
     if (info === null) {
@@ -170,6 +201,73 @@ async function findInitConflicts(
   }
 
   return conflicts;
+}
+
+async function validateExistingAuthored(
+  root: string,
+  paths: ProjectPaths,
+): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
+  const policyFiles = [
+    {
+      absolute: join(paths.agents, 'policies/project.yaml'),
+      relative: '.agents/policies/project.yaml',
+      schema: PolicySpecSchema,
+    },
+    {
+      absolute: join(paths.agents, 'adapters/claude-code.yaml'),
+      relative: '.agents/adapters/claude-code.yaml',
+      schema: ClaudeCodePolicySchema,
+    },
+  ] as const;
+
+  for (const file of policyFiles) {
+    if ((await lstatOrNull(file.absolute)) === null) {
+      continue;
+    }
+    try {
+      await assertRealPathInsideRoot(root, file.relative);
+    } catch (error) {
+      diagnostics.push({
+        code: error instanceof DabError ? error.code : 'policy.invalid',
+        severity: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        file: file.relative,
+      });
+      continue;
+    }
+    try {
+      const document = await loadYamlDocument(file.absolute);
+      const parsed = file.schema.safeParse(document.toJS());
+      if (!parsed.success) {
+        diagnostics.push({
+          code: 'policy.invalid',
+          severity: 'error',
+          message: `invalid ${file.relative}`,
+          file: file.relative,
+        });
+      }
+    } catch (error) {
+      diagnostics.push({
+        code: 'policy.invalid',
+        severity: 'error',
+        message: `invalid ${file.relative}: ${error instanceof Error ? error.message : String(error)}`,
+        file: file.relative,
+      });
+    }
+  }
+
+  const agents = await discoverAgents(root, paths.agents);
+  const hooks = await discoverHooks(root, paths.agents);
+  diagnostics.push(...agents.diagnostics.filter((item) => item.severity === 'error'));
+  diagnostics.push(...hooks.diagnostics.filter((item) => item.severity === 'error'));
+  diagnostics.push(...checkAgentHookIds(agents.items, hooks.items));
+  diagnostics.push(...await checkHookSafety(hooks.items));
+
+  const memory = await discoverMemory(root, paths.agents);
+  diagnostics.push(...memory.diagnostics.filter((item) => item.severity === 'error'));
+  diagnostics.push(...await checkSecrets(root, paths));
+  return diagnostics;
 }
 
 async function writeIfMissing(
@@ -278,8 +376,24 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
 
   const safety: Diagnostic[] = [];
   try {
-    await assertParentInsideRoot(root, '.claude/settings.json');
-    await assertParentInsideRoot(root, '.agents/policies/project.yaml');
+    await assertRealPathInsideRoot(root, '.claude');
+    await assertRealPathInsideRoot(root, '.agents');
+    await assertRealPathsDisjoint(root, '.agents', '.claude');
+    for (const directory of [
+      '.agents/agents',
+      '.agents/skills',
+      '.agents/rules',
+      '.agents/policies',
+      '.agents/adapters',
+      '.agents/hooks',
+      '.agents/memory',
+      '.agents/notes',
+      '.claude/agents',
+      '.claude/skills',
+      '.claude/rules',
+    ]) {
+      await assertRealPathInsideRoot(root, directory);
+    }
   } catch (error) {
     if (error instanceof DabError) {
       safety.push({
@@ -291,6 +405,11 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       return blocked(root, [...scan.diagnostics, ...safety], safety);
     }
     throw error;
+  }
+
+  const authored = await validateExistingAuthored(root, paths);
+  if (authored.some((item) => item.severity === 'error')) {
+    return blocked(root, [...scan.diagnostics, ...authored], []);
   }
 
   let existingProjections: Projection[] = [];
@@ -320,6 +439,22 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       );
     }
     proposal = await requestAiProposal(scan, options.runner ?? runCommand, root);
+    for (const agent of proposal.agents) {
+      const rendered = renderAgentFromProposal(agent);
+      try {
+        const parsed = parseFrontmatter(rendered, `.agents/agents/${agent.name}.md`);
+        const validated = AgentFrontmatterSchema.safeParse(parsed.data);
+        if (!validated.success) {
+          throw new Error('frontmatter does not match the agent schema');
+        }
+      } catch (error) {
+        throw new ConfigError(
+          `AI proposal agent ${agent.name} is not a valid agent definition: ${error instanceof Error ? error.message : String(error)}`,
+          'ai.invalid-proposal',
+          { hint: 'Retry dab init --ai; the proposal must serialize to valid agent frontmatter.' },
+        );
+      }
+    }
     options.onProposal?.(formatProposal(scan, proposal));
 
     const proposalTargets = new Map<string, string>();
@@ -392,7 +527,8 @@ export async function runInit(options: InitOptions, io: InitIO): Promise<number>
   try {
     const result = await initializeProject({
       ...options,
-      onProposal: options.onProposal ?? (options.json === true ? undefined : io.stdout),
+      onProposal: options.onProposal
+        ?? (options.json === true ? (text: string) => io.stderr(text) : io.stdout),
     });
     if (options.json === true) {
       io.stdout(stableJson(result));

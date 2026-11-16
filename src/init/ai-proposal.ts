@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { CommandRunner } from '../core/command.ts';
 import { ConfigError } from '../core/errors.ts';
 import { KEBAB_CASE } from '../model/schemas.ts';
-import { renderAgentsMd } from './templates.ts';
+import { renderAgentFromProposal, renderAgentsMd } from './templates.ts';
 import type { ScanResult } from './scanner.ts';
 
 export const AiProposalSchema = z
@@ -190,6 +190,12 @@ export function formatProposal(scan: ScanResult, proposal: AiProposal): string {
     lines.push('Agents:');
     for (const agent of proposal.agents) {
       lines.push(`  - ${agent.name}: ${agent.description}`);
+    }
+    for (const agent of proposal.agents) {
+      lines.push(`+++ .agents/agents/${agent.name}.md`);
+      for (const line of renderAgentFromProposal(agent).split('\n')) {
+        lines.push(`+${line}`);
+      }
     }
   } else {
     lines.push('Agents: none');

@@ -1,8 +1,14 @@
 import { extname, join, relative } from 'node:path';
-import { readdir } from 'node:fs/promises';
+import { readdir, realpath } from 'node:fs/promises';
 import type { Diagnostic } from '../core/diagnostics.ts';
-import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
-import { assertRelativePath, resolveInside, toPosix } from '../core/paths.ts';
+import { lstatOrNull } from '../core/fs-atomic.ts';
+import {
+  assertRealPathInsideRoot,
+  assertRelativePath,
+  isPathInside,
+  resolveInside,
+  toPosix,
+} from '../core/paths.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
 import { HookSpecSchema } from './schemas.ts';
@@ -49,6 +55,17 @@ export async function discoverHooks(
         severity: 'warning',
         message: `hook directory ${entry.name} has no hook.yaml`,
         file: toPosix(relative(root, hookDir)),
+      });
+      continue;
+    }
+    try {
+      await assertRealPathInsideRoot(root, metadataFile);
+    } catch (error) {
+      diagnostics.push({
+        code: DiagnosticCodes.hookInvalid,
+        severity: 'error',
+        message: `hook metadata cannot be resolved safely: ${error instanceof Error ? error.message : String(error)}`,
+        file: metadataFile,
       });
       continue;
     }
@@ -109,11 +126,42 @@ export async function discoverHooks(
       });
       continue;
     }
-    if ((await lstatOrNull(entryPath)) === null) {
+    const entryInfo = await lstatOrNull(entryPath);
+    if (entryInfo === null) {
       diagnostics.push({
         code: DiagnosticCodes.hookMissingEntry,
         severity: 'error',
         message: `hook entry does not exist: ${spec.entry}`,
+        file: metadataFile,
+      });
+      continue;
+    }
+    if (!entryInfo.isFile()) {
+      diagnostics.push({
+        code: DiagnosticCodes.hookEntry,
+        severity: 'error',
+        message: `hook entry must be a regular file: ${spec.entry}`,
+        file: metadataFile,
+      });
+      continue;
+    }
+    try {
+      const realEntry = await realpath(entryPath);
+      const realHookDir = await realpath(hookDir);
+      if (!isPathInside(realHookDir, realEntry)) {
+        diagnostics.push({
+          code: DiagnosticCodes.hookEntry,
+          severity: 'error',
+          message: `hook entry escapes its hook directory: ${spec.entry}`,
+          file: metadataFile,
+        });
+        continue;
+      }
+    } catch (error) {
+      diagnostics.push({
+        code: DiagnosticCodes.hookEntry,
+        severity: 'error',
+        message: `hook entry cannot be resolved safely: ${error instanceof Error ? error.message : String(error)}`,
         file: metadataFile,
       });
       continue;

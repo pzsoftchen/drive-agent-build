@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { runDetect } from '../src/commands/detect.ts';
+import { normalizeProject } from '../src/commands/normalize.ts';
 import { renderClaudeMdShim, discoverProjections } from '../src/adapter/claude-code/projection.ts';
 import type { CommandRunner } from '../src/core/command.ts';
 import { runCommand } from '../src/core/command.ts';
@@ -14,6 +15,20 @@ const fakeRunner: CommandRunner = async () => ({
   stdout: '2.1.325 (Claude Code)\n',
   stderr: '',
   exitCode: 0,
+});
+
+beforeAll(async () => {
+  if (
+    (await lstatOrNull(join(root, '.claude/settings.json'))) === null
+    || (await lstatOrNull(join(root, '.claude/CLAUDE.md'))) === null
+  ) {
+    const result = await normalizeProject({ cwd: root });
+    if (!result.ok) {
+      throw new Error(
+        `self-test normalize failed: ${result.diagnostics.map((item) => item.code).join(', ')}`,
+      );
+    }
+  }
 });
 
 describe('DAB dogfood', () => {

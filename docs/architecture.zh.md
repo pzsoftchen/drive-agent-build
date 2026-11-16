@@ -70,3 +70,4 @@ execute:
 - DAB 不导入 Claude Code 内部实现。
 - DAB 从不编辑 `.claude/settings.local.json`。
 - 无法表达的 provider 语义会显式失败，而不是静默扩大权限。
+- v0.1 只接受默认的 `.agents` 和 `.claude` 路径。

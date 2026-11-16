@@ -1,7 +1,7 @@
 import { join, relative } from 'node:path';
-import { ConfigError } from '../core/errors.ts';
+import { ConfigError, ValidationError } from '../core/errors.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
-import { toPosix } from '../core/paths.ts';
+import { assertRealPathInsideRoot, toPosix } from '../core/paths.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
 import { ClaudeCodePolicySchema, PolicySpecSchema } from './schemas.ts';
 import type { ClaudeCodePolicy, PolicySpec, ProjectPaths } from './types.ts';
@@ -40,11 +40,13 @@ export async function loadPolicySources(paths: ProjectPaths): Promise<LoadedPoli
 
   await requireFile(projectAbsolute, projectPath);
   await requireFile(adapterAbsolute, adapterPath);
+  await assertRealPathInsideRoot(paths.root, projectPath);
+  await assertRealPathInsideRoot(paths.root, adapterPath);
 
   const projectDocument = await loadYamlDocument(projectAbsolute);
   const project = PolicySpecSchema.safeParse(projectDocument.toJS());
   if (!project.success) {
-    throw new ConfigError(
+    throw new ValidationError(
       `invalid ${projectPath}: ${zodMessage(project.error)}`,
       'policy.invalid',
       { details: project.error.issues },
@@ -54,7 +56,7 @@ export async function loadPolicySources(paths: ProjectPaths): Promise<LoadedPoli
   const adapterDocument = await loadYamlDocument(adapterAbsolute);
   const adapter = ClaudeCodePolicySchema.safeParse(adapterDocument.toJS());
   if (!adapter.success) {
-    throw new ConfigError(
+    throw new ValidationError(
       `invalid ${adapterPath}: ${zodMessage(adapter.error)}`,
       'policy.invalid',
       { details: adapter.error.issues },

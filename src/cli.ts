@@ -155,6 +155,7 @@ async function dispatchNormalize(
       fix: rest.includes('--fix'),
       json,
       platform: process.platform,
+      ...(ctx.runner === undefined ? {} : { runner: ctx.runner }),
     },
     { stdout: ctx.stdout, stderr: ctx.stderr },
   );

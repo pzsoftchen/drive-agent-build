@@ -1,5 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import type { CommandRunner } from '../core/command.ts';
 import {
   formatDiagnostics,
   hasErrors,
@@ -12,7 +13,15 @@ import { backupPath, lstatOrNull, readTextFile, writeFileAtomic } from '../core/
 import { DAB_GITIGNORE_ENTRIES, ensureGitignoreBlock } from '../core/gitignore.ts';
 import { sha256 } from '../core/hash.ts';
 import { stableJson } from '../core/json.ts';
-import { assertParentInsideRoot, toPosix } from '../core/paths.ts';
+import {
+  assertParentInsideRoot,
+  assertRealPathInsideRoot,
+  assertRealPathsDisjoint,
+  isPathInside,
+  realPathNearest,
+  toPosix,
+} from '../core/paths.ts';
+import { checkClaudeCode } from '../adapter/claude-code/version.ts';
 import { compilePolicy } from '../adapter/claude-code/policy-compile.ts';
 import {
   applyClaudeMdShim,
@@ -25,6 +34,8 @@ import {
   type ProjectionAction,
 } from '../adapter/claude-code/projection.ts';
 import { renderSettings } from '../adapter/claude-code/settings.ts';
+import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
+import { discoverAgents } from '../model/agents.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { loadPolicySources } from '../model/policy.ts';
@@ -33,7 +44,7 @@ import {
   resolveProjectPaths,
   updateGeneratedManifest,
 } from '../model/project-manifest.ts';
-import type { GeneratedManifest, ProjectManifest } from '../model/types.ts';
+import type { GeneratedManifest, ProjectManifest, Projection } from '../model/types.ts';
 
 export interface NormalizeOptions {
   cwd: string;
@@ -42,6 +53,7 @@ export interface NormalizeOptions {
   json?: boolean;
   platform?: NodeJS.Platform;
   now?: Date;
+  runner?: CommandRunner;
 }
 
 export interface NormalizeIO {
@@ -77,6 +89,28 @@ export interface NormalizeResult {
   manifestUpdated: boolean;
 }
 
+function dedupeDiagnostics(items: readonly Diagnostic[]): Diagnostic[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = [item.code, item.severity, item.file ?? '', item.line ?? '', item.message].join('|');
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function errorDiagnostic(error: DabError, file = 'dab.yaml'): Diagnostic {
+  return {
+    code: error.code,
+    severity: 'error',
+    message: error.message,
+    file,
+    ...(error.hint === undefined ? {} : { hint: error.hint }),
+  };
+}
+
 function blockedResult(
   options: NormalizeOptions,
   diagnostics: Diagnostic[],
@@ -84,14 +118,15 @@ function blockedResult(
     actions?: ProjectionAction[];
     shimAction?: ClaudeMdPlan['action'];
     settings?: NormalizeResult['settings'];
+    exitCode?: ExitCode;
   } = {},
 ): NormalizeResult {
   return {
     ok: false,
     dryRun: options.dryRun === true,
-    exitCode: ExitCode.Validation,
+    exitCode: extras.exitCode ?? ExitCode.Validation,
     actions: extras.actions ?? [],
-    diagnostics: sortDiagnostics(diagnostics),
+    diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
     settings: extras.settings ?? {
       path: '.claude/settings.json',
       sha256: '',
@@ -157,12 +192,16 @@ async function applySettings(
   }
   const absolute = join(root, plan.path);
   await assertParentInsideRoot(root, plan.path);
-  if (plan.action === 'create') {
-    await writeFileAtomic(absolute, expected);
-    return [];
-  }
   const info = await lstatOrNull(absolute);
   const backups: string[] = [];
+  if (plan.action === 'create') {
+    if (info !== null) {
+      backups.push(await backupPath(root, plan.path, backupRoot));
+      await rm(absolute, { recursive: true, force: true });
+    }
+    await writeFileAtomic(absolute, expected);
+    return backups;
+  }
   if (info !== null) {
     backups.push(await backupPath(root, plan.path, backupRoot));
     await rm(absolute, { recursive: true, force: true });
@@ -184,6 +223,70 @@ function withFixWarning(item: Diagnostic): Diagnostic {
   };
 }
 
+async function assertSourceTreesSafe(root: string): Promise<void> {
+  await assertRealPathInsideRoot(root, '.claude');
+  await assertRealPathInsideRoot(root, '.agents');
+  await assertRealPathsDisjoint(root, '.agents', '.claude');
+  for (const directory of [
+    '.agents/agents',
+    '.agents/skills',
+    '.agents/rules',
+    '.agents/policies',
+    '.agents/adapters',
+    '.agents/hooks',
+    '.agents/memory',
+    '.agents/notes',
+    '.claude/agents',
+    '.claude/skills',
+    '.claude/rules',
+  ]) {
+    await assertRealPathInsideRoot(root, directory);
+  }
+}
+
+async function projectionOverlapDiagnostics(
+  root: string,
+  projections: readonly Projection[],
+  generated: GeneratedManifest | undefined,
+): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
+  const agentsExists = (await lstatOrNull(join(root, '.agents'))) !== null;
+  const realAgents = agentsExists ? await realPathNearest(root, '.agents') : undefined;
+  const sourceReals = new Set<string>();
+  for (const projection of projections) {
+    sourceReals.add(await realPathNearest(root, projection.source));
+  }
+
+  const all = [...projections, ...(generated?.projections ?? [])];
+  const seen = new Set<string>();
+  for (const projection of all) {
+    if (seen.has(projection.target)) {
+      continue;
+    }
+    seen.add(projection.target);
+    const targetInfo = await lstatOrNull(join(root, projection.target));
+    if (targetInfo?.isSymbolicLink() === true) {
+      // A projection symlink is safe to replace: replaceSymlink never
+      // follows or deletes the target it points at.
+      continue;
+    }
+    const realTarget = await realPathNearest(root, projection.target);
+    if (
+      sourceReals.has(realTarget)
+      || (realAgents !== undefined && isPathInside(realAgents, realTarget))
+    ) {
+      diagnostics.push({
+        code: 'path.overlap',
+        severity: 'error',
+        message: `generated target overlaps an authored source: ${projection.target}`,
+        file: projection.target,
+        hint: 'Use the default disjoint .agents and .claude trees.',
+      });
+    }
+  }
+  return diagnostics;
+}
+
 export async function normalizeProject(options: NormalizeOptions): Promise<NormalizeResult> {
   const platform = options.platform ?? process.platform;
   if (platform === 'win32') {
@@ -197,17 +300,41 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const root = resolve(options.cwd);
   const loaded = await loadProjectManifest(root);
   const paths = resolveProjectPaths(root, loaded.manifest);
-  await assertParentInsideRoot(root, '.claude/settings.json');
-  await assertParentInsideRoot(root, '.agents/policies/project.yaml');
   const diagnostics: Diagnostic[] = [];
 
+  try {
+    await assertSourceTreesSafe(root);
+  } catch (error) {
+    if (error instanceof DabError) {
+      return blockedResult(options, [errorDiagnostic(error)]);
+    }
+    throw error;
+  }
+
+  const backend = await checkClaudeCode(loaded.manifest.target.minVersion, options.runner);
+  diagnostics.push(...backend.diagnostics);
+  if (backend.diagnostics.some(
+    (item) => item.code === 'backend.version' && item.severity === 'error',
+  )) {
+    return blockedResult(options, diagnostics, { exitCode: ExitCode.Backend });
+  }
+
   const discovered = await discoverProjections(root, paths);
+  const agents = await discoverAgents(root, paths.agents);
+  const hooks = await discoverHooks(root, paths.agents);
   diagnostics.push(...discovered.diagnostics);
+  diagnostics.push(...agents.diagnostics);
+  diagnostics.push(...hooks.diagnostics);
+  diagnostics.push(...checkAgentHookIds(agents.items, hooks.items));
+  diagnostics.push(...await checkHookSafety(hooks.items));
+  diagnostics.push(...await checkSecrets(root, paths));
+  diagnostics.push(...await projectionOverlapDiagnostics(
+    root,
+    discovered.projections,
+    loaded.manifest.generated,
+  ));
 
   const policies = await loadPolicySources(paths);
-  const hooks = await discoverHooks(root, paths.agents);
-  diagnostics.push(...hooks.diagnostics);
-
   const compiled = compilePolicy(policies.project, policies.adapter, hooks.items);
   diagnostics.push(...compiled.diagnostics);
 
@@ -274,10 +401,11 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const backupRoot = backupRootFor(root, options.now ?? new Date());
   const projectionApplied = await applyProjectionActions(root, projectionPlan.actions, {
     backupRoot,
+    sourceRoot: '.agents',
   });
   const backups = [...projectionApplied.backups];
 
-  await applyClaudeMdShim(root, shimPlan.action, { backupRoot });
+  backups.push(...await applyClaudeMdShim(root, shimPlan.action, { backupRoot }));
   backups.push(...(await applySettings(root, settingsPlan, settingsContent, backupRoot)));
 
   const shimRemoved = shimPlan.action === 'remove' || shimPlan.action === 'backup-and-remove';
@@ -306,7 +434,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     dryRun: false,
     exitCode: ExitCode.Ok,
     actions: projectionPlan.actions,
-    diagnostics: sortDiagnostics(diagnostics),
+    diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
     settings: settingsResult,
     shimAction: shimPlan.action,
     backups,
