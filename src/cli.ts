@@ -25,7 +25,7 @@ export interface CliContext {
 const HELP = `dab ${PROGRAM_VERSION} - Drive Agent as Builder
 
 Usage:
-  dab init [path] [--profile feature] [--ai] [--json]
+  dab init [path] [--profile feature] [--ai] [--dry-run] [--json]
   dab detect [--json]
   dab normalize [--dry-run] [--fix] [--json]
   dab policy explain [--agent <name>] [--json]
@@ -60,17 +60,23 @@ interface InitArguments {
   path?: string;
   profile: 'feature';
   ai: boolean;
+  dryRun: boolean;
 }
 
 function parseInitArgs(rest: string[]): InitArguments {
   let profile = 'feature';
   let ai = false;
+  let dryRun = false;
   let targetPath: string | undefined;
 
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index] ?? '';
     if (arg === '--ai') {
       ai = true;
+      continue;
+    }
+    if (arg === '--dry-run') {
+      dryRun = true;
       continue;
     }
     if (arg === '--profile') {
@@ -97,7 +103,12 @@ function parseInitArgs(rest: string[]): InitArguments {
       'usage.invalid-profile',
     );
   }
-  return { ...(targetPath === undefined ? {} : { path: targetPath }), profile: 'feature', ai };
+  return {
+    ...(targetPath === undefined ? {} : { path: targetPath }),
+    profile: 'feature',
+    ai,
+    dryRun,
+  };
 }
 
 async function promptConfirm(question: string): Promise<boolean> {
@@ -122,8 +133,9 @@ async function dispatchInit(
       ...(parsed.path === undefined ? {} : { path: parsed.path }),
       profile: parsed.profile,
       ai: parsed.ai,
+      dryRun: parsed.dryRun,
       json,
-      ...(parsed.ai && process.stdin.isTTY ? { confirm: promptConfirm } : {}),
+      ...(parsed.ai && !parsed.dryRun && process.stdin.isTTY ? { confirm: promptConfirm } : {}),
       ...(ctx.runner === undefined ? {} : { runner: ctx.runner }),
     },
     { stdout: ctx.stdout, stderr: ctx.stderr },

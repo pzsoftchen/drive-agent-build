@@ -7,10 +7,10 @@
 ## `dab init`
 
 ```bash
-dab init [path] [--profile feature] [--ai]
+dab init [path] [--profile feature] [--ai] [--dry-run]
 ```
 
-扫描仓库，写入缺失的编写文件，然后运行 normalize。已有编写文件会被跳过。`--ai` 让 Claude Code 生成提案，确认后才写入。
+扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。未受管的 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。`--dry-run` 预览编写文件写入和 pending 冲突，不写入任何内容。`--ai` 让 Claude Code 生成提案，确认后才写入；不能与 `--dry-run` 同时使用。
 
 ## `dab detect`
 

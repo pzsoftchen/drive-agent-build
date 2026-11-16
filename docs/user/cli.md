@@ -7,10 +7,10 @@ The public command is `dab`. All commands support `--json`, and exit codes disti
 ## `dab init`
 
 ```bash
-dab init [path] [--profile feature] [--ai]
+dab init [path] [--profile feature] [--ai] [--dry-run]
 ```
 
-Scans the repository, writes missing authored files, then runs normalize. Existing authored files are skipped. `--ai` asks Claude Code for a proposal and writes only after confirmation.
+Scans the repository and writes missing authored files. Authored conflicts stop before writes. Unmanaged `.claude` conflicts are reported as pending and left to `dab normalize --fix`. `--dry-run` previews authored writes and pending conflicts without writing. `--ai` asks Claude Code for a proposal and writes only after confirmation; it cannot be combined with `--dry-run`.
 
 ## `dab detect`
 

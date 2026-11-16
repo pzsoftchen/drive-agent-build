@@ -50,6 +50,7 @@ export interface InitOptions {
   path?: string;
   profile?: 'feature';
   ai?: boolean;
+  dryRun?: boolean;
   json?: boolean;
   confirm?: (question: string) => Promise<boolean>;
   runner?: CommandRunner;
@@ -61,9 +62,11 @@ export interface InitResult {
   ok: boolean;
   exitCode: ExitCode;
   root: string;
+  dryRun: boolean;
   created: string[];
   skipped: string[];
   conflicts: Diagnostic[];
+  pending: Diagnostic[];
   diagnostics: Diagnostic[];
   normalize: NormalizeResult | null;
   ai?: {
@@ -81,16 +84,29 @@ function blocked(
   root: string,
   diagnostics: Diagnostic[],
   conflicts: Diagnostic[],
+  dryRun = false,
 ): InitResult {
   return {
     ok: false,
     exitCode: ExitCode.Validation,
     root,
+    dryRun,
     created: [],
     skipped: [],
     conflicts,
+    pending: [],
     diagnostics,
     normalize: null,
+  };
+}
+
+function pendingDiagnostic(item: Diagnostic): Diagnostic {
+  return {
+    ...item,
+    severity: 'warning',
+    hint: [item.hint, 'Run dab normalize --dry-run, then dab normalize --fix.']
+      .filter((value): value is string => value !== undefined && value.length > 0)
+      .join(' '),
   };
 }
 
@@ -104,17 +120,21 @@ function manifestConflict(): Diagnostic {
   };
 }
 
-async function findInitConflicts(
+async function findAuthoredConflicts(root: string): Promise<Diagnostic[]> {
+  const conflicts: Diagnostic[] = [];
+  if ((await lstatOrNull(join(root, 'CLAUDE.md'))) !== null) {
+    conflicts.push(manifestConflict());
+  }
+  return conflicts;
+}
+
+async function findGeneratedConflicts(
   root: string,
   paths: ProjectPaths,
   manifest: ProjectManifest | undefined,
   targets: ReadonlyMap<string, string>,
 ): Promise<Diagnostic[]> {
   const conflicts: Diagnostic[] = [];
-
-  if ((await lstatOrNull(join(root, 'CLAUDE.md'))) !== null) {
-    conflicts.push(manifestConflict());
-  }
 
   const settingsPath = join(paths.claude, 'settings.json');
   if (
@@ -287,6 +307,22 @@ async function writeIfMissing(
   created.push(relativePath);
 }
 
+async function planFileWrites(
+  root: string,
+  files: Readonly<Record<string, string>>,
+): Promise<{ created: string[]; skipped: string[] }> {
+  const created: string[] = [];
+  const skipped: string[] = [];
+  for (const relativePath of Object.keys(files).sort()) {
+    if ((await lstatOrNull(join(root, relativePath))) === null) {
+      created.push(relativePath);
+    } else {
+      skipped.push(relativePath);
+    }
+  }
+  return { created, skipped };
+}
+
 function targetMap(existing: readonly Projection[]): Map<string, string> {
   const targets = new Map<string, string>();
   for (const projection of existing) {
@@ -309,16 +345,16 @@ async function resolveRoot(options: InitOptions): Promise<string> {
       'config.not-directory',
     );
   }
-  if (info === null) {
+  if (info === null && options.dryRun !== true) {
     await mkdir(root, { recursive: true });
   }
   return root;
 }
 
 function formatInit(result: InitResult): string {
-  const lines = [`dab init ${result.root}`];
+  const lines = [`dab init ${result.root}${result.dryRun ? ' (dry run)' : ''}`];
   if (result.created.length > 0) {
-    lines.push('created:');
+    lines.push(result.dryRun ? 'would create:' : 'created:');
     for (const file of result.created) {
       lines.push(`  ${file}`);
     }
@@ -335,7 +371,22 @@ function formatInit(result: InitResult): string {
   if (result.normalize !== null) {
     lines.push(`normalize: ${result.normalize.ok ? 'ok' : 'failed'}`);
   }
-  const diagnostics = formatDiagnostics(result.diagnostics);
+  if (result.pending.length > 0) {
+    lines.push('pending generated conflicts:');
+    for (const item of result.pending) {
+      lines.push(`  ${item.file ?? '-'} ${item.code} ${item.message}`);
+    }
+    lines.push('next: dab normalize --dry-run');
+    lines.push('next: dab normalize --fix');
+  }
+  const pendingKeys = new Set(
+    result.pending.map((item) => `${item.code}|${item.file ?? ''}|${item.line ?? ''}`),
+  );
+  const diagnostics = formatDiagnostics(
+    result.diagnostics.filter(
+      (item) => !pendingKeys.has(`${item.code}|${item.file ?? ''}|${item.line ?? ''}`),
+    ),
+  );
   if (diagnostics.length > 0) {
     lines.push(diagnostics.trimEnd());
   }
@@ -356,6 +407,14 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     throw new UsageError(
       `unsupported profile: ${options.profile}; v0.1 supports: feature`,
       'usage.invalid-profile',
+    );
+  }
+
+  if (options.ai === true && options.dryRun === true) {
+    throw new UsageError(
+      '--ai cannot be combined with --dry-run',
+      'usage.ai-dry-run',
+      { hint: 'Run dab init --dry-run for a preview, then dab init --ai interactively.' },
     );
   }
 
@@ -402,14 +461,24 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         message: error.message,
         file: 'dab.yaml',
       });
-      return blocked(root, [...scan.diagnostics, ...safety], safety);
+      return blocked(root, [...scan.diagnostics, ...safety], safety, options.dryRun === true);
     }
     throw error;
   }
 
+  const authoredConflicts = await findAuthoredConflicts(root);
   const authored = await validateExistingAuthored(root, paths);
-  if (authored.some((item) => item.severity === 'error')) {
-    return blocked(root, [...scan.diagnostics, ...authored], []);
+  const authoredErrors = [
+    ...authoredConflicts,
+    ...authored.filter((item) => item.severity === 'error'),
+  ];
+  if (authoredErrors.length > 0) {
+    return blocked(
+      root,
+      [...scan.diagnostics, ...authoredErrors],
+      authoredErrors,
+      options.dryRun === true,
+    );
   }
 
   let existingProjections: Projection[] = [];
@@ -417,15 +486,14 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     const existing = await discoverProjections(root, paths);
     const errors = existing.diagnostics.filter((item) => item.severity === 'error');
     if (errors.length > 0) {
-      return blocked(root, [...scan.diagnostics, ...existing.diagnostics], []);
+      return blocked(
+        root,
+        [...scan.diagnostics, ...existing.diagnostics],
+        errors,
+        options.dryRun === true,
+      );
     }
     existingProjections = existing.projections;
-  }
-
-  const targets = targetMap(existingProjections);
-  const conflicts = await findInitConflicts(root, paths, existingManifest?.manifest, targets);
-  if (conflicts.length > 0) {
-    return blocked(root, [...scan.diagnostics, ...conflicts], conflicts);
   }
 
   let proposal: AiProposal | undefined;
@@ -457,32 +525,17 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     }
     options.onProposal?.(formatProposal(scan, proposal));
 
-    const proposalTargets = new Map<string, string>();
-    for (const agent of proposal.agents) {
-      proposalTargets.set(
-        `.claude/agents/${agent.name}.md`,
-        `.agents/agents/${agent.name}.md`,
-      );
-    }
-    const aiConflicts = await findInitConflicts(
-      root,
-      paths,
-      existingManifest?.manifest,
-      proposalTargets,
-    );
-    if (aiConflicts.length > 0) {
-      return blocked(root, [...scan.diagnostics, ...aiConflicts], aiConflicts);
-    }
-
     const approved = await options.confirm('Apply this AI proposal? [y/N] ');
     if (!approved) {
       return {
         ok: true,
         exitCode: ExitCode.Ok,
         root,
+        dryRun: false,
         created: [],
         skipped: [],
         conflicts: [],
+        pending: [],
         diagnostics: scan.diagnostics,
         normalize: null,
         ai: { applied: false, proposal },
@@ -491,32 +544,77 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     aiApplied = true;
   }
 
+  const files = templateFiles(scan, proposal?.agentsMdAddition);
+  for (const agent of proposal?.agents ?? []) {
+    files[`.agents/agents/${agent.name}.md`] = renderAgentFromProposal(agent);
+  }
+
+  const targets = targetMap(existingProjections);
+  for (const agent of proposal?.agents ?? []) {
+    targets.set(`.claude/agents/${agent.name}.md`, `.agents/agents/${agent.name}.md`);
+  }
+  const generatedConflicts = await findGeneratedConflicts(
+    root,
+    paths,
+    existingManifest?.manifest,
+    targets,
+  );
+  const pending = generatedConflicts.map(pendingDiagnostic);
+
+  if (options.dryRun === true) {
+    const preview = await planFileWrites(root, files);
+    return {
+      ok: true,
+      exitCode: ExitCode.Ok,
+      root,
+      dryRun: true,
+      created: preview.created,
+      skipped: preview.skipped,
+      conflicts: [],
+      pending,
+      diagnostics: [...scan.diagnostics, ...pending],
+      normalize: null,
+      ...(proposal === undefined ? {} : { ai: { applied: false, proposal } }),
+    };
+  }
+
   const created: string[] = [];
   const skipped: string[] = [];
-  const files = templateFiles(scan, proposal?.agentsMdAddition);
   for (const file of Object.keys(files).sort()) {
     await writeIfMissing(root, file, files[file] ?? '', created, skipped);
   }
-  for (const agent of proposal?.agents ?? []) {
-    await writeIfMissing(
-      root,
-      `.agents/agents/${agent.name}.md`,
-      renderAgentFromProposal(agent),
-      created,
-      skipped,
-    );
-  }
   await ensureDir(join(paths.agents, 'notes'));
 
-  const normalize = await normalizeProject({ cwd: root });
+  if (pending.length > 0) {
+    return {
+      ok: true,
+      exitCode: ExitCode.Ok,
+      root,
+      dryRun: false,
+      created,
+      skipped,
+      conflicts: [],
+      pending,
+      diagnostics: [...scan.diagnostics, ...pending],
+      normalize: null,
+      ...(proposal === undefined ? {} : { ai: { applied: aiApplied, proposal } }),
+    };
+  }
+
+  const normalize = await normalizeProject({
+    cwd: root,
+    ...(options.runner === undefined ? {} : { runner: options.runner }),
+  });
   const diagnostics = [...scan.diagnostics, ...normalize.diagnostics];
   return {
     ok: normalize.ok,
     exitCode: normalize.exitCode,
     root,
+    dryRun: false,
     created,
     skipped,
     conflicts: [],
+    pending: [],
     diagnostics,
     normalize,
     ...(proposal === undefined ? {} : { ai: { applied: aiApplied, proposal } }),

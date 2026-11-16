@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInit } from '../../src/commands/init.ts';
+import { normalizeProject } from '../../src/commands/normalize.ts';
 import { renderClaudeMdShim } from '../../src/adapter/claude-code/projection.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
@@ -95,7 +96,7 @@ describe('runInit', () => {
     expect(payload.skipped).toContain('AGENTS.md');
   });
 
-  it('aborts without writes on an unmanaged settings file', async () => {
+  it('writes authored files and leaves unmanaged settings pending', async () => {
     const root = await tempDir();
     await mkdir(join(root, '.claude'));
     await writeFile(join(root, '.claude/settings.json'), '{"permissions":{}}\n');
@@ -103,19 +104,22 @@ describe('runInit', () => {
 
     const code = await runInit({ cwd: root, json: true }, captureResult.io);
 
-    expect(code).toBe(3);
+    expect(code).toBe(0);
     const payload = JSON.parse(captureResult.stdout.join('')) as {
       ok: boolean;
-      conflicts: Array<{ code: string }>;
+      dryRun: boolean;
+      pending: Array<{ code: string }>;
     };
-    expect(payload.ok).toBe(false);
-    expect(payload.conflicts.map((item) => item.code)).toContain('claude-settings.unmanaged');
-    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
-    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
-    expect(await lstatOrNull(join(root, '.agents'))).toBeNull();
+    expect(payload.ok).toBe(true);
+    expect(payload.dryRun).toBe(false);
+    expect(payload.pending.map((item) => item.code)).toContain('claude-settings.unmanaged');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).not.toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).not.toBeNull();
+    expect(await lstatOrNull(join(root, '.agents'))).not.toBeNull();
     expect(await readFile(join(root, '.claude/settings.json'), 'utf8')).toBe(
       '{"permissions":{}}\n',
     );
+    expect(await lstatOrNull(join(root, '.claude/CLAUDE.md'))).toBeNull();
   });
 
   it('aborts without writes on an unmanaged root CLAUDE.md', async () => {
@@ -132,7 +136,7 @@ describe('runInit', () => {
     expect(await readFile(join(root, 'CLAUDE.md'), 'utf8')).toBe('# user instructions\n');
   });
 
-  it('aborts without writes on an unmanaged .claude/CLAUDE.md', async () => {
+  it('writes authored files and leaves an unmanaged .claude/CLAUDE.md pending', async () => {
     const root = await tempDir();
     await packageJson(root);
     await mkdir(join(root, '.claude'));
@@ -141,10 +145,100 @@ describe('runInit', () => {
 
     const code = await runInit({ cwd: root, json: true }, captureResult.io);
 
-    expect(code).toBe(3);
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      ok: boolean;
+      pending: Array<{ code: string }>;
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.pending.map((item) => item.code)).toContain('claude-md.unmanaged');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).not.toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).not.toBeNull();
+    expect(await readFile(join(root, '.claude/CLAUDE.md'), 'utf8')).toBe('user memory\n');
+  });
+
+  it('previews without writing when --dry-run is used', async () => {
+    const parent = await tempDir();
+    const target = join(parent, 'new-project');
+    const captureResult = capture();
+
+    const code = await runInit(
+      { cwd: parent, path: 'new-project', dryRun: true, json: true },
+      captureResult.io,
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      ok: boolean;
+      dryRun: boolean;
+      created: string[];
+      pending: unknown[];
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.dryRun).toBe(true);
+    expect(payload.created).toEqual(expect.arrayContaining(['AGENTS.md', 'dab.yaml']));
+    expect(payload.pending).toEqual([]);
+    expect(await lstatOrNull(target)).toBeNull();
+  });
+
+  it('reports pending conflicts in --dry-run without writing', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    await mkdir(join(root, '.claude'));
+    await writeFile(join(root, '.claude/settings.json'), '{"permissions":{}}\n');
+    const captureResult = capture();
+
+    const code = await runInit({ cwd: root, dryRun: true, json: true }, captureResult.io);
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      dryRun: boolean;
+      pending: Array<{ code: string }>;
+    };
+    expect(payload.dryRun).toBe(true);
+    expect(payload.pending.map((item) => item.code)).toContain('claude-settings.unmanaged');
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
-    expect(await readFile(join(root, '.claude/CLAUDE.md'), 'utf8')).toBe('user memory\n');
+    expect(await readFile(join(root, '.claude/settings.json'), 'utf8')).toBe(
+      '{"permissions":{}}\n',
+    );
+  });
+
+  it('can be completed by normalize --fix after pending conflicts', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    await mkdir(join(root, '.claude'));
+    await writeFile(join(root, '.claude/settings.json'), '{"permissions":{}}\n');
+    await runInit({ cwd: root }, capture().io);
+
+    const normalized = await normalizeProject({
+      cwd: root,
+      fix: true,
+      now: new Date('2026-11-16T12:00:00Z'),
+    });
+
+    expect(normalized.ok).toBe(true);
+    expect(await readFile(join(root, '.claude/settings.json'), 'utf8')).not.toBe(
+      '{"permissions":{}}\n',
+    );
+    expect(await lstatOrNull(join(root, '.claude/CLAUDE.md'))).not.toBeNull();
+    expect(normalized.backups.some((item) => item.endsWith('.claude/settings.json'))).toBe(true);
+  });
+
+  it('rejects --ai with --dry-run', async () => {
+    const root = await tempDir();
+    const captureResult = capture();
+
+    const code = await runInit(
+      { cwd: root, ai: true, dryRun: true, json: true },
+      captureResult.io,
+    );
+
+    expect(code).toBe(2);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      error: { code: string };
+    };
+    expect(payload.error.code).toBe('usage.ai-dry-run');
   });
 
   it('rejects an unsupported profile without writing', async () => {

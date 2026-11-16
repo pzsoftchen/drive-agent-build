@@ -59,6 +59,9 @@ async function lstatOrNullPath(path: string): Promise<Awaited<ReturnType<typeof 
 }
 
 export async function assertParentInsideRoot(root: string, relativePath: string): Promise<void> {
+  if ((await lstatOrNullPath(root)) === null) {
+    return;
+  }
   const absolute = resolveInside(root, relativePath);
   let parent = dirname(absolute);
   let info = await lstatOrNullPath(parent);
@@ -100,6 +103,9 @@ export async function assertRealPathInsideRoot(
   root: string,
   relativePath: string,
 ): Promise<void> {
+  if ((await lstatOrNullPath(root)) === null) {
+    return;
+  }
   const realRoot = await realpath(root);
   const real = await realPathNearest(root, relativePath);
   if (!isPathInside(realRoot, real)) {
