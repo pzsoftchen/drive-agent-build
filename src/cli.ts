@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
+import { createInterface } from 'node:readline/promises';
 import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
 import { ExitCode } from './core/exit-codes.ts';
 import { stableJson } from './core/json.ts';
 import { runDetect } from './commands/detect.ts';
+import { runInit } from './commands/init.ts';
 import { runNormalize } from './commands/normalize.ts';
 
 export const PROGRAM_VERSION = '0.1.0';
@@ -53,18 +55,77 @@ function rejectUnknownOptions(args: string[], allowedFlags: string[]): void {
   }
 }
 
-function dispatchInit(rest: string[]): number {
-  rejectUnknownOptions(rest, ['--profile', '--ai']);
-  const profile = takeOption(rest, '--profile') ?? 'feature';
+interface InitArguments {
+  path?: string;
+  profile: 'feature';
+  ai: boolean;
+}
+
+function parseInitArgs(rest: string[]): InitArguments {
+  let profile = 'feature';
+  let ai = false;
+  let targetPath: string | undefined;
+
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index] ?? '';
+    if (arg === '--ai') {
+      ai = true;
+      continue;
+    }
+    if (arg === '--profile') {
+      const value = rest[index + 1];
+      if (value === undefined || value.startsWith('-')) {
+        throw new UsageError('missing value for --profile', 'usage.missing-option-value');
+      }
+      profile = value;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      throw new UsageError(`unknown option: ${arg}`, 'usage.unknown-option');
+    }
+    if (targetPath !== undefined) {
+      throw new UsageError('init accepts at most one path', 'usage.too-many-paths');
+    }
+    targetPath = arg;
+  }
+
   if (profile !== 'feature') {
     throw new UsageError(
       `unsupported profile: ${profile}; v0.1 supports: feature`,
       'usage.invalid-profile',
     );
   }
-  throw new UsageError(
-    'dab init is not available in this development build yet',
-    'usage.not-implemented',
+  return { ...(targetPath === undefined ? {} : { path: targetPath }), profile: 'feature', ai };
+}
+
+async function promptConfirm(question: string): Promise<boolean> {
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await readline.question(question);
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    readline.close();
+  }
+}
+
+async function dispatchInit(
+  rest: string[],
+  ctx: CliContext,
+  json: boolean,
+): Promise<number> {
+  const parsed = parseInitArgs(rest);
+  return runInit(
+    {
+      cwd: ctx.cwd,
+      ...(parsed.path === undefined ? {} : { path: parsed.path }),
+      profile: parsed.profile,
+      ai: parsed.ai,
+      json,
+      ...(parsed.ai && process.stdin.isTTY ? { confirm: promptConfirm } : {}),
+      ...(ctx.runner === undefined ? {} : { runner: ctx.runner }),
+    },
+    { stdout: ctx.stdout, stderr: ctx.stderr },
   );
 }
 
@@ -127,7 +188,7 @@ async function dispatch(args: string[], ctx: CliContext, json: boolean): Promise
 
   switch (command) {
     case 'init':
-      return dispatchInit(rest);
+      return dispatchInit(rest, ctx, json);
     case 'detect':
       return dispatchDetect(rest, ctx, json);
     case 'normalize':
