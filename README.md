@@ -61,8 +61,8 @@ dab detect
 - [Development](docs/development.md)
 - [CLI](docs/user/cli.md)
 - [Claude Code integration](docs/user/claude-code.md)
-- [Agent Note 0001](.agents/notes/0001-agents-source-tree.md)
-- [Agent Note 0002](.agents/notes/0002-claude-md-compat-shim.md)
+- [Agent Note 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.md)
+- [Agent Note 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.md)
 
 ## License
 

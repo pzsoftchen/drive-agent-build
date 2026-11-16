@@ -28,7 +28,9 @@ export async function listMarkdownFiles(root: string, dir = ''): Promise<string[
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
     const child = dir.length === 0 ? entry.name : `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
-      if (!SKIP_DIRECTORIES.has(entry.name)) {
+      const frozenNotes = child === '.agents/notes/archived'
+        || child.startsWith('.agents/notes/archived/');
+      if (!SKIP_DIRECTORIES.has(entry.name) && !frozenNotes) {
         files.push(...await listMarkdownFiles(root, child));
       }
     } else if (entry.isFile() && entry.name.endsWith('.md')) {

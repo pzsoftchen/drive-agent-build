@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { verifyAgentNotes } from '../../src/docs/notes.ts';
+import {
+  discoverPairedDocs,
+  verifyPairingFile,
+} from '../../src/docs/pairing.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
 const dirs: string[] = [];
@@ -12,24 +16,37 @@ async function tempDir(): Promise<string> {
   return dir;
 }
 
-function note(overrides: { status?: string; omit?: string } = {}): string {
-  const sections = [
-    'Context',
+function note(options: {
+  status?: string;
+  sections?: string[];
+  title?: string;
+  switchLine?: string;
+} = {}): string {
+  const sections = options.sections ?? [
+    'Problem',
     'Decision',
-    'Consequences',
     'Alternatives considered',
-    'Verification',
-    'References',
-  ].filter((section) => section !== overrides.omit);
-  return `---
-status: ${overrides.status ?? 'implemented'}
-date: 2026-11-16
-authors: [DAB contributors]
-review_by: 2027-05-16
----
-# Note
+    'Consequences',
+  ];
+  const status = options.status ?? 'implemented';
+  const switchLine = options.switchLine
+    ?? 'English | [中文](2026-11-16-example.zh.md)';
+  return `# Agent Note: ${options.title ?? 'Example decision'}
+
+Status: ${status}
+
+${switchLine}
 
 ${sections.map((section) => `## ${section}\n\nContent.\n`).join('\n')}`;
+}
+
+async function writeNote(
+  root: string,
+  relativePath: string,
+  content: string,
+): Promise<void> {
+  await mkdir(dirname(join(root, relativePath)), { recursive: true });
+  await writeFile(join(root, relativePath), content);
 }
 
 afterEach(async () => {
@@ -37,43 +54,147 @@ afterEach(async () => {
 });
 
 describe('verifyAgentNotes', () => {
-  it('accepts a correctly formatted note', async () => {
+  it('accepts a correctly formatted implemented note', async () => {
     const root = await tempDir();
-    await mkdir(join(root, '.agents/notes'), { recursive: true });
-    await writeFile(join(root, '.agents/notes/0001-example.md'), note());
+    await writeNote(
+      root,
+      '.agents/notes/implemented/architecture/2026-11-16-example.md',
+      note(),
+    );
 
     expect(await verifyAgentNotes(root)).toEqual([]);
   });
 
-  it('requires every lifecycle section', async () => {
+  it('requires the status to match the lifecycle folder', async () => {
     const root = await tempDir();
-    await mkdir(join(root, '.agents/notes'), { recursive: true });
-    await writeFile(
-      join(root, '.agents/notes/0001-example.md'),
-      note({ omit: 'Alternatives considered' }),
+    await writeNote(
+      root,
+      '.agents/notes/proposed/architecture/2026-11-16-example.md',
+      note({ status: 'implemented' }),
+    );
+
+    expect((await verifyAgentNotes(root)).map((item) => item.code)).toContain('note.status');
+  });
+
+  it('rejects unknown classes and date-less filenames', async () => {
+    const root = await tempDir();
+    await writeNote(
+      root,
+      '.agents/notes/implemented/not-a-class/2026-11-16-example.md',
+      note(),
+    );
+    await writeNote(
+      root,
+      '.agents/notes/implemented/architecture/0001-example.md',
+      note(),
+    );
+
+    const codes = (await verifyAgentNotes(root)).map((item) => item.code);
+    expect(codes).toContain('note.class');
+    expect(codes).toContain('note.filename');
+  });
+
+  it('requires lifecycle-specific sections', async () => {
+    const root = await tempDir();
+    await writeNote(
+      root,
+      '.agents/notes/implemented/architecture/2026-11-16-example.md',
+      note({ sections: ['Problem', 'Decision', 'Consequences'] }),
     );
 
     expect((await verifyAgentNotes(root)).map((item) => item.code)).toContain('note.section');
   });
 
-  it('rejects archived status and bad filenames', async () => {
+  it('rejects proposal-era headings in implemented notes', async () => {
     const root = await tempDir();
-    await mkdir(join(root, '.agents/notes'), { recursive: true });
-    await writeFile(join(root, '.agents/notes/bad-name.md'), note({ status: 'archived' }));
+    await writeNote(
+      root,
+      '.agents/notes/implemented/architecture/2026-11-16-example.md',
+      note({
+        sections: [
+          'Problem',
+          'Decision',
+          'Alternatives considered',
+          'Consequences',
+          'Proposal',
+        ],
+      }),
+    );
 
-    const codes = (await verifyAgentNotes(root)).map((item) => item.code);
-    expect(codes).toContain('note.status');
-    expect(codes).toContain('note.filename');
+    expect((await verifyAgentNotes(root)).map((item) => item.code)).toContain('note.section');
   });
 
-  it('rejects notes without frontmatter and ignores translations', async () => {
+  it('skips README, AGENTS, translations and archived notes', async () => {
     const root = await tempDir();
-    await mkdir(join(root, '.agents/notes'), { recursive: true });
-    await writeFile(join(root, '.agents/notes/0001-bad.md'), '## Context\n');
-    await writeFile(join(root, '.agents/notes/0001-bad.zh.md'), 'not a source\n');
+    await writeNote(root, '.agents/notes/README.md', '# Agent Notes\n');
+    await writeNote(root, '.agents/notes/AGENTS.md', '# Note instructions\n');
+    await writeNote(
+      root,
+      '.agents/notes/implemented/architecture/2026-11-16-example.zh.md',
+      'not a source note\n',
+    );
+    await writeNote(
+      root,
+      '.agents/notes/archived/architecture/2026-11-16-old.md',
+      'old format\n',
+    );
 
-    const diagnostics = await verifyAgentNotes(root);
-    expect(diagnostics.map((item) => item.code)).toContain('note.frontmatter');
-    expect(diagnostics.some((item) => item.file.endsWith('.zh.md'))).toBe(false);
+    expect(await verifyAgentNotes(root)).toEqual([]);
+  });
+});
+
+describe('Agent Note pairing', () => {
+  it('accepts a language switch after the note header', async () => {
+    const root = await tempDir();
+    const sourceRel = '.agents/notes/implemented/architecture/2026-11-16-example.md';
+    const translationRel = '.agents/notes/implemented/architecture/2026-11-16-example.zh.md';
+    await writeNote(root, sourceRel, note());
+    await writeNote(
+      root,
+      translationRel,
+      note({
+        title: '示例决策',
+        switchLine: '[English](2026-11-16-example.md) | 中文',
+        sections: ['问题', '决策', '备选方案', '后果'],
+      }),
+    );
+
+    expect(await verifyPairingFile(root, sourceRel, { write: true })).toEqual([]);
+    expect(await verifyPairingFile(root, sourceRel)).toEqual([]);
+  });
+
+  it('rejects a language switch after the first twelve lines', async () => {
+    const root = await tempDir();
+    const prefix = Array.from({ length: 13 }, (_, index) => `Line ${index + 1}.`).join('\n\n');
+    await writeNote(
+      root,
+      'docs/late.md',
+      `${prefix}\n\nEnglish | [中文](late.zh.md)\n\n# Late\n`,
+    );
+    await writeNote(
+      root,
+      'docs/late.zh.md',
+      `${prefix}\n\n[English](late.md) | 中文\n\n# 延迟\n`,
+    );
+
+    expect((await verifyPairingFile(root, 'docs/late.md')).map((item) => item.code)).toContain(
+      'doc.lang-switch',
+    );
+  });
+
+  it('does not discover archived notes for pairing', async () => {
+    const root = await tempDir();
+    await writeNote(
+      root,
+      '.agents/notes/archived/architecture/2026-11-16-old.md',
+      '# Old\n',
+    );
+    await writeNote(
+      root,
+      '.agents/notes/archived/architecture/2026-11-16-old.zh.md',
+      '# 旧\n',
+    );
+
+    expect(await discoverPairedDocs(root)).toEqual([]);
   });
 });

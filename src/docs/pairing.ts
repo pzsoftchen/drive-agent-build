@@ -81,6 +81,7 @@ const EXCLUDED_PREFIXES = [
   '.agents/hooks/',
   '.agents/policies/',
   '.agents/adapters/',
+  '.agents/notes/archived/',
   'docs/i18n/',
 ];
 
@@ -235,18 +236,21 @@ async function readDoc(
   const split = extractFrontmatter(text);
   const lines = split.body.split('\n');
   const firstContent = lines.findIndex((line) => line.trim().length > 0);
+  const searchLimit = Math.min(lines.length, 12);
+  const switchIndex = lines
+    .slice(0, searchLimit)
+    .findIndex((line) => line.trim() === expectedSwitch);
   let switchError: Diagnostic | undefined;
-  if (firstContent === -1 || lines[firstContent]?.trim() !== expectedSwitch) {
+  if (switchIndex === -1) {
     switchError = {
       code: 'doc.lang-switch',
       severity: 'error',
-      message: `missing or incorrect language switch; expected: ${expectedSwitch}`,
+      message: `missing or incorrect language switch in the first 12 lines; expected: ${expectedSwitch}`,
       file: relativeFile,
       line: split.bodyStartLine + Math.max(0, firstContent),
     };
-  }
-  if (firstContent !== -1) {
-    lines[firstContent] = '';
+  } else {
+    lines[switchIndex] = '';
   }
   return {
     text,

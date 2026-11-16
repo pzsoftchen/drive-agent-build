@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-16-agents-source-tree.md
+translation: .agents/notes/implemented/architecture/2026-11-16-agents-source-tree.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: 59e6f7742bd937d96bf548294096146bb6467adc90dfe30fef5603ea22f350f7
+    translation: 166533501e7d6c91b98773d2ce211db296dcbbe3f250a7466b81e843d86347c7
+  - index: 2
+    level: 2
+    source: 53dc219ab1fb56d97a360018a6b75ce0a5dd1f21fe20db9bf259cc90ecc931f8
+    translation: cab62d16463293fa185c77afe6e8617a8149b9b3b2a7014693fb0c7eb1be0cba
+  - index: 3
+    level: 2
+    source: 06b92c4d2d52dc3a0f899bdecb0fb1c4dc544e19fb85f41890f0765f08787f54
+    translation: 6d4c037d2b950715bedaa509e3fa0614cf42bab15226cf7383a0650a91c36c8e
+  - index: 4
+    level: 2
+    source: 6e05a301ab46497a649c9a33450fc90f6e6b25d46315e6a3982507a409ec1a2a
+    translation: 5df6e2fddfb962949835c6dd16750803dbe01edbdaaaf247d3d0428e1e8d8a1e
+  - index: 5
+    level: 2
+    source: fe5e531a8a275ca13854e1d392a96fd7290a89797612e18baf5d0f6ae2fee90b
+    translation: 86cf234a3675275d0bc42c4d71d0f61f3a10d9a9123eccc04306d420c4e50275
+  - index: 6
+    level: 2
+    source: c97d1f9f314c0ad1c04366275c7589d7d15813012902574f51c5141c3ec20e24
+    translation: 4557407541f07b84f5cfcd4279150aad48e6a5ae2d326b5ce17821b7b7ad1632
+  - index: 7
+    level: 2
+    source: 97741d04dc3e43af7b40b35d31df6d68f4da45429a8a41fb405e3e1207147b6f
+    translation: 75614cc4e466f7dd844705ce3029aa3abfea6b9516939509d552fa22be3b8c7f

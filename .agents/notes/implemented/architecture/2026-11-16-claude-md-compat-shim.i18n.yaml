@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.md
+translation: .agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: 1bd1d18fd26cb576e7885dcafc417ad32ce8edf74a252258f984a09573362030
+    translation: f2e47471f0e8dd29e79e429b64af92191d71a37a1d68c0c4f8385fcc8455887e
+  - index: 2
+    level: 2
+    source: d922546e40aa19d79f030dac93c12e7155864c33edb5481358607fa9c1e1d9ee
+    translation: fa0d3cb665de4525f4669d1720d63584ba8ecddeed6af38b6d79ecdfe30211a9
+  - index: 3
+    level: 2
+    source: 66aa7ade229fa6febef161e304229daf04c03136bdd33d6db6a162c85202d35e
+    translation: 5abbd5608a2d62d7daf0cb74ae91576d2da0e415b1cc072e1a8f3810ff7fbeb2
+  - index: 4
+    level: 2
+    source: 8e4fc7c44cd58e87c5f1129e5948e36de3e944b6424a931f7b39c733fa326478
+    translation: 8050a6b4f082eec847ec9ee7b1215e5c3c547f5293ffce240a47c9670217ca35
+  - index: 5
+    level: 2
+    source: d3f6c640f51be29452301970bd20468ee79caf23c1e56b4554b4a3c9bbcd7819
+    translation: 672d3d69143846f1c2207a33403612f20fe6db49591a0386c4833c874651f253
+  - index: 6
+    level: 2
+    source: cf01cca4fcba18a1a0bf5d60058ea65c36061a419d56048c0a273a6d38c23aaa
+    translation: 8b318b9492d737664c830b99551326bcc2ba00c40965e617f438053f5b8a8b08
+  - index: 7
+    level: 2
+    source: 97741d04dc3e43af7b40b35d31df6d68f4da45429a8a41fb405e3e1207147b6f
+    translation: 75614cc4e466f7dd844705ce3029aa3abfea6b9516939509d552fa22be3b8c7f

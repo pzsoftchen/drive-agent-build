@@ -1,20 +1,24 @@
----
-status: implemented
-date: 2026-11-16
-authors: [DAB contributors]
-review_by: 2027-05-16
----
-English | [中文](0001-agents-source-tree.zh.md)
+# Agent Note: AGENTS.md and .agents as the source tree
 
-# Agent Note 0001: AGENTS.md and .agents as the source tree
+Status: implemented
 
-## Context
+English | [中文](2026-11-16-agents-source-tree.zh.md)
+
+## Problem
 
 DAB manages Claude Code configuration for projects that already have code and tests. Configuration written directly into `.claude/` drifts from the documentation, and generated files are routinely edited by hand. The project needs one authored source tree and deterministic projections.
 
 ## Decision
 
 `AGENTS.md` and `.agents/` are the only authored agent configuration. `dab normalize` compiles them into `.claude/settings.json` and per-entry symlinks for agents, skills and rules. The generated `.claude/CLAUDE.md` shim imports `AGENTS.md`. Generated outputs are gitignored and never edited by hand.
+
+## Alternatives considered
+
+**Maintain `.claude/` directly.** Rejected because it creates two homes and guarantees drift.
+
+**Commit generated configuration.** Rejected because generated files would be edited by hand and diverge from source.
+
+**Use a single mutable `settings.json` as source.** Rejected because agents, skills and rules would lose their authored structure.
 
 ## Consequences
 
@@ -23,17 +27,11 @@ DAB manages Claude Code configuration for projects that already have code and te
 - Users can review the authored tree without reading generated JSON.
 - Running `dab normalize` is required after changing `.agents/`.
 
-## Alternatives considered
-
-- Maintain `.claude/` directly. Rejected because it creates two homes and guarantees drift.
-- Commit generated configuration. Rejected because generated files would be edited by hand and diverge from source.
-- Use a single mutable `settings.json` as source. Rejected because agents, skills and rules would lose their authored structure.
-
 ## Verification
 
 `pnpm test` covers projection ownership, deterministic settings, idempotent normalize and drift detection. `node dist/cli.js detect` passes on this repository. `node dist/cli.js normalize --dry-run` reports no changes.
 
-## References
+## Related
 
-- [Architecture](../../docs/architecture.md)
-- [Claude Code integration](../../docs/user/claude-code.md)
+- [Architecture](../../../../docs/architecture.md)
+- [Claude Code integration](../../../../docs/user/claude-code.md)

@@ -61,8 +61,8 @@ dab detect
 - [开发](docs/development.zh.md)
 - [CLI](docs/user/cli.zh.md)
 - [Claude Code 集成](docs/user/claude-code.zh.md)
-- [Agent 决策记录 0001](.agents/notes/0001-agents-source-tree.zh.md)
-- [Agent 决策记录 0002](.agents/notes/0002-claude-md-compat-shim.zh.md)
+- [Agent 决策记录 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.zh.md)
+- [Agent 决策记录 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.zh.md)
 
 ## 许可证
 

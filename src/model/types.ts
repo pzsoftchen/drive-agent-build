@@ -6,7 +6,6 @@ import type {
   GeneratedManifestSchema,
   HookSpecSchema,
   MemoryEntrySchema,
-  NoteFrontmatterSchema,
   PolicySpecSchema,
   ProjectManifestSchema,
   ProjectionSchema,
@@ -20,7 +19,6 @@ export type ClaudeCodePolicy = z.infer<typeof ClaudeCodePolicySchema>;
 export type HookSpec = z.infer<typeof HookSpecSchema>;
 export type AgentFrontmatter = z.infer<typeof AgentFrontmatterSchema>;
 export type MemoryEntryFrontmatter = z.infer<typeof MemoryEntrySchema>;
-export type NoteFrontmatter = z.infer<typeof NoteFrontmatterSchema>;
 
 export interface ProjectPaths {
   root: string;

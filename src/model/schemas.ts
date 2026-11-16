@@ -59,7 +59,6 @@ export const AGENT_PERMISSION_MODES = [
   'plan',
 ] as const;
 export const MEMORY_STATUSES = ['active', 'superseded'] as const;
-export const NOTE_STATUSES = ['proposed', 'implemented', 'rejected'] as const;
 
 export const KEBAB_CASE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -248,12 +247,3 @@ export const MemoryEntrySchema = z
   })
   .strict();
 
-export const NoteFrontmatterSchema = z
-  .object({
-    status: z.enum(NOTE_STATUSES),
-    date: z.string().regex(ISO_DATE),
-    authors: z.union([z.string().min(1), z.array(z.string().min(1))]),
-    review_by: z.string().regex(ISO_DATE),
-    supersedes: z.array(z.string().min(1)).optional(),
-  })
-  .strict();

@@ -61,8 +61,53 @@ describe('runDocSync', () => {
 
   it('includes agent note format failures', async () => {
     const root = await makeValidRoot();
-    await mkdir(join(root, '.agents/notes'), { recursive: true });
-    await writeFile(join(root, '.agents/notes/0001-bad.md'), '## Context\n');
+    const noteDir = join(root, '.agents/notes/implemented/architecture');
+    await mkdir(noteDir, { recursive: true });
+    const sourceRel = '.agents/notes/implemented/architecture/2026-11-16-bad.md';
+    const translationRel = '.agents/notes/implemented/architecture/2026-11-16-bad.zh.md';
+    await writeFile(
+      join(root, sourceRel),
+      `# Agent Note: Bad
+
+Status: implemented
+
+English | [中文](2026-11-16-bad.zh.md)
+
+## Problem
+
+Problem.
+
+## Decision
+
+Decision.
+
+## Consequences
+
+Consequences.
+`,
+    );
+    await writeFile(
+      join(root, translationRel),
+      `# Agent Note: 坏记录
+
+Status: implemented
+
+[English](2026-11-16-bad.md) | 中文
+
+## 问题
+
+问题。
+
+## 决策
+
+决策。
+
+## 后果
+
+后果。
+`,
+    );
+    await verifyPairingFile(root, sourceRel, { write: true });
 
     const result = await runDocSync(root, {
       budgets: { 'AGENTS.md': 200, 'README.md': 220, 'README.zh.md': 220 },
@@ -70,6 +115,6 @@ describe('runDocSync', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.diagnostics.map((item) => item.code)).toContain('note.frontmatter');
+    expect(result.diagnostics.map((item) => item.code)).toContain('note.section');
   });
 });
