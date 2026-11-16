@@ -9,6 +9,7 @@ import { stableJson } from './core/json.ts';
 import { runDetect } from './commands/detect.ts';
 import { runInit } from './commands/init.ts';
 import { runNormalize } from './commands/normalize.ts';
+import { runPolicyExplain } from './commands/policy-explain.ts';
 
 export const PROGRAM_VERSION = '0.1.0';
 
@@ -159,7 +160,11 @@ async function dispatchNormalize(
   );
 }
 
-function dispatchPolicy(rest: string[]): number {
+async function dispatchPolicy(
+  rest: string[],
+  ctx: CliContext,
+  json: boolean,
+): Promise<number> {
   const [subcommand, ...args] = rest;
   if (subcommand !== 'explain') {
     throw new UsageError(
@@ -168,10 +173,15 @@ function dispatchPolicy(rest: string[]): number {
     );
   }
   rejectUnknownOptions(args, ['--agent']);
-  takeOption(args, '--agent');
-  throw new UsageError(
-    'dab policy explain is not available in this development build yet',
-    'usage.not-implemented',
+  const agent = takeOption(args, '--agent');
+  return runPolicyExplain(
+    {
+      cwd: ctx.cwd,
+      ...(agent === undefined ? {} : { agent }),
+      json,
+      ...(ctx.runner === undefined ? {} : { runner: ctx.runner }),
+    },
+    { stdout: ctx.stdout, stderr: ctx.stderr },
   );
 }
 
@@ -194,7 +204,7 @@ async function dispatch(args: string[], ctx: CliContext, json: boolean): Promise
     case 'normalize':
       return dispatchNormalize(rest, ctx, json);
     case 'policy':
-      return dispatchPolicy(rest);
+      return dispatchPolicy(rest, ctx, json);
     default:
       throw new UsageError(
         `unknown command: ${command}`,
