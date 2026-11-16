@@ -2,7 +2,7 @@
 
 # DAB：驱动 Agent 成为构建者
 
-DAB 是面向使用 Agent 构建软件的个人开发者的项目级控制面。它把 `AGENTS.md` 和 `.agents/` 编译为受治理的 Claude Code 配置，检测漂移，并用证据而不是期望来评估结果。
+DAB 是面向使用 Agent 构建软件的个人开发者的项目级控制面。它把 `AGENTS.md` 和 `.agents/` 编译为受治理的 Claude Code 配置，检测漂移，并让编写源和生成配置保持可比较。
 
 ## 为什么需要 DAB
 
@@ -48,6 +48,13 @@ dab detect
 3. `dab detect` 在不写入的前提下比较生成字节、链接目标、frontmatter、敏感信息、记忆和 AGENTS.md。
 4. `dab policy explain` 展示最终生效的权限和 hooks，包括角色收窄和运行时限制。
 
+## DAB 不保证什么
+
+- 路径 deny 规则是工具级护栏，不是沙箱；`Bash` 和其他工具可以绕过。
+- Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。
+- v0.1 不运行 Agent Loop，也不比较配置结果。
+- 生成的 `.claude/` 输出是构建产物，不要手工编辑。
+
 ## 状态与边界
 
 - v0.1 是单开发者、macOS 和 Linux、Claude Code 优先的版本。
@@ -57,6 +64,7 @@ dab detect
 
 ## 文档
 
+- [路线图](docs/roadmap.zh.md)
 - [架构](docs/architecture.zh.md)
 - [开发](docs/development.zh.md)
 - [CLI](docs/user/cli.zh.md)

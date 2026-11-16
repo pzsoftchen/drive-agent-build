@@ -30,7 +30,7 @@ DAB links individual agents, skills and rules rather than whole directories. Thi
 
 ## Permissions and hooks
 
-Project policy is compiled into `.claude/settings.json`. Project deny rules are a hard boundary. Agent definitions can narrow tools and append hooks, but cannot remove project hooks. Hook scripts are checked for path escapes, duplicate ids, line endings, executability and secrets.
+Project policy is compiled into `.claude/settings.json`. Project deny rules are a hard boundary for Claude Code file tools, but `Bash`, wrapper commands and other tools can bypass path rules. Agent definitions can narrow tools and append hooks, but cannot remove project hooks. Hook scripts are checked for path escapes, duplicate ids, line endings, executability and secrets.
 
 ## Troubleshooting
 

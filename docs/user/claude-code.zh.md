@@ -30,7 +30,7 @@ DAB 逐项链接 agents、skills 和 rules，而不是链接整个目录。这�
 
 ## 权限与 hooks
 
-项目策略被编译进 `.claude/settings.json`。项目 deny 规则是硬边界。Agent 定义可以收窄工具并追加 hooks，但不能移除项目 hooks。Hook 脚本会检查路径逃逸、重复 id、换行符、执行权限和敏感信息。
+项目策略被编译进 `.claude/settings.json`。项目 deny 规则是 Claude Code 文件工具的硬边界，但 `Bash`、包装命令和其他工具可以绕过路径规则。Agent 定义可以收窄工具并追加 hooks，但不能移除项目 hooks。Hook 脚本会检查路径逃逸、重复 id、换行符、执行权限和敏感信息。
 
 ## 故障排查
 

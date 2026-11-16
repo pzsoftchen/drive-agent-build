@@ -70,4 +70,7 @@ Every human-facing document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`. The 
 - DAB does not import Claude Code internals.
 - DAB never edits `.claude/settings.local.json`.
 - Unsupported provider semantics fail loudly instead of silently widening permissions.
+- Path deny rules are tool-level guardrails, not a sandbox; `Bash`, `Grep`, `Glob`, `NotebookEdit` and wrapper commands can bypass them.
+- Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.
+- v0.1 has no eval loop; `docs/roadmap.md` carries evidence work.
 - v0.1 accepts only the default `.agents` and `.claude` paths.

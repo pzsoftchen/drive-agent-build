@@ -70,4 +70,7 @@ execute:
 - DAB 不导入 Claude Code 内部实现。
 - DAB 从不编辑 `.claude/settings.local.json`。
 - 无法表达的 provider 语义会显式失败，而不是静默扩大权限。
+- 路径 deny 规则是工具级护栏，不是沙箱；`Bash`、`Grep`、`Glob`、`NotebookEdit` 和包装命令可以绕过。
+- Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。
+- v0.1 没有 eval 循环；证据工作记录在 `docs/roadmap.md`。
 - v0.1 只接受默认的 `.agents` 和 `.claude` 路径。

@@ -6,6 +6,8 @@ export const DOC_BUDGETS: Record<string, number> = {
   'CONTRIBUTING.zh.md': 200,
   'CHANGELOG.md': 150,
   'CHANGELOG.zh.md': 150,
+  'docs/roadmap.md': 250,
+  'docs/roadmap.zh.md': 250,
   'docs/architecture.md': 450,
   'docs/architecture.zh.md': 450,
   'docs/development.md': 350,
