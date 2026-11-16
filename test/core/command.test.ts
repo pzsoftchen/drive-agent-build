@@ -34,4 +34,13 @@ describe('runCommand', () => {
     );
     expect(result.exitCode).toBe(124);
   });
+
+  it('does not crash when the child closes stdin before the parent writes', async () => {
+    const result = await runCommand(
+      process.execPath,
+      ['-e', 'process.stdin.destroy(); process.exit(0)'],
+      { input: 'x'.repeat(1024 * 1024) },
+    );
+    expect(result.exitCode).toBe(0);
+  });
 });

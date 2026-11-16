@@ -78,5 +78,16 @@ export const runCommand: CommandRunner = (cmd, args, opts = {}) =>
       }, opts.timeoutMs);
     }
 
-    child.stdin?.end(opts.input ?? '');
+    if (child.stdin !== null) {
+      child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EPIPE') {
+          fail(error);
+        }
+      });
+      try {
+        child.stdin.end(opts.input ?? '');
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
   });
