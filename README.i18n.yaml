@@ -1,0 +1,43 @@
+version: 1
+source: README.md
+translation: README.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: fca064b7c517fa5fa363dabdffafd4aa9114a15381e3a44f0170ec6c96725b27
+    translation: eb1a67e3bc89b56acce3bf65e81eca16790d66cf8150900d459e5fb00f22dc24
+  - index: 2
+    level: 2
+    source: dcabc1458aa916284a73cdb483c02e0bf8e500085b19b448a59f1fb081461b38
+    translation: b91f0efcddec1cf598111798aae23d55108c5277f4592eb30731d7e270d83a45
+  - index: 3
+    level: 2
+    source: 08bf185868269b5ec642970bfdce6b369071fc1822e4adb49b2fe4b6fd77aafe
+    translation: 4703b88418a9da75742ffe6548beb4e3773bb98fbd4f7bbb04837621301537ef
+  - index: 4
+    level: 2
+    source: 5d2f1413789eab467372d46bbc6e0bfe73a735fde28b965d045c5dab46deb15f
+    translation: 23e61601b889cadc6e68713ad1c3fc45b9ecdd7e5cd7e79fccb3dd37468aae26
+  - index: 5
+    level: 2
+    source: 40311a9a4ff1148d6fea6363d1be1efa459cb7576e360483e539547cd94a111f
+    translation: 2f1af2bdbc133955d43fa0ad236ea077e1e8513daf8815b94aa71f86d8a049e3
+  - index: 6
+    level: 2
+    source: e0241d4edc5f98b1a9922dc7dd2757296215e312937360b897f07170637b02e6
+    translation: 601dd45090b22777c34f862c234139acb9d7fd16d480b3343703f592ea312e2e
+  - index: 7
+    level: 2
+    source: 55013269c158f828b1c6407e392b59a45e16668e8f8d72db2967e58b2071b4ce
+    translation: bc1b7c9093da44b8db24afd26b1a53bf09d9b2908d57055eb08b1f0af6b1e812
+  - index: 8
+    level: 2
+    source: f20ebe6476df3c73e9ae121c1497ecfd29740dad06c28864d9e9903bbabf0100
+    translation: e1e4dea8d186e41a71d3271f25fda29b6cd8351ad7e4c0371d8b43f86d925704

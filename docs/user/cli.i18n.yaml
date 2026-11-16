@@ -1,0 +1,47 @@
+version: 1
+source: docs/user/cli.md
+translation: docs/user/cli.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: 55e3357e4c81774e9bd229df014169273969dbcb209694010e5798328ef23642
+    translation: eaa0df93577e13d2ef7166343e7c82d67216f79ad18b8a149748ec3cfa4202c9
+  - index: 2
+    level: 2
+    source: 90c891cf211aa9021574ee75ead772e9e5491e5c986db558297e556c0f8c7a8d
+    translation: d2ddd4fd1eeeed0e2879567093c92e1591ecb3af990373a1af019872177b2b8a
+  - index: 3
+    level: 2
+    source: 59e471b518843ba89e85e2ebe0cf259389bcaab4fed82c452cea7a611b62d362
+    translation: cc9ad8a4778c797ce30c09ded3c7bfe7c5a29e07c0e3d513550ca4af81659b81
+  - index: 4
+    level: 2
+    source: addf4e6c206b82a6b71abbec5dcfc71ce3ee0dbbb80630e3abd8d3e6df29007c
+    translation: eb42aad4b70e19b5b12eee18e217864a394b61788de964a95a8ec520a4892fed
+  - index: 5
+    level: 2
+    source: 4a5cf2ff89e7303d03203bc49351d8dc59322a029b58c9b18b20ecd0872eb85e
+    translation: 147a1e5447dab517fe5074f1c00803f0cfd47c02ec130d86550349c59905e0c1
+  - index: 6
+    level: 2
+    source: bf102cbec0b29992f56e9dcd46c3a3b50a8a9b0e61911eaf7aa1ca7e8c1ece48
+    translation: 8554f2173716554fefea0dcc1dc41fc563f5b8ea506076b5f21e1dd8b8715610
+  - index: 7
+    level: 2
+    source: d2aab00fbbe279ca8dcd0d7a46114643b07528b56181c8e03e12adb4099e0cfc
+    translation: 750e2d1f6eb69f75bac9d609dc03b65971b4a3a3d6f4914a5def77b9d6f880e0
+  - index: 8
+    level: 2
+    source: a1d17f2a8a3fefd80ee60f83ae07391598d4f8f3e28da7b4056d89fe3921bf2e
+    translation: 0c9e898173555a5ed65ad59020b0ab8098ae246c3dc4f6c040e11b7a59221b46
+  - index: 9
+    level: 2
+    source: 74bfeb76ef73053c96b953289057b9d4588e5fd1f8ddc49f195c1d1ad35ceaba
+    translation: e147f28b7def74897a11d232a78bb0a2c022afedcaaebdaf0bd1e43ec5a52ab5

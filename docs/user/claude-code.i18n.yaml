@@ -1,0 +1,39 @@
+version: 1
+source: docs/user/claude-code.md
+translation: docs/user/claude-code.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: ffdee3dba05914efa5cc7475e2478d96158bf646fb26143116949f0e2e282ae1
+    translation: 09aed743a8d9e7db167fdbbfe51b96ea45899da8edff1de5db3927e91ad6e481
+  - index: 2
+    level: 2
+    source: 1607e814a17cd132784c18d25b2021b7783a9899cb4fd53897d80f204dd2c80b
+    translation: c8340efdb9f8cc3ad86f4bf065de7cc38ed709b769ae92af57c3ad0ba2619a72
+  - index: 3
+    level: 2
+    source: 486b696de9877630f63eefe677833973ef171bdd5ff24abbf79ab9cc58a34a5b
+    translation: 6a71ef05a93a02b14176470a3de3ed9a8efd44c0a7a8e8e38f1316a9d28e5aad
+  - index: 4
+    level: 2
+    source: 45f7d274e6c912ee9b9d7867df1ab143d37ad5586bc6ff7f432836fac9b3c1d7
+    translation: a9b8e775199289633ad238006c2c3e392d53d4faafbc62c9484fe8b6fa37e5a1
+  - index: 5
+    level: 2
+    source: 91ac82b2027bb56d490bdaeb77664b68404a2186f9c661216c9c39caa54ccbf5
+    translation: 9f7575e19c936958cf4e1c14e3c808f37d0d9b0630bab4b6f3baeb58ff5e4785
+  - index: 6
+    level: 2
+    source: a699efb110cb44a912ed415e0ea240d8249f1a7f4001f61874862b588d6760bf
+    translation: d7cca547d58cf5aec66077c7037fbb0e81b496247c18622af36eba268fde3c9b
+  - index: 7
+    level: 2
+    source: 3a592cd7fd6b2e1711e4c2c476e3a59984cb53809dc04c6a9bf05f9f2b313f4e
+    translation: d29bd1f530dabe5827dd9c8a670c260af35ac4083c033dcedab0a1f1267bfe62

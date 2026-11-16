@@ -1,0 +1,7 @@
+id: protect-generated
+event: pre_tool
+matcher: Edit|Write|MultiEdit
+entry: run.mjs
+runner: node
+timeout: 10
+order: 10

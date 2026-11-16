@@ -1,0 +1,35 @@
+version: 1
+source: CONTRIBUTING.md
+translation: CONTRIBUTING.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: 697fcbf70eee7b1e0002567350290f72d7c869c7228472cec78eb4290b7b08ae
+    translation: bfdaed6d157f0c1b3329e8c215bea2ae7691df4cf918397534f407e32f520fdf
+  - index: 2
+    level: 2
+    source: 910da4081827e9064f6d873da092381aea40dead9a96e35ea53e736c8ea43cd6
+    translation: 19c63fb3f4b60c2fced3c55355539b644e518164f5d4a72620e337346ca4babb
+  - index: 3
+    level: 2
+    source: 4293873eea5aef7fd58c667930e1463022795a4edadf2f6c52096a66f59395ba
+    translation: 4d0e2833c23f1a2cc9db87e699ee347565ba09011654574b0ce0d56d19dd10d3
+  - index: 4
+    level: 2
+    source: 1e0618fd0438c3525d1f2580720377dd711197efa3e712951049fa8c25c32e4f
+    translation: f1d69c2c1651ae254887463107825cebfa30a37aab6f6ca50145eb6f44f9d3f9
+  - index: 5
+    level: 2
+    source: 26d6cf2dd1be4a00e67c192eb92b65cad0ca9d63ff12fc165cd52aeb787c5b1d
+    translation: 2a0670e36086d96f3ae570a5145bd2b511c96ae0634638f6c46ef6f1fb7e6804
+  - index: 6
+    level: 2
+    source: 0d666bf46178225351b09c7f1c821b46f2e076e5edd56baa8bb8c00cef70d89e
+    translation: 29c11fcb54ff1c3141baccd3bb26c220100304d0d19f34b5be10e0af32faf76f

@@ -1,0 +1,24 @@
+version: 1
+defaultMode: default
+read:
+  deny:
+    - .env
+    - .env.*
+    - secrets/**
+write:
+  deny:
+    - .claude/settings.json
+    - .claude/settings.local.json
+    - .claude/CLAUDE.md
+    - .claude/agents/**
+    - .claude/skills/**
+    - .claude/rules/**
+execute:
+  deny:
+    - sudo
+    - rm -rf /
+  ask:
+    - git push
+    - npm publish
+capabilities:
+  deny: []

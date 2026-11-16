@@ -1,0 +1,63 @@
+version: 1
+project:
+  id: drive-agent-builder
+  name: DAB
+  goal: Drive Agent as Builder control plane for Claude Code projects.
+profile: feature
+target:
+  provider: claude-code
+  minVersion: 2.1.277
+  claudeMdShim: true
+paths:
+  agents: .agents
+  claude: .claude
+generated:
+  settings:
+    path: .claude/settings.json
+    sha256: 8259060539e7276e67d1d3d21d7b5ebe8aa052d681b27ebbaf91c5e140acc5b9
+  instructions:
+    path: .claude/CLAUDE.md
+    sha256: 73a48bba60f92decf7859871c2d544e425046d3e1bfca5fce3b18152740e459b
+  projections:
+    - kind: agent
+      name: implementer
+      source: .agents/agents/implementer.md
+      target: .claude/agents/implementer.md
+      link: symlink
+      sourceSha256: 6f70baf3363be1170f98040394d8ed74beb01d9867767bde76e79c2d185cb9fe
+    - kind: agent
+      name: reviewer
+      source: .agents/agents/reviewer.md
+      target: .claude/agents/reviewer.md
+      link: symlink
+      sourceSha256: 8e41d07594a26536f27a1811e7d1b6ceb67388f2187ccf6ecd41a9a571ab88e8
+    - kind: skill
+      name: doc-sync
+      source: .agents/skills/doc-sync
+      target: .claude/skills/doc-sync
+      link: symlink
+      sourceSha256: e65cc4515c71c7d1f4cb2fe034b14d065f677f564924a42e778c340b9b4b47db
+    - kind: skill
+      name: feature-delivery
+      source: .agents/skills/feature-delivery
+      target: .claude/skills/feature-delivery
+      link: symlink
+      sourceSha256: 098e92c11f9dcabc2752e11b7871721b612ebb3921d03fd349028eee7f18d0ae
+    - kind: rule
+      name: docs-bilingual
+      source: .agents/rules/docs-bilingual.md
+      target: .claude/rules/docs-bilingual.md
+      link: symlink
+      sourceSha256: bb1939fcc0a3c9c3db9053f28f1ccb6692d17ecf98eb4abeab1d67af9505fec5
+    - kind: rule
+      name: generated-files
+      source: .agents/rules/generated-files.md
+      target: .claude/rules/generated-files.md
+      link: symlink
+      sourceSha256: 7f94f5ff89ca4000e76d340566084a9ea494c4223979abc3553ac7b382d160cb
+    - kind: rule
+      name: testing
+      source: .agents/rules/testing.md
+      target: .claude/rules/testing.md
+      link: symlink
+      sourceSha256: 4fb98461cce53f51371d65164f08e0f903730576c600dd4b02586f47daa100cb

@@ -4,9 +4,13 @@ coverage/
 *.log
 .DS_Store
 .superpowers/
-.dab/
+
+# >>> dab managed >>>
 .claude/settings.json
 .claude/settings.local.json
+.claude/CLAUDE.md
 .claude/agents/
 .claude/skills/
 .claude/rules/
+.dab/
+# <<< dab managed <<<
