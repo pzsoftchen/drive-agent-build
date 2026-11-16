@@ -1,7 +1,8 @@
 import { readdir } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
+import { toPosix } from '../core/paths.ts';
 import {
   NOTE_CLASSES,
   NOTE_FILENAME,
@@ -13,43 +14,6 @@ import { scanMarkdown } from './markdown.ts';
 
 type NoteLifecycle = (typeof NOTE_LIFECYCLES)[number];
 
-async function listNoteFiles(root: string): Promise<string[]> {
-  const base = join(root, '.agents/notes');
-  const files: string[] = [];
-
-  for (const lifecycle of NOTE_LIFECYCLES) {
-    const lifecycleDir = join(base, lifecycle);
-    let classEntries;
-    try {
-      classEntries = await readdir(lifecycleDir, { withFileTypes: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        continue;
-      }
-      throw error;
-    }
-
-    for (const classEntry of classEntries
-      .filter((item) => item.isDirectory())
-      .sort((left, right) => left.name.localeCompare(right.name))) {
-      const classDir = join(lifecycleDir, classEntry.name);
-      let fileEntries;
-      try {
-        fileEntries = await readdir(classDir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const fileEntry of fileEntries
-        .filter((item) => item.isFile() && item.name.endsWith('.md'))
-        .sort((left, right) => left.name.localeCompare(right.name))) {
-        files.push(`${lifecycle}/${classEntry.name}/${fileEntry.name}`);
-      }
-    }
-  }
-
-  return files;
-}
-
 function isSkippedSource(name: string): boolean {
   return name.endsWith('.zh.md')
     || name === 'README.md'
@@ -57,63 +21,71 @@ function isSkippedSource(name: string): boolean {
     || name === 'INDEX.md';
 }
 
-async function misplacedNotes(root: string): Promise<string[]> {
-  const base = join(root, '.agents/notes');
-  const misplaced: string[] = [];
-
-  let rootEntries;
+async function walkNoteMarkdown(
+  directory: string,
+  root: string,
+  relativeDir = '',
+): Promise<string[]> {
+  let entries;
   try {
-    rootEntries = await readdir(base, { withFileTypes: true });
+    entries = await readdir(directory, { withFileTypes: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return [];
     }
     throw error;
   }
-  for (const entry of rootEntries) {
-    if (entry.isFile() && entry.name.endsWith('.md') && !isSkippedSource(entry.name)) {
-      misplaced.push(entry.name);
-    }
-  }
 
-  for (const lifecycle of NOTE_LIFECYCLES) {
-    let entries;
-    try {
-      entries = await readdir(join(base, lifecycle), { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith('.md') && !isSkippedSource(entry.name)) {
-        misplaced.push(`${lifecycle}/${entry.name}`);
+  const files: string[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const child = relativeDir.length === 0 ? entry.name : `${relativeDir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (relativeDir.length === 0 && entry.name === 'archived') {
+        continue;
       }
+      files.push(...await walkNoteMarkdown(join(directory, entry.name), root, child));
+    } else if (entry.isFile() && entry.name.endsWith('.md') && !isSkippedSource(entry.name)) {
+      files.push(toPosix(relative(root, join(directory, entry.name))));
     }
   }
+  return files;
+}
 
-  return misplaced;
+async function listNoteFiles(root: string): Promise<string[]> {
+  return walkNoteMarkdown(
+    join(root, '.agents/notes'),
+    join(root, '.agents/notes'),
+  );
 }
 
 export async function verifyAgentNotes(root: string): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
-  for (const relative of await misplacedNotes(root)) {
-    diagnostics.push({
-      code: 'note.class',
-      severity: 'error',
-      message: 'Agent Note must live under a lifecycle/class folder',
-      file: `.agents/notes/${relative}`,
-    });
-  }
-  const files = await listNoteFiles(root);
+  const notesRoot = join(root, '.agents/notes');
 
-  for (const relativeFile of files) {
-    const name = basename(relativeFile);
-    if (isSkippedSource(name)) {
+  for (const absoluteFile of await listNoteFiles(root)) {
+    const file = `.agents/notes/${absoluteFile}`;
+    const parts = absoluteFile.split('/');
+    if (parts.length !== 3) {
+      diagnostics.push({
+        code: 'note.class',
+        severity: 'error',
+        message: 'Agent Note must live at {lifecycle}/{class}/YYYY-MM-DD-topic.md',
+        file,
+      });
       continue;
     }
-    const [lifecycleName, className] = relativeFile.split('/');
-    const lifecycle = lifecycleName as NoteLifecycle;
-    const file = `.agents/notes/${relativeFile}`;
 
+    const [lifecycleName, className, name] = parts;
+    if (!(NOTE_LIFECYCLES as readonly string[]).includes(lifecycleName ?? '')) {
+      diagnostics.push({
+        code: 'note.class',
+        severity: 'error',
+        message: `Agent Note lifecycle is not recognized: ${lifecycleName ?? '(missing)'}`,
+        file,
+        hint: `Allowed lifecycles: ${NOTE_LIFECYCLES.join(', ')}.`,
+      });
+      continue;
+    }
     if (!(NOTE_CLASSES as readonly string[]).includes(className ?? '')) {
       diagnostics.push({
         code: 'note.class',
@@ -125,7 +97,8 @@ export async function verifyAgentNotes(root: string): Promise<Diagnostic[]> {
       continue;
     }
 
-    if (!NOTE_FILENAME.test(name)) {
+    const lifecycle = lifecycleName as NoteLifecycle;
+    if (!NOTE_FILENAME.test(name ?? '')) {
       diagnostics.push({
         code: 'note.filename',
         severity: 'error',
@@ -134,7 +107,7 @@ export async function verifyAgentNotes(root: string): Promise<Diagnostic[]> {
       });
     }
 
-    const text = await readTextFile(join(root, file));
+    const text = await readTextFile(join(notesRoot, absoluteFile));
     const lines = text.replace(/\r\n?/g, '\n').split('\n');
     const title = lines[0] ?? '';
     const blank = (lines[1] ?? '').trim();

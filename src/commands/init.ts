@@ -133,20 +133,21 @@ async function findGeneratedConflicts(
   paths: ProjectPaths,
   manifest: ProjectManifest | undefined,
   targets: ReadonlyMap<string, string>,
-): Promise<Diagnostic[]> {
-  const conflicts: Diagnostic[] = [];
+): Promise<{ pending: Diagnostic[]; fatal: Diagnostic[] }> {
+  const pending: Diagnostic[] = [];
+  const fatal: Diagnostic[] = [];
 
   const settingsPath = join(paths.claude, 'settings.json');
   if (
     (await lstatOrNull(settingsPath)) !== null
     && manifest?.generated?.settings === undefined
   ) {
-    conflicts.push({
+    pending.push({
       code: 'claude-settings.unmanaged',
       severity: 'error',
       message: 'existing .claude/settings.json is not DAB-managed',
       file: '.claude/settings.json',
-      hint: 'Move it aside or merge it into .agents/, then rerun dab init.',
+      hint: 'Normalize can back it up and replace it after review.',
     });
   }
 
@@ -162,12 +163,12 @@ async function findGeneratedConflicts(
       allowed = (await readTextFile(shimPath)) === renderClaudeMdShim();
     }
     if (!allowed) {
-      conflicts.push({
+      pending.push({
         code: 'claude-md.unmanaged',
         severity: 'error',
         message: 'existing .claude/CLAUDE.md is not DAB-managed',
         file: '.claude/CLAUDE.md',
-        hint: 'Move it aside before running dab init.',
+        hint: 'Normalize can back it up and replace it after review.',
       });
     }
   }
@@ -178,12 +179,18 @@ async function findGeneratedConflicts(
       await assertParentInsideRoot(root, target);
     } catch (error) {
       if (error instanceof DabError) {
-        conflicts.push({
+        const diagnostic: Diagnostic = {
           code: error.code,
           severity: 'error',
           message: error.message,
           file: target,
-        });
+          ...(error.hint === undefined ? {} : { hint: error.hint }),
+        };
+        if (error.code === 'path.symlink-escape' || error.code === 'path.escape') {
+          fatal.push(diagnostic);
+        } else {
+          pending.push(diagnostic);
+        }
         continue;
       }
       throw error;
@@ -203,24 +210,23 @@ async function findGeneratedConflicts(
       if (resolved === resolve(root, source) || managed) {
         continue;
       }
-      conflicts.push({
+      pending.push({
         code: 'projection.unmanaged',
         severity: 'error',
         message: 'existing projection is not DAB-managed',
         file: target,
       });
     } else {
-      conflicts.push({
+      pending.push({
         code: 'projection.physical-copy',
         severity: 'error',
         message: 'existing projection target is a physical file or directory',
         file: target,
-        hint: 'Move it aside before running dab init; DAB never overwrites unmanaged files.',
       });
     }
   }
 
-  return conflicts;
+  return { pending, fatal };
 }
 
 async function validateExistingAuthored(
@@ -553,13 +559,21 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   for (const agent of proposal?.agents ?? []) {
     targets.set(`.claude/agents/${agent.name}.md`, `.agents/agents/${agent.name}.md`);
   }
-  const generatedConflicts = await findGeneratedConflicts(
+  const generated = await findGeneratedConflicts(
     root,
     paths,
     existingManifest?.manifest,
     targets,
   );
-  const pending = generatedConflicts.map(pendingDiagnostic);
+  if (generated.fatal.length > 0) {
+    return blocked(
+      root,
+      [...scan.diagnostics, ...generated.fatal],
+      generated.fatal,
+      options.dryRun === true,
+    );
+  }
+  const pending = generated.pending.map(pendingDiagnostic);
 
   if (options.dryRun === true) {
     const preview = await planFileWrites(root, files);

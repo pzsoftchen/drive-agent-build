@@ -87,6 +87,26 @@ describe('verifyAgentNotes', () => {
     expect((await verifyAgentNotes(root)).map((item) => item.code)).toContain('note.class');
   });
 
+  it('rejects unknown lifecycle folders and extra nesting', async () => {
+    const root = await tempDir();
+    await writeNote(
+      root,
+      '.agents/notes/draft/architecture/2026-11-16-example.md',
+      note(),
+    );
+    await writeNote(
+      root,
+      '.agents/notes/implemented/architecture/nested/2026-11-16-example.md',
+      note(),
+    );
+
+    const files = (await verifyAgentNotes(root))
+      .filter((item) => item.code === 'note.class')
+      .map((item) => item.file);
+    expect(files).toContain('.agents/notes/draft/architecture/2026-11-16-example.md');
+    expect(files).toContain('.agents/notes/implemented/architecture/nested/2026-11-16-example.md');
+  });
+
   it('rejects unknown classes and date-less filenames', async () => {
     const root = await tempDir();
     await writeNote(

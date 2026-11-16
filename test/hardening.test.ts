@@ -354,6 +354,27 @@ describe('shim and backend safety', () => {
 });
 
 describe('init preflight and AI proposal hardening', () => {
+  it('rejects a target symlink that escapes the project before writing', async () => {
+    const root = await tempDir();
+    await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'demo' }));
+    const outside = await tempDir();
+    await writeFile(join(outside, 'evil.md'), 'outside\n');
+    await mkdir(join(root, '.claude/agents'), { recursive: true });
+    await symlink(join(outside, 'evil.md'), join(root, '.claude/agents/implementer.md'));
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await runInit(
+      { cwd: root, json: true },
+      { stdout: (value) => stdout.push(value), stderr: (value) => stderr.push(value) },
+    );
+
+    expect(code).toBe(3);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await readFile(join(outside, 'evil.md'), 'utf8')).toBe('outside\n');
+  });
+
   it('rejects a symlinked .claude/agents directory before writing authored files', async () => {
     const root = await tempDir();
     await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'demo' }));
