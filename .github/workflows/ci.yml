@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Normalize generated config
+        run: node dist/cli.js normalize
+      - name: Test
+        run: pnpm test
+      - name: Documentation gates
+        run: pnpm doc-sync
+      - name: Detect drift
+        run: node dist/cli.js detect --json
+      - name: Normalize dry run
+        run: node dist/cli.js normalize --dry-run --json
+      - name: Explain policy
+        run: node dist/cli.js policy explain --json
