@@ -2,90 +2,118 @@ English | [中文](README.zh.md)
 
 # DAB — Drive Agent as Builder
 
-DAB is a project-level control plane for Builders who use agents to produce durable work. The first implementation is developer-first: it turns `AGENTS.md` and `.agents/` into governed Claude Code configuration, detects drift, and keeps the authored source and generated configuration comparable.
+DAB is a scope-aware control plane for Builders who use agents to produce durable work. Project and global scopes are configured independently. The first implementation is developer-first and targets Claude Code.
 
-## The idea behind DAB
+## How DAB fits
 
-I started DAB from a change in where leverage lives. As agents take on more execution, I believe the Builder's advantage moves from completing every step by hand to designing the conditions under which agents can build reliably: goals, context, roles, capabilities, permissions, verification and durable learning.
+The working model is `Agent = Model + Harness`. DAB is not a third term in that equation; it drives how the harness is configured and how the resulting work converges into a deliverable.
+
+```text
+                         Builder
+             intent / constraints / acceptance
+                              |
+                              v
++------------------- DAB driving system -------------------+
+| DAD foundation                                           |
+| facts / roles / tools / permissions / verification       |
+|                                                          |
+| Builder delivery loop                                    |
+| Frame -> Drive -> Inspect --accepted--> Deliver -> Learn |
+|            ^          |                                  |
+|            |          +--failed--> Recover               |
+|            +-------------------------+                    |
++------------------------------+---------------------------+
+                               | configures + directs
+                               v
+                 Harness: loop / tools / context
+                               |
+                               v
+                         Model + Project
+                               | evidence
+                               +--------------> DAB
+```
+
+The actors have distinct responsibilities:
+
+- A Builder is the person accountable for intent, constraints, judgment and acceptance.
+- An Agent is the execution actor that performs building work inside the harness.
+- DAB is conceptually a driving system; this repository implements its control plane.
+- The Harness is the execution engine: loop, tools, context, permissions and sessions.
+
+### Two loops
+
+- The harness loop handles local execution: `think -> act -> observe -> continue`.
+- The DAB delivery loop governs the outcome: `frame -> drive -> inspect -> recover -> deliver -> learn`.
+- The harness decides what to do next; DAB decides whether the work is converging toward acceptance.
+
+[Read the full conceptual model](docs/concepts/why-dab.md).
+
+## Current status
+
+The diagram describes the target DAB model. The current `main` branch implements its configuration-governance foundation; the evidence-driven delivery loop is not complete.
+
+| Capability | Status |
+|---|---|
+| Authored project facts and deterministic Claude Code projections | Implemented |
+| Drift detection and effective-policy explanation | Implemented |
+| Independent project and global scopes with v2 manifests | Implemented on `main`; pending release |
+| Codex and DSH adapters | Planned after the Claude Code target |
+| Run records and delivery-loop evaluation | Planned for v0.2 |
+| Shared-memory promotion | Planned for v0.3 |
+
+## Quick start
+
+Requirements: Node.js `>=24.9`, pnpm, Claude Code `>=2.1.277`, macOS or Linux.
+
+```bash
+pnpm install
+pnpm build
+pnpm link --global
+dab init /path/to/project
+cd /path/to/project
+dab normalize --dry-run
+dab detect
+```
+
+Use `dab init ~/.agents` to initialize the independent global scope.
+
+## What the commands do
+
+- `dab init` writes the authored project skeleton and runs normalize when it is safe.
+- `dab normalize` compiles policy, materializes instruction and projection artifacts, and records hashes.
+- `dab detect` checks authored facts, generated output, ownership and scope without writing.
+- `dab policy explain` shows the effective rules and hooks for a selected target.
+
+## Why DAB exists
+
+I started DAB from a change in where leverage lives. As agents take on more execution, I believe the Builder's advantage moves from completing every step by hand to designing the conditions under which agents can build reliably.
 
 Two observations shaped my thinking:
 
 - A DeepSeek operator developer described a likely shift from designing, writing and optimizing operators to driving agents that perform that work.
 - Robin Li's Builder framing broadens the creator role beyond people who write code.
 
-The first observation makes the new role concrete; the second makes its scope larger. I combine them in DAB: **Drive Agent as Builder**.
+I first explored a narrower practice, DAD (Drive Agent Development): defining how agents should carry out development work and driving them through that process. DAB keeps DAD's authored facts, projections, drift detection, decisions and shared memory, then adds the delivery-oriented convergence described above. Development is the first scope because I am the first Builder, not because it is the endpoint.
 
-I first explored a narrower version: DAD (Drive Agent Development), which means defining how agents should carry out development work and driving them through that process. DAD showed me the value of an authored source, explicit projections, drift detection, decision records and shared memory. DAB keeps that engineering discipline but removes the assumption that the only thing worth building is software. I am starting DAB with development because I am the first Builder, not because development is the endpoint.
-
-## Principles
+## Design principles
 
 - DAB is a control plane, not an agent runtime.
-- The Builder owns intent, constraints, acceptance and judgment; agents execute.
-- The harness is replaceable. Claude Code is the first target, not the definition of DAB.
+- The Builder retains intent, constraints, acceptance and judgment; agents execute.
+- Harnesses are replaceable. Claude Code is the first target, not the definition of DAB.
 - Knowledge that should survive a session belongs in reviewable files, not hidden prompts.
 - Repeatability beats one-off prompting; authored facts and generated configuration must remain comparable.
 
-## Why a control plane?
-
-- Capability alone does not produce repeatability.
-- Workflows kept only in chat do not survive handoffs, review or a change of agent.
-- Personal auto memory is useful, but it is not a team fact source.
-- Bilingual documentation rots when only one side is updated.
-- A Builder needs governed configuration, not one-off prompts.
-
-## What v0.1 does
-
-| Area | Behavior |
-|---|---|
-| Authored source | `AGENTS.md` and `.agents/` |
-| Generated output | `.claude/` |
-| Commands | `dab init`, `dab detect`, `dab normalize`, `dab policy explain` |
-| Documentation | English and Chinese triples with hashes |
-| Runtime | Claude Code `>=2.1.277` on macOS and Linux |
-
-## Quick start
-
-```bash
-pnpm install
-pnpm build
-pnpm link --global
-node dist/cli.js init /path/to/project
-cd /path/to/project
-dab detect
-```
-
-A typical local loop is:
-
-```bash
-dab init
-dab normalize --dry-run
-dab policy explain
-dab detect
-```
-
-## How it works
-
-1. `dab init` scans the repository and writes a minimal `AGENTS.md`, role, skill, rule and policy skeleton.
-2. `dab normalize` compiles policy into `.claude/settings.json`, projects authored entries as symlinks, and records hashes in `dab.yaml`.
-3. `dab detect` compares generated bytes, link targets, frontmatter, secrets, memory and AGENTS.md without writing.
-4. `dab policy explain` shows the effective permissions and hooks, including agent narrowing and runtime limitations.
-
 ## What DAB does not guarantee
 
-- Path deny rules are tool-level guardrails, not a sandbox; `Bash` and other tools can bypass them.
+- v0.1 is currently a single-developer, macOS and Linux, Claude Code-first implementation.
+- It does not yet run its own delivery loop, compare configurations or promote memory automatically.
+- Path deny rules are tool-level guardrails, not a sandbox.
 - Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.
-- v0.1 does not run an agent loop or compare configurations.
-- Generated `.claude/` outputs are build artifacts; do not edit them by hand.
-
-## Status and boundaries
-
-- v0.1 is a single-developer, macOS and Linux, Claude Code-first release.
-- It does not implement a GUI, an agent loop, a template marketplace or automatic memory promotion.
-- Windows junctions, multi-harness sync and automatic DAD migration are out of scope.
-- Generated configuration is a build artifact; `dab.yaml` and `.agents/` are the review surface.
+- Windows junctions, a GUI, a plugin marketplace and automatic DAD migration are out of scope.
 
 ## Documentation
 
+- [Why DAB exists](docs/concepts/why-dab.md)
 - [Roadmap](docs/roadmap.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)

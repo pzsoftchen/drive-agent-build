@@ -44,6 +44,7 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 
 ## Documentation
 
+- [Why DAB exists](docs/concepts/why-dab.md)
 - [Roadmap](docs/roadmap.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)

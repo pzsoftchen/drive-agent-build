@@ -2,7 +2,7 @@
 
 # 架构
 
-DAB 是控制面，不是 Agent runtime。它把编写的源事实编译为 harness 配置，并让两侧保持可比较。本阶段只有 Claude Code 是已实现的 target。
+DAB 在产品概念上是驾驶系统，用来驾驶由构建者主导的 Agent 工作。本仓库实现的是它的控制面：把编写的源事实编译为 harness 配置，并让两侧保持可比较。本阶段只有 Claude Code 是已实现的 target。
 
 ## 事实源
 
@@ -77,6 +77,7 @@ generated:
 ```
 
 - Target adapter 把 common facts 映射到一个 harness，并解析该 target 的 provider options。Adapter 绝不拥有 agent、skill 或 rule 定义。
+- 当前 adapter 基础层是过渡性的：共享命令仍包含 Claude 专属的预检查与路径假设，后续 target 必须把这些能力收进各自 adapter。
 - Common facts 位于 `.agents/`；provider 专属策略位于 `.agents/adapters/<provider>.yaml`；provider options 位于 target 的 `targets` 条目。
 - 每个 target 在 `generated.targets` 下按 provider 记录自己的 settings、instructions 和 projections。
 - 本阶段只有 `claude-code` 有 adapter。启用 `codex` 或 `dsh` target 会以 `target.unsupported` 失败，而不是跳过或写入部分配置。
@@ -144,7 +145,7 @@ execute:
 
 ## 文档门禁
 
-每个人类文档使用 `foo.md`、`foo.zh.md` 和 `foo.i18n.yaml`。门禁检查语言切换、章节结构、围栏代码、行内代码、链接 locale 和哈希。`AGENTS.md` 等指令文件保持英文单源，并由链接、排版和预算门禁覆盖。
+每个正式发布的产品文档使用 `foo.md`、`foo.zh.md` 和 `foo.i18n.yaml`。门禁检查语言切换、章节结构、围栏代码、行内代码、链接 locale 和哈希。`AGENTS.md` 等指令文件保持英文单源。`docs/superpowers/` 下的内部工作计划保持中文单语，只检查链接和排版，不检查配对。
 
 ## 边界
 

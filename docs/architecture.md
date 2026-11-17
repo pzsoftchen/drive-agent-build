@@ -2,7 +2,7 @@ English | [中文](architecture.zh.md)
 
 # Architecture
 
-DAB is a control plane, not an agent runtime. It compiles authored source facts into harness configuration and keeps the two sides comparable. Claude Code is the only implemented target in this phase.
+DAB is conceptually a driving system for Builder-directed agent work. This repository implements its control plane: it compiles authored source facts into harness configuration and keeps the two sides comparable. Claude Code is the only implemented target in this phase.
 
 ## Source of truth
 
@@ -77,6 +77,7 @@ generated:
 ```
 
 - A target adapter maps common facts into one harness and parses that target's provider options. Adapters never own agent, skill or rule definitions.
+- The current adapter foundation is transitional: shared command code still contains Claude-specific prechecks and path assumptions that future targets must isolate.
 - Common facts live in `.agents/`; provider-specific policy lives in `.agents/adapters/<provider>.yaml`; provider options live in the target's `targets` entry.
 - Each target records its own settings, instructions and projections under `generated.targets`, keyed by provider.
 - Only `claude-code` has an adapter in this phase. An enabled `codex` or `dsh` target fails with `target.unsupported` instead of being skipped or partially written.
@@ -144,7 +145,7 @@ execute:
 
 ## Documentation gates
 
-Every human-facing document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`. The gate checks language switches, section structure, fenced code, inline code, link locale and hashes. Instruction files such as `AGENTS.md` stay English-only and are checked by the link, wrap and budget gates.
+Every published product document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`. The gate checks language switches, section structure, fenced code, inline code, link locale and hashes. Instruction files such as `AGENTS.md` stay English-only. Internal working plans under `docs/superpowers/` stay Chinese-only and are checked for links and formatting, not pairing.
 
 ## Boundaries
 
