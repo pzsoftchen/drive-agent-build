@@ -246,15 +246,18 @@ Link every entry from this index. Personal auto memory stays machine-local.
 }
 
 export function renderDabYaml(scan: ScanResult): string {
-  return `version: 1
+  return `version: 2
+scope: project
 project:
   id: ${JSON.stringify(scan.projectId)}
   name: ${JSON.stringify(scan.projectName)}
 profile: feature
-target:
-  provider: claude-code
-  minVersion: 2.1.277
-  claudeMdShim: true
+targets:
+  - provider: claude-code
+    enabled: true
+    options:
+      minVersion: 2.1.277
+      instructions: generated
 paths:
   agents: .agents
   claude: .claude

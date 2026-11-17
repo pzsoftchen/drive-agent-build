@@ -8,7 +8,11 @@ import type { CommandRunner } from '../src/core/command.ts';
 import { runCommand } from '../src/core/command.ts';
 import { lstatOrNull } from '../src/core/fs-atomic.ts';
 import { runDocSync } from '../src/docs/doc-sync.ts';
-import { loadProjectManifest, resolveProjectPaths } from '../src/model/project-manifest.ts';
+import {
+  getTarget,
+  loadProjectManifest,
+  resolveProjectPaths,
+} from '../src/model/project-manifest.ts';
 
 const root = process.cwd();
 const fakeRunner: CommandRunner = async () => ({
@@ -35,7 +39,7 @@ describe('DAB dogfood', () => {
   it('declares the feature profile', async () => {
     const loaded = await loadProjectManifest(root);
     expect(loaded.manifest.profile).toBe('feature');
-    expect(loaded.manifest.target.provider).toBe('claude-code');
+    expect(getTarget(loaded.manifest, 'claude-code')?.provider).toBe('claude-code');
   });
 
   it('keeps AGENTS.md English-only and within budget', async () => {

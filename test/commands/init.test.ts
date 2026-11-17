@@ -6,7 +6,10 @@ import { normalizeProject } from '../../src/commands/normalize.ts';
 import { renderClaudeMdShim } from '../../src/adapter/claude-code/projection.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
-import { loadProjectManifest } from '../../src/model/project-manifest.ts';
+import {
+  getGeneratedTarget,
+  loadProjectManifest,
+} from '../../src/model/project-manifest.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
 const dirs: string[] = [];
@@ -77,7 +80,10 @@ describe('runInit', () => {
 
     const manifest = await loadProjectManifest(root);
     expect(manifest.manifest.profile).toBe('feature');
-    expect((manifest.manifest.generated?.projections.length ?? 0)).toBeGreaterThan(0);
+    expect(manifest.manifest.scope).toBe('project');
+    const generated = getGeneratedTarget(manifest.manifest, 'claude-code');
+    expect(generated?.instructions?.mode).toBe('generated');
+    expect(generated?.projections.length ?? 0).toBeGreaterThan(0);
   });
 
   it('preserves an existing AGENTS.md', async () => {

@@ -1,4 +1,5 @@
 import { rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import {
@@ -7,7 +8,7 @@ import {
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
-import { DabError, ValidationError } from '../core/errors.ts';
+import { ConfigError, DabError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { backupPath, lstatOrNull, readTextFile, writeFileAtomic } from '../core/fs-atomic.ts';
 import { DAB_GITIGNORE_ENTRIES, ensureGitignoreBlock } from '../core/gitignore.ts';
@@ -40,14 +41,24 @@ import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { loadPolicySources } from '../model/policy.ts';
 import {
+  getGeneratedTarget,
+  getTarget,
   loadProjectManifest,
+  parseInterimClaudeOptions,
   resolveProjectPaths,
   updateGeneratedManifest,
 } from '../model/project-manifest.ts';
-import type { GeneratedManifest, ProjectManifest, Projection } from '../model/types.ts';
+import { resolveSourceRoot } from '../model/scope.ts';
+import type {
+  GeneratedManifest,
+  GeneratedTarget,
+  ProjectManifest,
+  Projection,
+} from '../model/types.ts';
 
 export interface NormalizeOptions {
   cwd: string;
+  home?: string;
   dryRun?: boolean;
   fix?: boolean;
   json?: boolean;
@@ -148,7 +159,8 @@ async function planSettings(
   const absolute = join(root, path);
   const expectedHash = sha256(expected);
   const info = await lstatOrNull(absolute);
-  const managed = manifest.generated?.settings !== undefined;
+  const record = getGeneratedTarget(manifest, 'claude-code')?.settings ?? null;
+  const managed = record !== null;
 
   if (info === null) {
     return { action: 'create', path, sha256: expectedHash, changed: true };
@@ -247,7 +259,7 @@ async function assertSourceTreesSafe(root: string): Promise<void> {
 async function projectionOverlapDiagnostics(
   root: string,
   projections: readonly Projection[],
-  generated: GeneratedManifest | undefined,
+  generated: GeneratedTarget | undefined,
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
   const agentsExists = (await lstatOrNull(join(root, '.agents'))) !== null;
@@ -297,9 +309,16 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     );
   }
 
-  const root = resolve(options.cwd);
-  const loaded = await loadProjectManifest(root);
+  const home = options.home ?? homedir();
+  const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
+  const root = sourceRoot.root;
+  const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
+  const claudeTarget = getTarget(loaded.manifest, 'claude-code');
+  if (claudeTarget === undefined) {
+    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
+  }
+  const claudeOptions = parseInterimClaudeOptions(claudeTarget);
   const diagnostics: Diagnostic[] = [];
 
   try {
@@ -311,7 +330,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     throw error;
   }
 
-  const backend = await checkClaudeCode(loaded.manifest.target.minVersion, options.runner);
+  const backend = await checkClaudeCode(claudeOptions.minVersion, options.runner);
   diagnostics.push(...backend.diagnostics);
   if (backend.diagnostics.some(
     (item) => item.code === 'backend.version' && item.severity === 'error',
@@ -331,14 +350,14 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   diagnostics.push(...await projectionOverlapDiagnostics(
     root,
     discovered.projections,
-    loaded.manifest.generated,
+    getGeneratedTarget(loaded.manifest, 'claude-code'),
   ));
 
   const policies = await loadPolicySources(paths);
   const compiled = compilePolicy(policies.project, policies.adapter, hooks.items);
   diagnostics.push(...compiled.diagnostics);
 
-  const agentsMd = await checkAgentsMd(root);
+  const agentsMd = await checkAgentsMd(root, paths.instructions);
   diagnostics.push(...agentsMd.diagnostics);
 
   if (hasErrors(diagnostics)) {
@@ -349,7 +368,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const projectionPlan = await planProjectionActions(
     root,
     discovered.projections,
-    loaded.manifest.generated,
+    getGeneratedTarget(loaded.manifest, 'claude-code'),
     { fix: options.fix === true },
   );
   diagnostics.push(
@@ -410,21 +429,26 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
 
   const shimRemoved = shimPlan.action === 'remove' || shimPlan.action === 'backup-and-remove';
   const generated: GeneratedManifest = {
-    settings: {
-      path: '.claude/settings.json',
-      sha256: sha256(settingsContent),
-    },
-    instructions: loaded.manifest.target.claudeMdShim && !shimRemoved
-      ? {
-        path: '.claude/CLAUDE.md',
-        sha256: sha256(renderClaudeMdShim()),
-      }
-      : null,
-    projections: discovered.projections,
+    targets: [{
+      provider: 'claude-code',
+      settings: {
+        path: '.claude/settings.json',
+        sha256: sha256(settingsContent),
+      },
+      instructions: claudeOptions.instructions === 'generated' && !shimRemoved
+        ? {
+          path: '.claude/CLAUDE.md',
+          mode: 'generated',
+          sha256: sha256(renderClaudeMdShim()),
+        }
+        : null,
+      projections: discovered.projections,
+    }],
   };
-  const manifestUpdated = stableJson(loaded.manifest.generated ?? null) !== stableJson(generated);
+  const manifestUpdated = loaded.legacy
+    || stableJson(loaded.manifest.generated ?? null) !== stableJson(generated);
   if (manifestUpdated) {
-    await updateGeneratedManifest(root, generated);
+    await updateGeneratedManifest(root, generated, { scope: sourceRoot.scope });
   }
 
   const gitignore = await ensureGitignoreBlock(root, DAB_GITIGNORE_ENTRIES);

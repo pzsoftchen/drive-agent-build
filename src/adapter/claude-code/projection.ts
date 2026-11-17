@@ -1,6 +1,7 @@
 import { lstat, readdir, readFile, readlink, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../../core/diagnostics.ts';
+import { ConfigError } from '../../core/errors.ts';
 import {
   backupPath,
   lstatOrNull,
@@ -17,10 +18,15 @@ import {
   toPosix,
 } from '../../core/paths.ts';
 import { discoverAgents } from '../../model/agents.ts';
+import {
+  getGeneratedTarget,
+  getTarget,
+  parseInterimClaudeOptions,
+} from '../../model/project-manifest.ts';
 import { discoverRules } from '../../model/rules.ts';
 import { discoverSkills } from '../../model/skills.ts';
 import type {
-  GeneratedManifest,
+  GeneratedTarget,
   ProjectManifest,
   ProjectPaths,
   Projection,
@@ -182,7 +188,7 @@ async function linkResolvesTo(targetPath: string, sourcePath: string): Promise<b
 export async function planProjectionActions(
   root: string,
   projections: readonly Projection[],
-  generated?: GeneratedManifest,
+  generated?: GeneratedTarget,
   options: { fix?: boolean } = {},
 ): Promise<ProjectionPlan> {
   const actions: ProjectionAction[] = [];
@@ -379,9 +385,14 @@ export async function planClaudeMdShim(
 
   const target = join(root, '.claude', 'CLAUDE.md');
   const actual = await lstatOrNull(target);
-  const managed = manifest.generated?.instructions !== undefined
-    && manifest.generated.instructions !== null;
-  const enabled = manifest.target.claudeMdShim;
+  const generated = getGeneratedTarget(manifest, 'claude-code');
+  const managed = generated?.instructions !== undefined
+    && generated.instructions !== null;
+  const targetConfig = getTarget(manifest, 'claude-code');
+  if (targetConfig === undefined) {
+    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
+  }
+  const enabled = parseInterimClaudeOptions(targetConfig).instructions === 'generated';
 
   if (!enabled) {
     if (actual === null) {

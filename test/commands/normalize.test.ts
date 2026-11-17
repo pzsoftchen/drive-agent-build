@@ -5,7 +5,10 @@ import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts'
 import { renderClaudeMdShim } from '../../src/adapter/claude-code/projection.ts';
 import { ConfigError } from '../../src/core/errors.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
-import { loadProjectManifest } from '../../src/model/project-manifest.ts';
+import {
+  getGeneratedTarget,
+  loadProjectManifest,
+} from '../../src/model/project-manifest.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
@@ -43,14 +46,14 @@ timeout: 10
 order: 10
 `;
 
-async function projectFixture(options: { claudeMdShim?: boolean } = {}): Promise<ProjectFixture> {
+async function projectFixture(
+  options: { instructions?: 'generated' | 'disabled'; legacy?: boolean } = {},
+): Promise<ProjectFixture> {
   const project = await makeProject();
   projects.push(project);
   await writeProjectFile(project.root, 'AGENTS.md', '# Project\n\nRead this first.\n');
-  await writeProjectFile(
-    project.root,
-    'dab.yaml',
-    `# project manifest
+  const manifest = options.legacy === true
+    ? `# project manifest
 version: 1
 project:
   id: demo
@@ -59,12 +62,29 @@ profile: feature
 target:
   provider: claude-code
   minVersion: 2.1.277
-  claudeMdShim: ${options.claudeMdShim ?? true}
+  claudeMdShim: true
 paths:
   agents: .agents
   claude: .claude
-`,
-  );
+`
+    : `# project manifest
+version: 2
+scope: project
+project:
+  id: demo
+  name: Demo
+profile: feature
+targets:
+  - provider: claude-code
+    enabled: true
+    options:
+      minVersion: 2.1.277
+      instructions: ${options.instructions ?? 'generated'}
+paths:
+  agents: .agents
+  claude: .claude
+`;
+  await writeProjectFile(project.root, 'dab.yaml', manifest);
   await writeProjectFile(project.root, '.agents/policies/project.yaml', projectPolicy);
   await writeProjectFile(project.root, '.agents/adapters/claude-code.yaml', adapterPolicy);
   await writeProjectFile(
@@ -135,9 +155,13 @@ describe('normalizeProject', () => {
     );
 
     const loaded = await loadProjectManifest(project.root);
-    expect(loaded.manifest.generated?.settings.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(loaded.manifest.generated?.instructions?.path).toBe('.claude/CLAUDE.md');
-    expect(loaded.manifest.generated?.projections).toHaveLength(3);
+    const generated = getGeneratedTarget(loaded.manifest, 'claude-code');
+    expect(generated?.settings?.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(generated?.instructions).toMatchObject({
+      path: '.claude/CLAUDE.md',
+      mode: 'generated',
+    });
+    expect(generated?.projections).toHaveLength(3);
 
     const gitignore = await readFile(join(project.root, '.gitignore'), 'utf8');
     expect(gitignore).toContain('# >>> dab managed >>>');
@@ -239,12 +263,31 @@ describe('normalizeProject', () => {
     expect(text).toContain('generated:');
   });
 
-  it('removes a managed shim when claudeMdShim is disabled', async () => {
+  it('migrates a v1 manifest in place and preserves its comments', async () => {
+    const project = await projectFixture({ legacy: true });
+
+    const result = await normalizeProject({ cwd: project.root });
+
+    expect(result.ok).toBe(true);
+    expect(result.manifestUpdated).toBe(true);
+    const text = await readFile(join(project.root, 'dab.yaml'), 'utf8');
+    expect(text).toContain('# project manifest');
+    expect(text).toContain('version: 2');
+    expect(text).toContain('scope: project');
+    expect(text).not.toMatch(/^target:/m);
+    const loaded = await loadProjectManifest(project.root);
+    expect(loaded.legacy).toBe(false);
+    expect(getGeneratedTarget(loaded.manifest, 'claude-code')?.settings?.path).toBe(
+      '.claude/settings.json',
+    );
+  });
+
+  it('removes a managed shim when instructions are disabled', async () => {
     const project = await projectFixture();
     await normalizeProject({ cwd: project.root });
     const dabPath = join(project.root, 'dab.yaml');
     const manifestText = await readFile(dabPath, 'utf8');
-    await writeFile(dabPath, manifestText.replace('claudeMdShim: true', 'claudeMdShim: false'));
+    await writeFile(dabPath, manifestText.replace('instructions: generated', 'instructions: disabled'));
 
     const result = await normalizeProject({ cwd: project.root });
 
@@ -252,7 +295,7 @@ describe('normalizeProject', () => {
     expect(result.shimAction).toBe('remove');
     expect(await lstatOrNull(join(project.root, '.claude/CLAUDE.md'))).toBeNull();
     const loaded = await loadProjectManifest(project.root);
-    expect(loaded.manifest.generated?.instructions).toBeNull();
+    expect(getGeneratedTarget(loaded.manifest, 'claude-code')?.instructions).toBeNull();
   });
 
   it('blocks unmanaged settings and replaces them only with fix', async () => {

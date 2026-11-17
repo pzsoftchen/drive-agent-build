@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import {
@@ -6,7 +7,7 @@ import {
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
-import { DabError } from '../core/errors.ts';
+import { ConfigError, DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { stableJson } from '../core/json.ts';
 import {
@@ -30,7 +31,13 @@ import {
 import { discoverAgents } from '../model/agents.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { loadPolicySources } from '../model/policy.ts';
-import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
+import {
+  getTarget,
+  loadProjectManifest,
+  parseInterimClaudeOptions,
+  resolveProjectPaths,
+} from '../model/project-manifest.ts';
+import { resolveSourceRoot } from '../model/scope.ts';
 
 export interface DetectOptions {
   cwd: string;
@@ -102,9 +109,16 @@ function buildResult(diagnostics: readonly Diagnostic[]): DetectResult {
 }
 
 export async function detectProject(options: DetectOptions): Promise<DetectResult> {
-  const root = resolve(options.cwd);
-  const loaded = await loadProjectManifest(root);
+  const home = options.home ?? homedir();
+  const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
+  const root = sourceRoot.root;
+  const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
+  const claudeTarget = getTarget(loaded.manifest, 'claude-code');
+  if (claudeTarget === undefined) {
+    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
+  }
+  const claudeOptions = parseInterimClaudeOptions(claudeTarget);
   const diagnostics: Diagnostic[] = [];
 
   try {
@@ -139,7 +153,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     throw error;
   }
 
-  const backend = await checkClaudeCode(loaded.manifest.target.minVersion, options.runner);
+  const backend = await checkClaudeCode(claudeOptions.minVersion, options.runner);
   diagnostics.push(...backend.diagnostics);
 
   const discovered = await discoverProjections(root, paths);
@@ -156,12 +170,12 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   const expectedSettings = renderSettings(compiled.effective);
 
   diagnostics.push(...await checkSettings(root, paths, loaded.manifest, expectedSettings));
-  diagnostics.push(...await checkShim(root, loaded.manifest, options.home));
+  diagnostics.push(...await checkShim(root, loaded.manifest, home));
   diagnostics.push(...await checkProjections(root, paths, discovered.projections, loaded.manifest));
   diagnostics.push(...await checkHookSafety(hooks.items));
   diagnostics.push(...await checkSecrets(root, paths));
   diagnostics.push(...await checkMemory(root, paths, options.now));
-  diagnostics.push(...await checkAgentsMdState(root));
+  diagnostics.push(...await checkAgentsMdState(root, paths));
 
   if (loaded.manifest.generated === undefined) {
     diagnostics.push({

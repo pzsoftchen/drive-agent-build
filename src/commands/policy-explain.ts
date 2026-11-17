@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import {
@@ -6,7 +7,7 @@ import {
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
-import { DabError, UsageError, ValidationError } from '../core/errors.ts';
+import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { stableJson } from '../core/json.ts';
 import {
@@ -18,11 +19,18 @@ import { compilePolicy, type EffectivePolicy } from '../adapter/claude-code/poli
 import { discoverAgents } from '../model/agents.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { loadPolicySources } from '../model/policy.ts';
-import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
+import {
+  getTarget,
+  loadProjectManifest,
+  parseInterimClaudeOptions,
+  resolveProjectPaths,
+} from '../model/project-manifest.ts';
+import { resolveSourceRoot } from '../model/scope.ts';
 import type { AgentDefinition } from '../model/types.ts';
 
 export interface PolicyExplainOptions {
   cwd: string;
+  home?: string;
   agent?: string;
   json?: boolean;
   runner?: CommandRunner;
@@ -107,9 +115,16 @@ function backendDiagnostic(installed: boolean, compatible: boolean, minimum: str
 }
 
 export async function explainPolicy(options: PolicyExplainOptions): Promise<PolicyExplainResult> {
-  const root = resolve(options.cwd);
-  const loaded = await loadProjectManifest(root);
+  const home = options.home ?? homedir();
+  const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
+  const root = sourceRoot.root;
+  const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
+  const claudeTarget = getTarget(loaded.manifest, 'claude-code');
+  if (claudeTarget === undefined) {
+    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
+  }
+  const claudeOptions = parseInterimClaudeOptions(claudeTarget);
   try {
     await assertRealPathInsideRoot(root, '.claude');
     await assertRealPathInsideRoot(root, '.agents');
@@ -160,7 +175,7 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
   );
   diagnostics.push(...compiled.diagnostics);
 
-  const runtimeInfo = await readClaudeVersion(options.runner, loaded.manifest.target.minVersion);
+  const runtimeInfo = await readClaudeVersion(options.runner, claudeOptions.minVersion);
   const runtimeDiagnostic = backendDiagnostic(
     runtimeInfo.installed,
     runtimeInfo.compatible,

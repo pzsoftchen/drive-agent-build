@@ -23,7 +23,10 @@ import { parseFrontmatter } from '../model/frontmatter.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { discoverMemory } from '../model/memory.ts';
 import {
+  getGeneratedTarget,
+  getTarget,
   loadProjectManifest,
+  parseInterimClaudeOptions,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
 import {
@@ -47,6 +50,7 @@ import { normalizeProject, type NormalizeResult } from './normalize.ts';
 
 export interface InitOptions {
   cwd: string;
+  home?: string;
   path?: string;
   profile?: 'feature';
   ai?: boolean;
@@ -136,12 +140,20 @@ async function findGeneratedConflicts(
 ): Promise<{ pending: Diagnostic[]; fatal: Diagnostic[] }> {
   const pending: Diagnostic[] = [];
   const fatal: Diagnostic[] = [];
+  const generated = manifest === undefined
+    ? undefined
+    : getGeneratedTarget(manifest, 'claude-code');
+  const claudeTarget = manifest === undefined ? undefined : getTarget(manifest, 'claude-code');
+  if (manifest !== undefined && claudeTarget === undefined) {
+    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
+  }
+  const enabled = claudeTarget === undefined
+    ? true
+    : parseInterimClaudeOptions(claudeTarget).instructions === 'generated';
 
   const settingsPath = join(paths.claude, 'settings.json');
-  if (
-    (await lstatOrNull(settingsPath)) !== null
-    && manifest?.generated?.settings === undefined
-  ) {
+  const settingsManaged = generated?.settings !== undefined && generated.settings !== null;
+  if ((await lstatOrNull(settingsPath)) !== null && !settingsManaged) {
     pending.push({
       code: 'claude-settings.unmanaged',
       severity: 'error',
@@ -154,9 +166,8 @@ async function findGeneratedConflicts(
   const shimPath = join(paths.claude, 'CLAUDE.md');
   const shimInfo = await lstatOrNull(shimPath);
   if (shimInfo !== null) {
-    const managed = manifest?.generated?.instructions !== undefined
-      && manifest.generated.instructions !== null;
-    const enabled = manifest?.target.claudeMdShim ?? true;
+    const managed = generated?.instructions !== undefined
+      && generated.instructions !== null;
     const regularFile = shimInfo.isFile() && !shimInfo.isSymbolicLink();
     let allowed = managed && regularFile;
     if (!allowed && enabled && regularFile) {
@@ -201,7 +212,7 @@ async function findGeneratedConflicts(
     if (info === null) {
       continue;
     }
-    const managed = manifest?.generated?.projections?.some(
+    const managed = generated?.projections.some(
       (projection) => projection.target === target,
     ) ?? false;
     if (info.isSymbolicLink()) {
@@ -426,16 +437,19 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
 
   const root = await resolveRoot(options);
   const scan: ScanResult = await scanProject(root);
+  const scope = 'project' as const;
   const manifestPath = join(root, 'dab.yaml');
   const existingManifest = (await lstatOrNull(manifestPath)) === null
     ? undefined
-    : await loadProjectManifest(root);
+    : await loadProjectManifest(root, { scope });
   const paths: ProjectPaths = existingManifest === undefined
     ? {
       root,
+      scope,
       agents: join(root, '.agents'),
       claude: join(root, '.claude'),
       manifest: manifestPath,
+      instructions: join(root, 'AGENTS.md'),
     }
     : resolveProjectPaths(root, existingManifest.manifest);
 
@@ -618,6 +632,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   const normalize = await normalizeProject({
     cwd: root,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
+    ...(options.home === undefined ? {} : { home: options.home }),
   });
   const diagnostics = [...scan.diagnostics, ...normalize.diagnostics];
   return {

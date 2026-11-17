@@ -1,6 +1,7 @@
 import { readdir, readlink } from 'node:fs/promises';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
+import { ConfigError } from '../core/errors.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { sha256 } from '../core/hash.ts';
 import { extractMarkdownLinks } from '../core/markdown-links.ts';
@@ -9,6 +10,11 @@ import { scanSecrets } from '../core/security.ts';
 import { renderClaudeMdShim } from '../adapter/claude-code/projection.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverMemory } from '../model/memory.ts';
+import {
+  getGeneratedTarget,
+  getTarget,
+  parseInterimClaudeOptions,
+} from '../model/project-manifest.ts';
 import type {
   AgentDefinition,
   LoadedHook,
@@ -30,6 +36,7 @@ export async function checkSettings(
 ): Promise<Diagnostic[]> {
   const absolute = join(paths.claude, 'settings.json');
   const file = relativeFile(root, absolute);
+  const record = getGeneratedTarget(manifest, 'claude-code')?.settings ?? null;
   const info = await lstatOrNull(absolute);
   if (info === null) {
     return [{
@@ -52,9 +59,7 @@ export async function checkSettings(
   const actual = await readTextFile(absolute);
   if (actual !== expected) {
     return [{
-      code: manifest.generated?.settings === undefined
-        ? 'claude-settings.unmanaged'
-        : 'generated.drift',
+      code: record === null ? 'claude-settings.unmanaged' : 'generated.drift',
       severity: 'error',
       message: 'generated settings do not match the current authored sources',
       file,
@@ -64,7 +69,7 @@ export async function checkSettings(
 
   const diagnostics: Diagnostic[] = [];
   const expectedHash = sha256(expected);
-  if (manifest.generated?.settings === undefined) {
+  if (record === null) {
     diagnostics.push({
       code: 'generated.manifest-stale',
       severity: 'warning',
@@ -72,8 +77,8 @@ export async function checkSettings(
       file: 'dab.yaml',
     });
   } else if (
-    manifest.generated.settings.sha256 !== expectedHash
-    || manifest.generated.settings.path !== '.claude/settings.json'
+    record.sha256 !== expectedHash
+    || record.path !== '.claude/settings.json'
   ) {
     diagnostics.push({
       code: 'generated.manifest-stale',
@@ -120,9 +125,14 @@ export async function checkShim(
 
   const shimPath = join(root, '.claude', 'CLAUDE.md');
   const info = await lstatOrNull(shimPath);
-  const managed = manifest.generated?.instructions !== undefined
-    && manifest.generated.instructions !== null;
-  const enabled = manifest.target.claudeMdShim;
+  const generated = getGeneratedTarget(manifest, 'claude-code');
+  const managed = generated?.instructions !== undefined
+    && generated.instructions !== null;
+  const target = getTarget(manifest, 'claude-code');
+  if (target === undefined) {
+    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
+  }
+  const enabled = parseInterimClaudeOptions(target).instructions === 'generated';
 
   if (enabled) {
     if (info === null) {
@@ -162,7 +172,7 @@ export async function checkShim(
       diagnostics.push({
         code: managed ? 'claude-md.shim-drift' : 'claude-md.unmanaged',
         severity: 'error',
-        message: 'shim exists while target.claudeMdShim is false',
+        message: 'shim exists while claude-code instructions are disabled',
         file: '.claude/CLAUDE.md',
       });
     }
@@ -170,7 +180,7 @@ export async function checkShim(
       diagnostics.push({
         code: 'generated.manifest-stale',
         severity: 'warning',
-        message: 'dab.yaml records a shim while target.claudeMdShim is false',
+        message: 'dab.yaml records a shim while claude-code instructions are disabled',
         file: 'dab.yaml',
       });
     }
@@ -186,8 +196,9 @@ export async function checkProjections(
   manifest: ProjectManifest,
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
+  const generated = getGeneratedTarget(manifest, 'claude-code');
   const managed = new Map(
-    (manifest.generated?.projections ?? []).map((projection) => [projection.target, projection]),
+    (generated?.projections ?? []).map((projection) => [projection.target, projection]),
   );
   const expected = new Set(projections.map((projection) => projection.target));
 
@@ -302,13 +313,13 @@ export async function checkProjections(
     }
   }
 
-  if (manifest.generated !== undefined) {
+  if (generated !== undefined) {
     const fingerprint = (items: readonly Projection[]): string =>
       items
         .map((item) => `${item.target}|${item.source}|${item.sourceSha256}`)
         .sort()
         .join('\n');
-    if (fingerprint(projections) !== fingerprint(manifest.generated.projections)) {
+    if (fingerprint(projections) !== fingerprint(generated.projections)) {
       diagnostics.push({
         code: 'generated.manifest-stale',
         severity: 'warning',
@@ -461,8 +472,8 @@ async function walkFiles(dir: string, depth = 0): Promise<string[]> {
 
 export async function checkSecrets(root: string, paths: ProjectPaths): Promise<Diagnostic[]> {
   const candidates = new Set<string>([
-    join(root, 'AGENTS.md'),
-    join(root, 'dab.yaml'),
+    paths.instructions,
+    paths.manifest,
     ...(await walkFiles(paths.agents)),
   ]);
   const diagnostics: Diagnostic[] = [];
@@ -527,15 +538,19 @@ export async function checkMemory(
   return diagnostics;
 }
 
-export async function checkAgentsMdState(root: string): Promise<Diagnostic[]> {
-  const size = await checkAgentsMd(root);
+export async function checkAgentsMdState(
+  scopeRoot: string,
+  paths: ProjectPaths,
+): Promise<Diagnostic[]> {
+  const size = await checkAgentsMd(scopeRoot, paths.instructions);
   const diagnostics = [...size.diagnostics];
-  const path = join(root, 'AGENTS.md');
-  if ((await lstatOrNull(path)) === null) {
+  if ((await lstatOrNull(paths.instructions)) === null) {
     return diagnostics;
   }
 
-  const text = await readTextFile(path);
+  const file = relativeFile(scopeRoot, paths.instructions);
+  const base = dirname(paths.instructions);
+  const text = await readTextFile(paths.instructions);
   for (const link of extractMarkdownLinks(text)) {
     const target = link.target.split('#')[0] ?? '';
     if (
@@ -546,13 +561,13 @@ export async function checkAgentsMdState(root: string): Promise<Diagnostic[]> {
     ) {
       continue;
     }
-    const absolute = target.startsWith('/') ? target : resolve(root, target);
-    if (!isPathInside(root, absolute) || (await lstatOrNull(absolute)) === null) {
+    const absolute = target.startsWith('/') ? target : resolve(base, target);
+    if (!isPathInside(scopeRoot, absolute) || (await lstatOrNull(absolute)) === null) {
       diagnostics.push({
         code: 'agents-md.broken-link',
         severity: 'error',
         message: `AGENTS.md link does not resolve: ${link.target}`,
-        file: 'AGENTS.md',
+        file,
         line: link.line,
       });
     }

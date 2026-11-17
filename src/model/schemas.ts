@@ -76,7 +76,79 @@ export const ProjectionSchema = z
   })
   .strict();
 
+export const TARGET_PROVIDERS = ['claude-code', 'codex', 'dsh'] as const;
+
+export const TargetConfigSchema = z
+  .object({
+    provider: z.enum(TARGET_PROVIDERS),
+    enabled: z.boolean().default(true),
+    options: z.record(z.string(), z.unknown()).default({}),
+  })
+  .strict();
+
+export const GeneratedTargetSchema = z
+  .object({
+    provider: z.enum(TARGET_PROVIDERS),
+    settings: z
+      .object({ path: z.string().min(1), sha256: z.string().regex(SHA256_HEX) })
+      .strict()
+      .nullable()
+      .default(null),
+    instructions: z
+      .object({
+        path: z.literal('.claude/CLAUDE.md'),
+        mode: z.enum(['symlink', 'generated']),
+        sha256: z.string().regex(SHA256_HEX),
+      })
+      .strict()
+      .nullable()
+      .default(null),
+    projections: z.array(ProjectionSchema).default([]),
+  })
+  .strict();
+
 export const GeneratedManifestSchema = z
+  .object({ targets: z.array(GeneratedTargetSchema) })
+  .strict();
+
+export const ProjectManifestSchema = z
+  .object({
+    version: z.literal(2),
+    scope: z.enum(['project', 'global']),
+    project: z
+      .object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        goal: z.string().min(1).optional(),
+      })
+      .strict(),
+    profile: z.literal('feature'),
+    targets: z.array(TargetConfigSchema).min(1),
+    paths: z
+      .object({
+        agents: z.string().min(1).default('.agents'),
+        claude: z.string().min(1).default('.claude'),
+      })
+      .strict()
+      .default({ agents: '.agents', claude: '.claude' }),
+    generated: GeneratedManifestSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const seen = new Set<string>();
+    for (const target of value.targets) {
+      if (seen.has(target.provider)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['targets'],
+          message: `duplicate target provider: ${target.provider}`,
+        });
+      }
+      seen.add(target.provider);
+    }
+  });
+
+export const LegacyGeneratedManifestSchema = z
   .object({
     settings: z
       .object({
@@ -96,7 +168,7 @@ export const GeneratedManifestSchema = z
   })
   .strict();
 
-export const ProjectManifestSchema = z
+export const LegacyProjectManifestSchema = z
   .object({
     version: z.literal(1),
     project: z
@@ -121,7 +193,7 @@ export const ProjectManifestSchema = z
       })
       .strict()
       .default({ agents: '.agents', claude: '.claude' }),
-    generated: GeneratedManifestSchema.optional(),
+    generated: LegacyGeneratedManifestSchema.optional(),
   })
   .strict();
 
