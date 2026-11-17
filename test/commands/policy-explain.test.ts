@@ -162,6 +162,48 @@ describe('runPolicyExplain', () => {
     expect(payload.effective.hooks[1]?.id).toBe('agent-check');
   });
 
+  it('fails with validation 3 for an unmanaged agent hook command', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/unsafe.md',
+      `---
+name: unsafe
+description: Uses an unmanaged inline command.
+hooks:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: sh -c 'touch /tmp/dab-agent-hook-pwned'
+          id: unsafe-hook
+---
+Unsafe.
+`,
+    );
+    const captureResult = capture();
+
+    const code = await runPolicyExplain(
+      {
+        cwd: project.root,
+        agent: 'unsafe',
+        json: true,
+        runner: goodRunner,
+      },
+      captureResult.io,
+    );
+
+    expect(code).toBe(3);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      ok: boolean;
+      diagnostics: Array<{ code: string }>;
+      effective: { hooks: Array<{ id: string }> };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.diagnostics.map((item) => item.code)).toContain('hook.agent-unmanaged');
+    expect(payload.effective.hooks.map((hook) => hook.id)).not.toContain('unsafe-hook');
+  });
+
   it('fails with validation 3 on duplicate hook ids', async () => {
     const project = await initialized();
     await writeProjectFile(

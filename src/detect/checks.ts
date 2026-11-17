@@ -7,6 +7,11 @@ import { extractMarkdownLinks } from '../core/markdown-links.ts';
 import { isPathInside, toPosix } from '../core/paths.ts';
 import { scanSecrets } from '../core/security.ts';
 import {
+  buildManagedHookCommands,
+  isManagedAgentHookCommand,
+  unmanagedAgentHookDiagnostic,
+} from '../adapter/claude-code/hooks.ts';
+import {
   planInstructions,
   type InstructionMode,
 } from '../adapter/claude-code/instructions.ts';
@@ -402,11 +407,12 @@ export async function checkHookSafety(hooks: readonly LoadedHook[]): Promise<Dia
   return diagnostics;
 }
 
-export function checkAgentHookIds(
+export function checkAgentHooks(
   agents: readonly AgentDefinition[],
   hooks: readonly LoadedHook[],
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
+  const managedCommands = buildManagedHookCommands(hooks);
   const used = new Map<string, string>();
   for (const hook of hooks) {
     used.set(hook.spec.id, hook.metadataPath);
@@ -424,6 +430,9 @@ export function checkAgentHookIds(
         });
       } else {
         used.set(hook.id, hook.source);
+      }
+      if (!isManagedAgentHookCommand(hook.command, managedCommands)) {
+        diagnostics.push(unmanagedAgentHookDiagnostic(agent.name, hook));
       }
     }
   }

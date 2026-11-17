@@ -16,6 +16,7 @@ export const DiagnosticCodes = {
   hookEntry: 'hook.entry',
   hookMissingEntry: 'hook.missing-entry',
   hookDuplicateId: 'hook.duplicate-id',
+  hookAgentUnmanaged: 'hook.agent-unmanaged',
   hookMetadataMissing: 'hook.metadata-missing',
   memoryInvalidEntry: 'memory.invalid-entry',
   memoryExpired: 'memory.expired',

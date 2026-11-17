@@ -18,6 +18,7 @@ import { readClaudeVersion } from '../core/version-check.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import { compilePolicy, type EffectivePolicy } from '../adapter/claude-code/policy-compile.ts';
+import { checkAgentHooks } from '../detect/checks.ts';
 import { discoverAgents } from '../model/agents.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { loadPolicySources } from '../model/policy.ts';
@@ -201,6 +202,7 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
         { hint: 'Run dab policy explain without --agent to inspect the project policy.' },
       );
     }
+    diagnostics.push(...checkAgentHooks([agent], hooks.items));
   }
 
   const compiled = compilePolicy(

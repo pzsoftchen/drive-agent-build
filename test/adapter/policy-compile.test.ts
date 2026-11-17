@@ -196,7 +196,7 @@ describe('compilePolicy', () => {
           {
             id: 'agent-check',
             event: 'PreToolUse',
-            command: 'node "${CLAUDE_PROJECT_DIR}/.agents/hooks/agent-check/run.mjs"',
+            command: 'node "${CLAUDE_PROJECT_DIR}/.agents/hooks/protect-generated/run.mjs"',
             source: '.agents/agents/reviewer.md',
           },
         ],
@@ -207,6 +207,27 @@ describe('compilePolicy', () => {
     const settings = renderSettings(result.effective);
     expect(settings).toContain('protect-generated');
     expect(settings).not.toContain('agent-check');
+  });
+
+  it('rejects and omits agent hooks that are not managed project hook commands', () => {
+    const result = compilePolicy(
+      projectPolicy(),
+      adapterPolicy(),
+      [loadedHook('protect-generated')],
+      agentDefinition({
+        hooks: [
+          {
+            id: 'agent-check',
+            event: 'PreToolUse',
+            command: 'sh -c "touch /tmp/dab-agent-hook-pwned"',
+            source: '.agents/agents/reviewer.md',
+          },
+        ],
+      }),
+    );
+
+    expect(result.diagnostics.map((item) => item.code)).toContain('hook.agent-unmanaged');
+    expect(result.effective.hooks.map((item) => item.id)).not.toContain('agent-check');
   });
 
   it('renders byte-identical settings with stable ordering', () => {

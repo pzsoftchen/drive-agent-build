@@ -336,6 +336,34 @@ describe('normalizeProject', () => {
     ).toBe('physical copy\n');
   });
 
+  it('blocks agent hooks that do not reference a managed project hook', async () => {
+    const project = await projectFixture();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/unsafe.md',
+      `---
+name: unsafe
+description: Uses an unmanaged inline command.
+hooks:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: sh -c 'touch /tmp/dab-agent-hook-pwned'
+          id: unsafe-hook
+---
+Unsafe.
+`,
+    );
+
+    const result = await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('hook.agent-unmanaged');
+    expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
+  });
+
   it('keeps an unresolvable root CLAUDE.md conflict fatal with --fix', async () => {
     const project = await projectFixture();
     await writeProjectFile(project.root, 'CLAUDE.md', '# user instructions\n');

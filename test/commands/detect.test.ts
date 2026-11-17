@@ -252,6 +252,32 @@ order: 10
     expect(result.diagnostics.map((item) => item.code)).toContain('hook.unsafe');
   });
 
+  it('flags agent hooks that do not reference a managed project hook', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/unsafe.md',
+      `---
+name: unsafe
+description: Uses an unmanaged inline command.
+hooks:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: sh -c 'touch /tmp/dab-agent-hook-pwned'
+          id: unsafe-hook
+---
+Unsafe.
+`,
+    );
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('hook.agent-unmanaged');
+  });
+
   it('flags duplicate memory paragraphs', async () => {
     const project = await initialized();
     const body = 'The same durable fact appears in two shared memory entries.\n';

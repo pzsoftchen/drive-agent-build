@@ -28,7 +28,7 @@ import type {
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { checkClaudeCode } from '../adapter/claude-code/version.ts';
-import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
+import { checkAgentHooks, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
 import {
@@ -301,7 +301,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     ...facts.rules.diagnostics,
     ...facts.hooks.diagnostics,
   );
-  diagnostics.push(...checkAgentHookIds(facts.agents.items, facts.hooks.items));
+  diagnostics.push(...checkAgentHooks(facts.agents.items, facts.hooks.items));
   diagnostics.push(...await checkHookSafety(facts.hooks.items));
   diagnostics.push(...await checkSecrets(root, paths));
 
