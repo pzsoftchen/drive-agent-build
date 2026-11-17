@@ -382,7 +382,10 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       settings: topLevelSettings(targets),
       shimAction: compatShimAction(targets),
       backups: [],
-      gitignore: { changed: false, path: join(root, '.gitignore') },
+      gitignore: {
+        changed: false,
+        path: paths.scope === 'global' ? '' : join(root, '.gitignore'),
+      },
       manifestUpdated: false,
     };
   }
@@ -403,7 +406,10 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     await updateGeneratedManifest(root, generated, { scope: sourceRoot.scope });
   }
 
-  const gitignore = await ensureGitignoreBlock(root, DAB_GITIGNORE_ENTRIES);
+  // $HOME/.gitignore is user-owned; global scope never manages it.
+  const gitignore = paths.scope === 'global'
+    ? { changed: false, path: '' }
+    : await ensureGitignoreBlock(root, DAB_GITIGNORE_ENTRIES);
 
   return {
     ok: true,

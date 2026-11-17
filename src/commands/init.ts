@@ -5,7 +5,7 @@ import { runCommand } from '../core/command.ts';
 import { formatDiagnostics, type Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
-import { ensureDir, lstatOrNull, readTextFile, writeFileAtomic } from '../core/fs-atomic.ts';
+import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
 import { stableJson } from '../core/json.ts';
 import {
   assertParentInsideRoot,
@@ -14,9 +14,11 @@ import {
 } from '../core/paths.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
 import {
-  discoverProjections,
-  renderClaudeMdShim,
-} from '../adapter/claude-code/projection.ts';
+  inspectInstructionTarget,
+  type InstructionMode,
+} from '../adapter/claude-code/instructions.ts';
+import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
+import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import { discoverAgents } from '../model/agents.ts';
 import { parseFrontmatter } from '../model/frontmatter.ts';
@@ -26,7 +28,6 @@ import {
   getGeneratedTarget,
   getTarget,
   loadProjectManifest,
-  parseInterimClaudeOptions,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
 import {
@@ -147,9 +148,9 @@ async function findGeneratedConflicts(
   if (manifest !== undefined && claudeTarget === undefined) {
     throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
   }
-  const enabled = claudeTarget === undefined
-    ? true
-    : parseInterimClaudeOptions(claudeTarget).instructions === 'generated';
+  const mode: InstructionMode = claudeTarget === undefined
+    ? 'symlink'
+    : parseClaudeTargetOptions(claudeTarget).instructions;
 
   const settingsPath = join(paths.claude, 'settings.json');
   const settingsManaged = generated?.settings !== undefined && generated.settings !== null;
@@ -163,25 +164,9 @@ async function findGeneratedConflicts(
     });
   }
 
-  const shimPath = join(paths.claude, 'CLAUDE.md');
-  const shimInfo = await lstatOrNull(shimPath);
-  if (shimInfo !== null) {
-    const managed = generated?.instructions !== undefined
-      && generated.instructions !== null;
-    const regularFile = shimInfo.isFile() && !shimInfo.isSymbolicLink();
-    let allowed = managed && regularFile;
-    if (!allowed && enabled && regularFile) {
-      allowed = (await readTextFile(shimPath)) === renderClaudeMdShim();
-    }
-    if (!allowed) {
-      pending.push({
-        code: 'claude-md.unmanaged',
-        severity: 'error',
-        message: 'existing .claude/CLAUDE.md is not DAB-managed',
-        file: '.claude/CLAUDE.md',
-        hint: 'Normalize can back it up and replace it after review.',
-      });
-    }
+  const instructionConflict = await inspectInstructionTarget(root, paths, mode, generated);
+  if (instructionConflict !== undefined) {
+    pending.push(instructionConflict);
   }
 
   for (const [target, source] of targets) {

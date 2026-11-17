@@ -49,7 +49,7 @@ targets:
     enabled: true
     options:
       minVersion: 2.1.277
-      instructions: generated
+      instructions: symlink
 paths:
   agents: .agents
   claude: .claude

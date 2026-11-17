@@ -39,7 +39,7 @@ async function manifestAndFacts(project: ProjectFixture) {
 }
 
 describe('claudeCodeAdapter', () => {
-  it('plans Claude settings, generated instructions and symlink projections', async () => {
+  it('plans Claude settings, symlinked instructions and symlink projections', async () => {
     const project = await makeInitializedProject();
     projects.push(project);
     const { manifest, paths, target, facts } = await manifestAndFacts(project);
@@ -57,7 +57,7 @@ describe('claudeCodeAdapter', () => {
     expect(plan.diagnostics).toEqual([]);
     expect(plan.generated.provider).toBe('claude-code');
     expect(plan.generated.settings?.path).toBe('.claude/settings.json');
-    expect(plan.generated.instructions?.mode).toBe('generated');
+    expect(plan.generated.instructions?.mode).toBe('symlink');
     expect(plan.generated.projections.map((item) => item.target)).toEqual([
       '.claude/agents/reviewer.md',
       '.claude/skills/doc-sync',

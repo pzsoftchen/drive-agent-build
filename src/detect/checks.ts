@@ -6,7 +6,10 @@ import { sha256 } from '../core/hash.ts';
 import { extractMarkdownLinks } from '../core/markdown-links.ts';
 import { isPathInside, toPosix } from '../core/paths.ts';
 import { scanSecrets } from '../core/security.ts';
-import { renderClaudeMdShim } from '../adapter/claude-code/projection.ts';
+import {
+  planInstructions,
+  type InstructionMode,
+} from '../adapter/claude-code/instructions.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverMemory } from '../model/memory.ts';
 import type {
@@ -119,67 +122,62 @@ export async function checkInstructionEnvironment(
   return diagnostics;
 }
 
-export async function checkShim(
+export async function checkInstructions(
   root: string,
-  options: { enabled: boolean; generated?: GeneratedTarget },
+  paths: ProjectPaths,
+  mode: InstructionMode,
+  generated?: GeneratedTarget,
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
-  const shimPath = join(root, '.claude', 'CLAUDE.md');
-  const info = await lstatOrNull(shimPath);
-  const managed = options.generated?.instructions !== undefined
-    && options.generated?.instructions !== null;
-  const enabled = options.enabled;
+  const target = join(root, '.claude', 'CLAUDE.md');
+  const plan = await planInstructions({ root, paths, mode, generated });
 
-  if (enabled) {
-    if (info === null) {
-      diagnostics.push({
-        code: 'claude-md.shim-missing',
-        severity: 'error',
-        message: 'generated .claude/CLAUDE.md shim is missing',
-        file: '.claude/CLAUDE.md',
-        hint: 'Run dab normalize to generate the AGENTS.md import shim.',
-      });
-    } else if (!info.isFile() || info.isSymbolicLink()) {
-      diagnostics.push({
-        code: 'claude-md.unmanaged',
-        severity: 'error',
-        message: '.claude/CLAUDE.md is not a regular generated file',
-        file: '.claude/CLAUDE.md',
-      });
-    } else if ((await readTextFile(shimPath)) !== renderClaudeMdShim()) {
-      diagnostics.push({
-        code: managed ? 'claude-md.shim-drift' : 'claude-md.unmanaged',
-        severity: 'error',
-        message: 'generated .claude/CLAUDE.md shim has drifted',
-        file: '.claude/CLAUDE.md',
-        hint: 'Run dab normalize; do not edit the shim by hand.',
-      });
-    }
-    if (!managed) {
+  if (plan.conflict !== undefined) {
+    diagnostics.push(plan.conflict);
+  } else if (plan.action !== 'none') {
+    const present = (await lstatOrNull(target)) !== null;
+    diagnostics.push({
+      code: present ? 'claude-md.instructions-drift' : 'claude-md.instructions-missing',
+      severity: 'error',
+      message: present
+        ? '.claude/CLAUDE.md does not match the DAB-managed instructions'
+        : 'DAB-managed .claude/CLAUDE.md instructions are missing',
+      file: '.claude/CLAUDE.md',
+      hint: 'Run dab normalize to rebuild the instruction output; do not edit it by hand.',
+    });
+  }
+
+  const record = generated?.instructions ?? null;
+  if (mode === 'disabled') {
+    if (record !== null) {
       diagnostics.push({
         code: 'generated.manifest-stale',
         severity: 'warning',
-        message: 'dab.yaml does not record the generated CLAUDE.md shim',
+        message: 'dab.yaml records instructions while claude-code instructions are disabled',
         file: 'dab.yaml',
       });
     }
-  } else {
-    if (info !== null) {
-      diagnostics.push({
-        code: managed ? 'claude-md.shim-drift' : 'claude-md.unmanaged',
-        severity: 'error',
-        message: 'shim exists while claude-code instructions are disabled',
-        file: '.claude/CLAUDE.md',
-      });
-    }
-    if (managed) {
-      diagnostics.push({
-        code: 'generated.manifest-stale',
-        severity: 'warning',
-        message: 'dab.yaml records a shim while claude-code instructions are disabled',
-        file: 'dab.yaml',
-      });
-    }
+    return diagnostics;
+  }
+
+  if (record === null) {
+    diagnostics.push({
+      code: 'generated.manifest-stale',
+      severity: 'warning',
+      message: 'dab.yaml does not record the managed .claude/CLAUDE.md instructions',
+      file: 'dab.yaml',
+    });
+  } else if (
+    record.path !== '.claude/CLAUDE.md'
+    || record.mode !== mode
+    || (plan.sha256 !== undefined && record.sha256 !== plan.sha256)
+  ) {
+    diagnostics.push({
+      code: 'generated.manifest-stale',
+      severity: 'warning',
+      message: 'dab.yaml records stale .claude/CLAUDE.md instructions',
+      file: 'dab.yaml',
+    });
   }
 
   return diagnostics;

@@ -3,10 +3,12 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { explainPolicy, runPolicyExplain } from '../../src/commands/policy-explain.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
+import { makeGlobalFixture } from '../helpers/global.ts';
 import { makeInitializedProject } from '../helpers/initialized.ts';
 import { writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 
 const projects: ProjectFixture[] = [];
+const homes: string[] = [];
 
 async function initialized(): Promise<ProjectFixture> {
   const project = await makeInitializedProject();
@@ -67,6 +69,7 @@ You are hooked.
 
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
+  await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
 });
 
 describe('runPolicyExplain', () => {
@@ -243,6 +246,25 @@ Duplicate.
     expect(payload.runtime.compatible).toBe(false);
     expect(payload.agent).toBeUndefined();
     expect(payload.effective.permissions.deny.length).toBeGreaterThan(0);
+  });
+
+  it('notes that global settings are not managed in this phase', async () => {
+    const project = await initialized();
+    const local = await explainPolicy({ cwd: project.root, runner: goodRunner });
+    expect(local.effective.limitations).not.toContain(
+      'global settings are not managed in this phase',
+    );
+
+    const home = await makeGlobalFixture();
+    homes.push(home.home);
+    const global = await explainPolicy({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+    expect(global.effective.limitations).toContain(
+      'global settings are not managed in this phase',
+    );
   });
 
   it('returns backend 4 when the installed version is too old', async () => {

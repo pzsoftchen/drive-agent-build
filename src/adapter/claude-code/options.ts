@@ -5,7 +5,7 @@ import type { TargetConfig } from '../../model/types.ts';
 export const ClaudeCodeTargetOptionsSchema = z
   .object({
     minVersion: z.string().regex(/^\d+\.\d+\.\d+$/).default('2.1.277'),
-    instructions: z.enum(['generated', 'disabled']).default('generated'),
+    instructions: z.enum(['symlink', 'generated', 'disabled']).default('symlink'),
   })
   .strict();
 

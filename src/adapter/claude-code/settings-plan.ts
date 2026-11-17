@@ -19,6 +19,16 @@ export interface SettingsPlan {
   conflict?: Diagnostic;
 }
 
+export function globalSettingsWarning(): Diagnostic {
+  return {
+    code: 'claude-settings.global-not-adopted',
+    severity: 'warning',
+    file: '.claude/settings.json',
+    message: 'global Claude settings are user-owned and are not modified by DAB in this phase',
+    hint: 'Keep your existing settings; explicit adoption/merge is planned separately.',
+  };
+}
+
 export async function planSettings(
   root: string,
   generated: GeneratedTarget | undefined,

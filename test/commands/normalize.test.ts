@@ -2,17 +2,31 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
-import { renderClaudeMdShim } from '../../src/adapter/claude-code/projection.ts';
+import type { CommandRunner } from '../../src/core/command.ts';
 import { ConfigError } from '../../src/core/errors.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
 import {
   getGeneratedTarget,
   loadProjectManifest,
 } from '../../src/model/project-manifest.ts';
+import { makeGlobalFixture } from '../helpers/global.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
+const goodRunner: CommandRunner = async () => ({
+  stdout: '2.1.325 (Claude Code)\n',
+  stderr: '',
+  exitCode: 0,
+});
+
 const projects: ProjectFixture[] = [];
+const homes: string[] = [];
+
+async function globalFixture() {
+  const fixture = await makeGlobalFixture();
+  homes.push(fixture.home);
+  return fixture;
+}
 
 const projectPolicy = `version: 1
 defaultMode: default
@@ -79,7 +93,7 @@ targets:
     enabled: true
     options:
       minVersion: 2.1.277
-      instructions: ${options.instructions ?? 'generated'}
+      instructions: ${options.instructions ?? 'symlink'}
 paths:
   agents: .agents
   claude: .claude
@@ -113,6 +127,7 @@ paths:
 
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
+  await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
 });
 
 describe('normalizeProject', () => {
@@ -126,7 +141,7 @@ describe('normalizeProject', () => {
     expect(result.targets[0]?.settings?.path).toBe('.claude/settings.json');
     expect(result.targets[0]?.instructions).toMatchObject({
       path: '.claude/CLAUDE.md',
-      mode: 'generated',
+      mode: 'symlink',
       action: 'create',
     });
     expect(result.actions).toEqual(result.targets.flatMap((item) => item.actions));
@@ -149,9 +164,9 @@ describe('normalizeProject', () => {
       '.agents/hooks/protect-generated/run.mjs',
     );
 
-    expect(await readFile(join(project.root, '.claude/CLAUDE.md'), 'utf8')).toBe(
-      renderClaudeMdShim(),
-    );
+    expect((await lstatOrNull(join(project.root, '.claude/CLAUDE.md')))?.isSymbolicLink())
+      .toBe(true);
+    expect(await readlink(join(project.root, '.claude/CLAUDE.md'))).toBe('../AGENTS.md');
     expect(await readlink(join(project.root, '.claude/agents/reviewer.md'))).toBe(
       '../../.agents/agents/reviewer.md',
     );
@@ -167,7 +182,7 @@ describe('normalizeProject', () => {
     expect(generated?.settings?.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(generated?.instructions).toMatchObject({
       path: '.claude/CLAUDE.md',
-      mode: 'generated',
+      mode: 'symlink',
     });
     expect(generated?.projections).toHaveLength(3);
 
@@ -175,6 +190,76 @@ describe('normalizeProject', () => {
     expect(gitignore).toContain('# >>> dab managed >>>');
     expect(gitignore).toContain('.claude/CLAUDE.md');
     expect(await lstatOrNull(join(project.root, '.claude/settings.local.json'))).toBeNull();
+  });
+
+  it('accepts a managed instruction symlink and repairs it after drift', async () => {
+    const project = await projectFixture();
+    await normalizeProject({ cwd: project.root });
+    expect(await readlink(join(project.root, '.claude/CLAUDE.md'))).toBe('../AGENTS.md');
+
+    await rm(join(project.root, '.claude/CLAUDE.md'));
+    const repaired = await normalizeProject({ cwd: project.root });
+    expect(repaired.ok).toBe(true);
+    expect(await readlink(join(project.root, '.claude/CLAUDE.md'))).toBe('../AGENTS.md');
+  });
+
+  it('keeps global settings byte-identical', async () => {
+    const home = await globalFixture();
+    const settings = join(home.home, '.claude/settings.json');
+    await writeProjectFile(
+      home.home,
+      '.claude/settings.json',
+      '{"permissions":{"allow":["Bash(echo)"]}}\n',
+    );
+
+    const result = await normalizeProject({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(settings, 'utf8')).toBe(
+      '{"permissions":{"allow":["Bash(echo)"]}}\n',
+    );
+    expect(result.targets[0]?.settings).toBeUndefined();
+    expect(
+      result.diagnostics.some(
+        (item) => item.code === 'claude-settings.global-not-adopted'
+          && item.severity === 'warning',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not create a global $HOME/.gitignore', async () => {
+    const home = await globalFixture();
+
+    const result = await normalizeProject({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.gitignore).toEqual({ changed: false, path: '' });
+    expect(await lstatOrNull(join(home.home, '.gitignore'))).toBeNull();
+  });
+
+  it('leaves an existing global $HOME/.gitignore byte-identical', async () => {
+    const home = await globalFixture();
+    const ignore = join(home.home, '.gitignore');
+    const content = 'node_modules/\n# user managed\ncustom/\n';
+    await writeFile(ignore, content);
+
+    const result = await normalizeProject({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.gitignore.changed).toBe(false);
+    expect(await readFile(ignore, 'utf8')).toBe(content);
   });
 
   it('is byte-idempotent on a second run', async () => {
@@ -318,7 +403,7 @@ describe('normalizeProject', () => {
     await normalizeProject({ cwd: project.root });
     const dabPath = join(project.root, 'dab.yaml');
     const manifestText = await readFile(dabPath, 'utf8');
-    await writeFile(dabPath, manifestText.replace('instructions: generated', 'instructions: disabled'));
+    await writeFile(dabPath, manifestText.replace('instructions: symlink', 'instructions: disabled'));
 
     const result = await normalizeProject({ cwd: project.root });
 

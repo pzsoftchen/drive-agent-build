@@ -2,9 +2,9 @@ import type { Diagnostic } from '../../core/diagnostics.ts';
 import { withFixWarning } from '../../core/diagnostics.ts';
 import { sha256 } from '../../core/hash.ts';
 import {
+  checkInstructions,
   checkProjections,
   checkSettings,
-  checkShim,
 } from '../../detect/checks.ts';
 import { getGeneratedTarget } from '../../model/project-manifest.ts';
 import type {
@@ -20,18 +20,24 @@ import type {
   TargetNormalizeInput,
   TargetNormalizePlan,
 } from '../types.ts';
+import {
+  applyInstructions,
+  planInstructions,
+} from './instructions.ts';
 import { parseClaudeTargetOptions } from './options.ts';
 import { compilePolicy } from './policy-compile.ts';
 import {
-  applyClaudeMdShim,
   applyProjectionActions,
   discoverProjections,
-  planClaudeMdShim,
   planProjectionActions,
-  renderClaudeMdShim,
   type ProjectionAction,
 } from './projection.ts';
-import { applySettings, planSettings } from './settings-plan.ts';
+import {
+  applySettings,
+  globalSettingsWarning,
+  planSettings,
+  type SettingsPlan,
+} from './settings-plan.ts';
 import { renderSettings } from './settings.ts';
 import { checkClaudeCode } from './version.ts';
 
@@ -117,15 +123,25 @@ async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePl
     input.facts.hooks.items,
   );
   diagnostics.push(...compiled.diagnostics);
-  const settingsContent = renderSettings(compiled.effective);
 
-  const settingsPlan = await planSettings(
-    input.paths.root,
-    generatedRecord,
-    settingsContent,
-  );
-  const shimPlan = await planClaudeMdShim(input.paths.root, {
-    enabled: options.instructions !== 'disabled',
+  const global = input.paths.scope === 'global';
+  let settingsPlan: SettingsPlan | undefined;
+  let settingsContent: string | undefined;
+  if (global) {
+    diagnostics.push(globalSettingsWarning());
+  } else {
+    settingsContent = renderSettings(compiled.effective);
+    settingsPlan = await planSettings(
+      input.paths.root,
+      generatedRecord,
+      settingsContent,
+    );
+  }
+
+  const instructionPlan = await planInstructions({
+    root: input.paths.root,
+    paths: input.paths,
+    mode: options.instructions,
     generated: generatedRecord,
     fix: input.fix,
   });
@@ -145,50 +161,54 @@ async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePl
       .map((action) => action.projection.target),
   );
   const projectionsWarnable = input.fix && backupTargets.size > 0;
-  const shimBacksUp = shimPlan.action === 'backup-and-repair'
-    || shimPlan.action === 'backup-and-remove';
-  const settingsBacksUp = settingsPlan.action === 'backup-and-write';
+  const instructionBacksUp = instructionPlan.action === 'backup-and-repair'
+    || instructionPlan.action === 'backup-and-remove';
+  const settingsBacksUp = settingsPlan?.action === 'backup-and-write';
   diagnostics.push(
     ...projectionPlan.conflicts.map((item) =>
       (projectionsWarnable && item.file !== undefined && backupTargets.has(item.file)
         ? withFixWarning(item)
         : item)),
-    ...(shimPlan.conflict === undefined
+    ...(instructionPlan.conflict === undefined
       ? []
-      : [input.fix && shimBacksUp ? withFixWarning(shimPlan.conflict) : shimPlan.conflict]),
-    ...(settingsPlan.conflict === undefined
+      : [input.fix && instructionBacksUp
+        ? withFixWarning(instructionPlan.conflict)
+        : instructionPlan.conflict]),
+    ...(settingsPlan?.conflict === undefined
       ? []
       : [input.fix && settingsBacksUp
         ? withFixWarning(settingsPlan.conflict)
         : settingsPlan.conflict]),
   );
 
-  const shimContent = renderClaudeMdShim();
-  const shimRemoved = shimPlan.action === 'remove' || shimPlan.action === 'backup-and-remove';
-  const shimPlanned = options.instructions === 'generated'
-    && shimPlan.conflict === undefined
-    && !shimRemoved;
+  const instructionConflictFatal = instructionPlan.conflict !== undefined
+    && !(input.fix && instructionBacksUp);
+  const instructionsRecord = options.instructions === 'disabled'
+    || instructionConflictFatal
+    || instructionPlan.sha256 === undefined
+    ? null
+    : {
+      path: '.claude/CLAUDE.md' as const,
+      mode: options.instructions,
+      sha256: instructionPlan.sha256,
+    };
   const generated: GeneratedTarget = {
     provider: 'claude-code',
-    settings: {
-      path: settingsPlan.path,
-      sha256: sha256(settingsContent),
-    },
-    instructions: shimPlanned
-      ? {
-        path: '.claude/CLAUDE.md',
-        mode: 'generated',
-        sha256: sha256(shimContent),
-      }
-      : null,
+    settings: settingsPlan === undefined || settingsContent === undefined
+      ? null
+      : {
+        path: settingsPlan.path,
+        sha256: sha256(settingsContent),
+      },
+    instructions: instructionsRecord,
     projections: discovered.projections,
   };
 
   const actions = projectionPlan.actions.map(describeProjectionAction);
-  if (shimPlan.action !== 'none') {
-    actions.push(`instructions ${shimPlan.action} .claude/CLAUDE.md`);
+  if (instructionPlan.action !== 'none') {
+    actions.push(`instructions ${instructionPlan.action} .claude/CLAUDE.md`);
   }
-  if (settingsPlan.action !== 'none') {
+  if (settingsPlan !== undefined && settingsPlan.action !== 'none') {
     actions.push(`settings ${settingsPlan.action} ${settingsPlan.path}`);
   }
 
@@ -197,16 +217,20 @@ async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePl
     diagnostics,
     actions,
     generated,
-    settings: {
-      path: settingsPlan.path,
-      sha256: settingsPlan.sha256,
-      changed: settingsPlan.changed,
-    },
+    ...(settingsPlan === undefined
+      ? {}
+      : {
+        settings: {
+          path: settingsPlan.path,
+          sha256: settingsPlan.sha256,
+          changed: settingsPlan.changed,
+        },
+      }),
     instructions: {
       path: '.claude/CLAUDE.md',
-      mode: 'generated',
-      action: shimPlan.action,
-      sha256: sha256(shimContent),
+      mode: options.instructions,
+      action: instructionPlan.action,
+      sha256: instructionPlan.sha256 ?? '',
     },
     apply: async ({ backupRoot }) => {
       const projectionApplied = await applyProjectionActions(
@@ -214,22 +238,24 @@ async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePl
         projectionPlan.actions,
         { backupRoot, sourceRoot: '.agents' },
       );
-      const shimBackups = await applyClaudeMdShim(
+      const instructionBackups = await applyInstructions(
         input.paths.root,
-        shimPlan.action,
-        { backupRoot },
-      );
-      const settingsBackups = await applySettings(
-        input.paths.root,
-        settingsPlan,
-        settingsContent,
+        instructionPlan,
         backupRoot,
       );
+      const settingsBackups = settingsPlan === undefined || settingsContent === undefined
+        ? []
+        : await applySettings(
+          input.paths.root,
+          settingsPlan,
+          settingsContent,
+          backupRoot,
+        );
       return {
         applied: projectionApplied.applied
-          + (shimPlan.action === 'none' ? 0 : 1)
-          + (settingsPlan.action === 'none' ? 0 : 1),
-        backups: [...projectionApplied.backups, ...shimBackups, ...settingsBackups],
+          + (instructionPlan.action === 'none' ? 0 : 1)
+          + (settingsPlan === undefined || settingsPlan.action === 'none' ? 0 : 1),
+        backups: [...projectionApplied.backups, ...instructionBackups, ...settingsBackups],
       };
     },
   };
@@ -256,16 +282,17 @@ async function detect(input: TargetContext): Promise<TargetDetectOutcome> {
     input.facts.hooks.items,
   );
   diagnostics.push(...compiled.diagnostics);
-  const expectedSettings = renderSettings(compiled.effective);
 
+  if (input.paths.scope === 'global') {
+    diagnostics.push(globalSettingsWarning());
+  } else {
+    const expectedSettings = renderSettings(compiled.effective);
+    diagnostics.push(
+      ...await checkSettings(input.paths.root, input.paths, generated, expectedSettings),
+    );
+  }
   diagnostics.push(
-    ...await checkSettings(input.paths.root, input.paths, generated, expectedSettings),
-  );
-  diagnostics.push(
-    ...await checkShim(input.paths.root, {
-      enabled: options.instructions !== 'disabled',
-      generated,
-    }),
+    ...await checkInstructions(input.paths.root, input.paths, options.instructions, generated),
   );
   diagnostics.push(
     ...await checkProjections(input.paths.root, input.paths, discovered.projections, generated),
@@ -275,7 +302,11 @@ async function detect(input: TargetContext): Promise<TargetDetectOutcome> {
     discovered.projections.map((item) => projectionKey(item.kind, item.name)),
   );
   const statuses: TargetFactStatus[] = [
-    { kind: 'instructions', name: 'CLAUDE.md', status: 'generated' },
+    {
+      kind: 'instructions',
+      name: 'CLAUDE.md',
+      status: options.instructions === 'disabled' ? 'not-applicable' : 'generated',
+    },
     ...input.facts.agents.items.map((item): TargetFactStatus =>
       projectedStatus('agent', item.name, projected)),
     ...input.facts.skills.items.map((item): TargetFactStatus =>

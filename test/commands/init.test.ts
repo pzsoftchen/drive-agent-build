@@ -3,7 +3,6 @@ import { mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
-import { renderClaudeMdShim } from '../../src/adapter/claude-code/projection.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
 import {
@@ -67,7 +66,8 @@ describe('runInit', () => {
 
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).not.toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).not.toBeNull();
-    expect(await readFile(join(root, '.claude/CLAUDE.md'), 'utf8')).toBe(renderClaudeMdShim());
+    expect((await lstatOrNull(join(root, '.claude/CLAUDE.md')))?.isSymbolicLink()).toBe(true);
+    expect(await readlink(join(root, '.claude/CLAUDE.md'))).toBe('../AGENTS.md');
     expect(await lstatOrNull(join(root, '.claude/settings.json'))).not.toBeNull();
     expect(await readlink(join(root, '.claude/agents/implementer.md'))).toContain(
       '.agents/agents/implementer.md',
@@ -82,7 +82,7 @@ describe('runInit', () => {
     expect(manifest.manifest.profile).toBe('feature');
     expect(manifest.manifest.scope).toBe('project');
     const generated = getGeneratedTarget(manifest.manifest, 'claude-code');
-    expect(generated?.instructions?.mode).toBe('generated');
+    expect(generated?.instructions?.mode).toBe('symlink');
     expect(generated?.projections.length ?? 0).toBeGreaterThan(0);
   });
 

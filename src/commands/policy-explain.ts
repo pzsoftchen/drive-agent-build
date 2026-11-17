@@ -16,6 +16,7 @@ import {
 } from '../core/paths.ts';
 import { readClaudeVersion } from '../core/version-check.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
+import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import { compilePolicy, type EffectivePolicy } from '../adapter/claude-code/policy-compile.ts';
 import { discoverAgents } from '../model/agents.ts';
 import { discoverHooks } from '../model/hooks.ts';
@@ -24,7 +25,6 @@ import {
   getEnabledTargets,
   getTarget,
   loadProjectManifest,
-  parseInterimClaudeOptions,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
 import { resolveSourceRoot } from '../model/scope.ts';
@@ -160,7 +160,7 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
       { hint: 'Remove or disable the target until its adapter is implemented.' },
     );
   }
-  const claudeOptions = parseInterimClaudeOptions(target);
+  const claudeOptions = parseClaudeTargetOptions(target);
   try {
     await assertRealPathInsideRoot(root, '.claude');
     await assertRealPathInsideRoot(root, '.agents');
@@ -210,6 +210,9 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
     agent,
   );
   diagnostics.push(...compiled.diagnostics);
+  if (paths.scope === 'global') {
+    compiled.effective.limitations.push('global settings are not managed in this phase');
+  }
 
   const runtimeInfo = await readClaudeVersion(options.runner, claudeOptions.minVersion);
   const runtimeDiagnostic = backendDiagnostic(
