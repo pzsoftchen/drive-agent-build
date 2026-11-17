@@ -10,4 +10,4 @@
 ## 当前规范
 
 - [跨 Harness 对齐 spec](specs/2026-11-16-cross-harness-alignment.md)
-- [Target Adapter Contract spec](specs/2026-11-17-adapter-contract.md)（提案，待批准）
+- [Target Adapter Contract spec](specs/2026-11-17-adapter-contract.md)（已批准，计划已编写）

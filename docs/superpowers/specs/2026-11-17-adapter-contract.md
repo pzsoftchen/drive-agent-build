@@ -2,7 +2,7 @@
 
 ## 状态
 
-提案。本 spec 需要批准后，才能编写实现计划。
+已批准。实现计划：[2026-11-17-adapter-contract.md](../plans/2026-11-17-adapter-contract.md)。
 
 ## 背景
 
