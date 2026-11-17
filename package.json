@@ -1,0 +1,52 @@
+{
+  "name": "drive-agent-builder",
+  "version": "0.1.0",
+  "description": "DAB turns AGENTS.md and .agents/ into governed Claude Code configuration.",
+  "type": "module",
+  "bin": {
+    "dab": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "README.zh.md",
+    "AGENTS.md"
+  ],
+  "engines": {
+    "node": ">=24.9"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pzsoftchen/drive-agent-build.git"
+  },
+  "keywords": [
+    "agents",
+    "claude-code",
+    "agent-builder",
+    "configuration"
+  ],
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "prepack": "pnpm build",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify-translation-pairing": "node dist/docs/cli.js pairing",
+    "verify-md-links": "node dist/docs/cli.js links",
+    "verify-md-wrap": "node dist/docs/cli.js wrap",
+    "verify-doc-budgets": "node dist/docs/cli.js budgets",
+    "verify-agent-note-format": "node dist/docs/cli.js notes",
+    "doc-sync": "pnpm build && node dist/docs/cli.js all"
+  },
+  "dependencies": {
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

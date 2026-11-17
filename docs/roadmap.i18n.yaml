@@ -1,0 +1,35 @@
+version: 1
+source: docs/roadmap.md
+translation: docs/roadmap.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: f2e792b941d343925f319e0d4a1212bbd4f1d848f5eee6753c5287e58546debf
+    translation: e29aef3c4318520dd9188c7885221ce7299a19b1bd0716f4eb2ec718c6b56e29
+  - index: 2
+    level: 2
+    source: c6daa8adce46172da9decbd528ab3b4ec8f3aa96d841746975d7abfd731d53f8
+    translation: 088f4ab9b47027a00c7feb1c1d90561f09b0b29b401706d0b10530ce0bb24989
+  - index: 3
+    level: 2
+    source: 048e2d612abdcea299adb1dbb1337fa9449e80382acdaa0f3fb02f9de9466977
+    translation: f3f2ec1bfaf951c4cf7e42eb49bc3c03046d5893e0d25b4940777b693899e5cd
+  - index: 4
+    level: 2
+    source: ccbf18378698bcbe455a7a4e8b23356e520b48a394cc5701dbc1703e977167bc
+    translation: b255fc70beef52f10be9162c92004c6954896dbcec246ac5ee7801d538aba4ad
+  - index: 5
+    level: 2
+    source: ff0ee4a5e4146f413649d54aedc06a5d55ec3524f69daab65255879e063a0cdd
+    translation: c5ec851d4f4554f3564c72ba34d0fe1134abe3a2bbe6b8c2f8f567f1d998eb5e
+  - index: 6
+    level: 2
+    source: 515832a46c3c39a148c5868baea27f55dc199a7ed21bf57150b562d16a0b2805
+    translation: 361758d6e3612ec1cb1450dc01e0ee5620e407ad17773149fc9e380269fb867e

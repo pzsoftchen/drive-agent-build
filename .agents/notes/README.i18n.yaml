@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/README.md
+translation: .agents/notes/README.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: d1dc02a868bb4197a64fe5d46ed73eef97d3b33ae5134ac9c9e9499c30af40ac
+    translation: e763a1792507a3e70eb3df95a31a537e3b693f64bd5f85e8f3ae2554b98225f3
+  - index: 2
+    level: 2
+    source: c2c8c0bc76cdc86ac4410bdb6fbba8ee0355bea5d4c56da83b2bde26a58b709d
+    translation: 88c4153cf4535912577bbf7c37488de2969dfea87a3a17f942cf7bda699b403e
+  - index: 3
+    level: 2
+    source: 9c314561a68f1ad6878535f8fbc5b375a32a9b3cc0c0d4a26e04aafffb4f6e39
+    translation: 304e808d01a4353e4f892ec1e56acf3530bb1bd5308c159d590eac70799c40bf
+  - index: 4
+    level: 2
+    source: cbe0fc37453fb3f9930b78eafafab81bf295507b4ca04e90a90abdc96a13dd78
+    translation: 10162d287db89e6d227a13d3130a38dfa9f5e0dfc646682e407805bc8b440b8f
+  - index: 5
+    level: 2
+    source: 412dc0df846223253a975bc50d23c14ff96cbf1bdf718e1bdc3a546681613411
+    translation: 1674e6d713d9377d75879ec57333f581d3502dc9e41dad6c4f547121871e3187
+  - index: 6
+    level: 2
+    source: 1963a40400aa818b175e842d486098ce5fee6b28b363694884078037c9099a25
+    translation: d8732ead88474e549d08c6865f70cdde310862e25a896a9d66bc38a3ddfb5032
+  - index: 7
+    level: 2
+    source: a2e9187da1788d7dd1b028982c2c2c660f2dea94461e5e6dff3dbcd95f4074aa
+    translation: 6d326c0612d6c376b149f322218ee0faf7f620b68955858146e2bdcb51f2244d

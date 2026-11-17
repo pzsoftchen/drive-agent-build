@@ -1,0 +1,19 @@
+version: 1
+source: CHANGELOG.md
+translation: CHANGELOG.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: 3e79c4cafb504a21f8913e4e0e66f2ff7b1192a127c6f564aab379c8b5fa9bdd
+    translation: 6af4cb4c8daaaf78c95e8e268ec124bbbb9069a48490736e96be22f4916948f2
+  - index: 2
+    level: 2
+    source: 62a4d4e9e3b704a263539a99ee9582e9518ffdbcedb1e2e411231e284b56f9de
+    translation: 84f335e0e51a759761bae587410ff9d84a38ee3aadcf90239cfdffd8eca325b6

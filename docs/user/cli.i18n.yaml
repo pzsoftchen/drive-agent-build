@@ -1,0 +1,55 @@
+version: 1
+source: docs/user/cli.md
+translation: docs/user/cli.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: 55e3357e4c81774e9bd229df014169273969dbcb209694010e5798328ef23642
+    translation: eaa0df93577e13d2ef7166343e7c82d67216f79ad18b8a149748ec3cfa4202c9
+  - index: 2
+    level: 2
+    source: 5f3eaa5b95df701b774e282663a96adea26cd9d59aa94e216c03deadb8bf437e
+    translation: 621fec46d4afe2270eefc8283bbb190be47425f989058b11e8bb3e099c3f5a9f
+  - index: 3
+    level: 2
+    source: 199695f51667916f2493a253e4e94728e1f5693ba4b7fe81fed829cd299b1db5
+    translation: ab4d2046b606efb10951e018c73f6e7a8a63bf4ecad6e3f525f00baa94d25323
+  - index: 4
+    level: 2
+    source: b649875aa887f3d67b46b36b243c38c4c16ab0173c5671fc4b65720e306a0a79
+    translation: b2d843750da6a9b2068f52ed05cc6805558b0e8e5e176bb058e3d2222c513f9f
+  - index: 5
+    level: 2
+    source: c4e8c9766cc11bbecfb0ef070b3948a1f4c3addbf5d31eb4499baa8b05d715bd
+    translation: 766ce3b8fa5c837bc878c377ce034f9c697e0ce1db9ff6824ffb63971cff7c6c
+  - index: 6
+    level: 2
+    source: e7e861313fde0c77071f7d9c6e92552af07459477a736dd8ffc23279430a1e03
+    translation: dca32bffd8d1ec294a944d842c663caa3b1efc4b1351fcfb4ec638d24ec53558
+  - index: 7
+    level: 2
+    source: e9f283decfefbb444244502175bcf136ffb874bc4c396b4eaa9a1f7299dc1540
+    translation: 5b5e454983f2dbf626378b3cf86712f662f65c36ed280e0458bae017d2d42622
+  - index: 8
+    level: 2
+    source: bf102cbec0b29992f56e9dcd46c3a3b50a8a9b0e61911eaf7aa1ca7e8c1ece48
+    translation: 8554f2173716554fefea0dcc1dc41fc563f5b8ea506076b5f21e1dd8b8715610
+  - index: 9
+    level: 2
+    source: d2aab00fbbe279ca8dcd0d7a46114643b07528b56181c8e03e12adb4099e0cfc
+    translation: 750e2d1f6eb69f75bac9d609dc03b65971b4a3a3d6f4914a5def77b9d6f880e0
+  - index: 10
+    level: 2
+    source: 783e717f2425b434f3c5932b576b1b56e8c0c3c13d04c97117734db37079f7f2
+    translation: 252609bb52ebba7a1e20800126aed8f1c7c519fc27570c2922d08c4cf9587883
+  - index: 11
+    level: 2
+    source: 1c17169a9179fcd21b0cb0fbc4354cd0f2d5d3068a95c3786ec7c2807d1fabb4
+    translation: 8737f27d4db295e3f603ee882f07ae2b86dbea3db714a304d8466cd4c31f1acf

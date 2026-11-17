@@ -1,0 +1,47 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`compilePolicy > renders byte-identical settings with stable ordering 1`] = `
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node "\${CLAUDE_PROJECT_DIR}/.agents/hooks/z-hook/z.mjs"",
+            "timeout": 10,
+            "type": "command",
+          },
+        ],
+      },
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "node "\${CLAUDE_PROJECT_DIR}/.agents/hooks/a-hook/a.mjs"",
+            "timeout": 10,
+            "type": "command",
+          },
+        ],
+      },
+    ],
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test:*)",
+      "Read(./src/**)",
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(npm publish:*)",
+    ],
+    "defaultMode": "default",
+    "deny": [
+      "Read(./.env)",
+      "Read(./secrets/**)",
+    ],
+    "disableBypassPermissionsMode": "disable",
+  },
+}
+`;

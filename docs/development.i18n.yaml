@@ -1,0 +1,43 @@
+version: 1
+source: docs/development.md
+translation: docs/development.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: c5a09ad5230884be26b4eaff7cc9b03c1e8d25b7af07935fb7b9d69779a97860
+    translation: f39a825050db9bb57fda08ad595592d410d0cc301e25c82318e19d7975a4b1ea
+  - index: 2
+    level: 2
+    source: fa893e9780d3e77befb537c57c5dd76d5094b57d89402f78bdeef4d448eaae33
+    translation: c207e3d0f634be613db0aa25072c4b07222c60fbf2b7ea4cb51357124fbe9def
+  - index: 3
+    level: 2
+    source: 6f8df931c09afccc878cb81245cc935a8fb8c9266222133c3bfb185543801919
+    translation: 734e30254077d794aee169e7778fbf55190d81c50509e1aa5354830dbb47990f
+  - index: 4
+    level: 2
+    source: 8bf4fb9458e03f8d96f50308fb934b3103d87771911540644f64d514665c4e19
+    translation: ba100928ac910eae775b9625eeb9b82a04dc64f27268823128edf4042b5c8ee2
+  - index: 5
+    level: 2
+    source: bd1845652d2cf279a39f3d7f8889227d9da04734e142ee5b393a4834bc5a124e
+    translation: f68e9edaeca006ddc76157ba9f8538a6d06f2cce043e19cc641ce1477084c0d8
+  - index: 6
+    level: 2
+    source: 9076f228f26b938ca40d333b12d9e7999a84aae170370f6395c191b1e39f5e84
+    translation: 6483bd47c251a042df69f27f801b701a1304e91653259532d436c190a82551ab
+  - index: 7
+    level: 2
+    source: 32c80733b931c6ae6e8d40212ea6635a95ab4f1f4aed90c2c6de88a26c725dd6
+    translation: 5d3e19465fb2b2cfb342d1b5620ea4cf28bd746945577e108111170991768923
+  - index: 8
+    level: 2
+    source: 08845f0aab349a7562bb1de9196697567ca1b7a954aabe328b309df88a1d7e5f
+    translation: c16181631e353f6322aba19c4949119f0edd89e6e51e210a4cbf96f5828f296e

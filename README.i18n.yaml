@@ -1,0 +1,47 @@
+version: 1
+source: README.md
+translation: README.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: a3af5e4357abe3871efc0dcbc47df5803395c93d40d3892651a26a91d6d14d47
+    translation: 99d05ab7bdc09a8b192b78b888a1419dced602d6dcefbb8b622de79bffa4ab7b
+  - index: 2
+    level: 2
+    source: dcabc1458aa916284a73cdb483c02e0bf8e500085b19b448a59f1fb081461b38
+    translation: b91f0efcddec1cf598111798aae23d55108c5277f4592eb30731d7e270d83a45
+  - index: 3
+    level: 2
+    source: 08bf185868269b5ec642970bfdce6b369071fc1822e4adb49b2fe4b6fd77aafe
+    translation: 4703b88418a9da75742ffe6548beb4e3773bb98fbd4f7bbb04837621301537ef
+  - index: 4
+    level: 2
+    source: 9b6f4895a6c4a0958832b3875b930d43fae387742303fc748397f252bb626283
+    translation: 5142e52c47b0fbedaf1223d075befd84cd9b0eec97198eb829d95857127e8c5d
+  - index: 5
+    level: 2
+    source: bb67786907f39fbe210fa323c2c9014a8f5fadbeb56fde4870a748e3e609abc5
+    translation: 3bd14ffc048d8a6763a25713bad3855fdca77665e03306c63618743a26f64a4f
+  - index: 6
+    level: 2
+    source: 768b62bc82ecf52267bcd0a3e009c695046fbbcda278c0774570e86e5972a8fd
+    translation: 817dface273ebe3010acbcfc0423a3a6f79f6f67d4bdbaaec8ad7bc3fe54be53
+  - index: 7
+    level: 2
+    source: e0241d4edc5f98b1a9922dc7dd2757296215e312937360b897f07170637b02e6
+    translation: 601dd45090b22777c34f862c234139acb9d7fd16d480b3343703f592ea312e2e
+  - index: 8
+    level: 2
+    source: 41a2375d312759e0eb0013f14bf11393634efa19c9a0bd0878eb22470fa6af46
+    translation: 92523d75126b786cecb1b2b8fbcb6e6ee2d2d7e7fea86ec256836aa86761c8d3
+  - index: 9
+    level: 2
+    source: f20ebe6476df3c73e9ae121c1497ecfd29740dad06c28864d9e9903bbabf0100
+    translation: e1e4dea8d186e41a71d3271f25fda29b6cd8351ad7e4c0371d8b43f86d925704
