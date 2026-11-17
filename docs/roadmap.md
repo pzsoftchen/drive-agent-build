@@ -12,13 +12,16 @@ DAB ships in narrow phases. Each phase must produce working, testable software b
 - Bilingual documentation gates.
 - Status: shipped.
 
-## v0.1.x Adoption and Structure
+## v0.1.x Cross-harness alignment
 
-- `dab init --dry-run` and generated-conflict handoff to `dab normalize --fix`.
-- DSH-style Agent Note lifecycle and class tree.
-- `HarnessAdapter` seam, capability and artifact model.
-- `dab.lock` for generated state.
-- Status: next.
+This is the first v0.1.x priority. Project and global scopes are configured independently; DAB provides no `dab global` command and never merges scopes.
+
+- Foundation: location-based scope roots, v2 manifests with `scope` and `targets`, the target adapter contract, ownership and failure semantics. Status: shipped on this branch.
+- Claude target: symlink-first instructions, per-entry projections, project settings, managed/unmanaged conflicts and `--fix` backups. Status: shipped on this branch.
+- Codex adapter: native subagents and skills, mapped settings. Status: next.
+- DSH adapter: native subagents and skills, mapped profile and settings. Status: after Codex.
+- Global settings adoption/merge: explicit opt-in with backups for each target. Status: after DSH.
+- Global `$HOME/.gitignore` stays read-only in every plan.
 
 ## v0.2 Evidence
 
@@ -35,14 +38,8 @@ DAB ships in narrow phases. Each phase must produce working, testable software b
 - Agent Note archive workflow.
 - Status: planned.
 
-## v0.4 Harness Adapters
-
-- Codex adapter.
-- DSH adapter.
-- Same source tree, adapter-specific artifacts and launch.
-- Status: planned.
-
 ## Non-goals
 
 - GUI, independent agent loop, plugin marketplace or team permissions.
 - Automatic DAD migration or Windows junction support.
+- Cross-scope inheritance or merge.

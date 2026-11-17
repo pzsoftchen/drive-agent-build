@@ -8,6 +8,11 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - `src/cli.ts`: command dispatch and exit codes.
 - `src/commands/`: `init`, `detect`, `normalize`, `policy explain`.
 - `src/model/`: authored source schemas and discovery.
+- `src/model/scope.ts`: scope and source-root resolution.
+- `src/model/facts.ts`: common source-fact discovery.
+- `src/adapter/types.ts`: target adapter contract.
+- `src/adapter/claude-code/adapter.ts`: Claude target adapter.
+- `src/adapter/claude-code/instructions.ts`: instruction artifact.
 - `src/adapter/claude-code/`: policy compilation, projections and settings.
 - `src/detect/`: drift checks.
 - `src/init/`: repository scan and templates.

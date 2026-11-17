@@ -10,7 +10,7 @@ targets:
     enabled: true
     options:
       minVersion: 2.1.277
-      instructions: generated
+      instructions: symlink
 paths:
   agents: .agents
   claude: .claude
@@ -22,8 +22,8 @@ generated:
         sha256: 8259060539e7276e67d1d3d21d7b5ebe8aa052d681b27ebbaf91c5e140acc5b9
       instructions:
         path: .claude/CLAUDE.md
-        mode: generated
-        sha256: 73a48bba60f92decf7859871c2d544e425046d3e1bfca5fce3b18152740e459b
+        mode: symlink
+        sha256: 560fc8fbd2d8405d7a476c4b8e41f8fc5cee8a25f90ac885c016d7b927ba279b
       projections:
         - kind: agent
           name: implementer
