@@ -85,6 +85,24 @@ describe('scope resolution', () => {
     await expect(assertInitRoot({ root: join(home, '.agents'), home })).resolves.toBe('global');
   });
 
+  it('treats an exact ~/.agents init target as global before the source exists', async () => {
+    const home = await tempDir();
+
+    await expect(assertInitRoot({ root: join(home, '.agents'), home })).resolves.toBe('global');
+  });
+
+  it('rejects non-existent init targets nested under a symlinked global source', async () => {
+    const home = await tempDir();
+    const real = join(home, 'dot-agents-real');
+    await mkdir(join(real, 'skills'), { recursive: true });
+    await symlink(real, join(home, '.agents'), 'dir');
+
+    await expect(assertInitRoot({ root: join(home, '.agents/new-project'), home }))
+      .rejects.toMatchObject({ code: 'config.source-root-nested' });
+    await expect(assertInitRoot({ root: join(home, '.agents/skills/deeper-new'), home }))
+      .rejects.toMatchObject({ code: 'config.source-root-nested' });
+  });
+
   it('does not treat $HOME with only .agents as a project root', async () => {
     const home = await tempDir();
     await mkdir(join(home, '.agents'), { recursive: true });

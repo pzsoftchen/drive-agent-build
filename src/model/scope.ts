@@ -1,5 +1,5 @@
 import { realpath, stat } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { ConfigError } from '../core/errors.ts';
 import { isPathInside } from '../core/paths.ts';
 
@@ -46,6 +46,24 @@ async function canonical(path: string): Promise<CanonicalPath> {
       return { real: resolve(path), exists: false };
     }
     throw error;
+  }
+}
+
+async function canonicalNearest(path: string): Promise<string> {
+  const absolute = resolve(path);
+  let current = absolute;
+  const missing: string[] = [];
+  for (;;) {
+    const info = await canonical(current);
+    if (info.exists) {
+      return missing.length === 0 ? info.real : join(info.real, ...missing);
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return absolute;
+    }
+    missing.unshift(basename(current));
+    current = parent;
   }
 }
 
@@ -126,11 +144,12 @@ export async function assertInitRoot(
   const globalInfo = await canonical(globalSource);
   const rootInfo = await canonical(root);
 
+  if (rootInfo.real === globalInfo.real) {
+    return 'global';
+  }
   if (globalInfo.exists) {
-    if (rootInfo.real === globalInfo.real) {
-      return 'global';
-    }
-    if (isPathInside(globalInfo.real, rootInfo.real)) {
+    const containmentRoot = await canonicalNearest(root);
+    if (isPathInside(globalInfo.real, containmentRoot)) {
       throw new ConfigError(
         `refusing to initialize inside the global source root: ${root}`,
         'config.source-root-nested',
