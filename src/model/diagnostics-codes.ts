@@ -5,6 +5,8 @@ export const DiagnosticCodes = {
   agentMemoryProject: 'agent.memory-project',
   agentPermissionMode: 'agent.permission-mode',
   agentDuplicateName: 'agent.duplicate-name',
+  agentToolsEmpty: 'agent.tools-empty',
+  agentToolsInvalid: 'agent.tools-invalid',
   agentHookEvent: 'agent.hook-event',
   agentHookHandler: 'agent.hook-handler',
   agentSymlink: 'agent.symlink',

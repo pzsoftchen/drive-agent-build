@@ -46,6 +46,7 @@ function agentDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinit
     name: 'reviewer',
     description: 'Reviews changes.',
     tools: [],
+    toolsSpec: { mode: 'all', explicit: false },
     disallowedTools: [],
     hooks: [],
     body: 'You review.',

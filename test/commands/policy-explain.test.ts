@@ -139,6 +139,98 @@ describe('runPolicyExplain', () => {
     expect(payload.effective.limitations.join(' ')).toContain('Bash can read');
   });
 
+  it('shows all tools except disallowedTools when tools is omitted', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/inherit-tools.md',
+      `---
+name: inherit-tools
+description: Inherits all tools except Bash.
+disallowedTools: Bash
+---
+Inherits tools.
+`,
+    );
+    const captureResult = capture();
+
+    const code = await runPolicyExplain(
+      {
+        cwd: project.root,
+        agent: 'inherit-tools',
+        json: true,
+        runner: goodRunner,
+      },
+      captureResult.io,
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      agent: {
+        tools: string[];
+        toolsMode: string;
+        effectiveTools: string[];
+        effectiveToolsExcluded: string[];
+      };
+    };
+    expect(payload.agent).toMatchObject({
+      tools: [],
+      toolsMode: 'all',
+      effectiveTools: ['*'],
+      effectiveToolsExcluded: ['Bash'],
+    });
+
+    const human = capture();
+    await runPolicyExplain(
+      {
+        cwd: project.root,
+        agent: 'inherit-tools',
+        runner: goodRunner,
+      },
+      human.io,
+    );
+    expect(human.stdout.join('')).toContain('effectiveTools: * except Bash');
+  });
+
+  it('treats an explicitly empty tools list as no tools', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/empty-tools.md',
+      `---
+name: empty-tools
+description: Has no tools.
+tools: ""
+---
+No tools.
+`,
+    );
+    const captureResult = capture();
+
+    const code = await runPolicyExplain(
+      {
+        cwd: project.root,
+        agent: 'empty-tools',
+        json: true,
+        runner: goodRunner,
+      },
+      captureResult.io,
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      agent: { toolsMode: string; effectiveTools: string[] };
+      diagnostics: Array<{ code: string; severity: string }>;
+    };
+    expect(payload.agent).toMatchObject({
+      toolsMode: 'none',
+      effectiveTools: [],
+    });
+    expect(payload.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'agent.tools-empty', severity: 'warning' }),
+    ]));
+  });
+
   it('orders project hooks before appended agent hooks', async () => {
     const project = await initialized();
     await addHookedAgent(project);

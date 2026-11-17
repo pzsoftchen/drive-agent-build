@@ -51,11 +51,17 @@ export interface AgentHookDefinition {
   source: string;
 }
 
+export type AgentToolsSpec =
+  | { mode: 'all'; explicit: boolean }
+  | { mode: 'none' }
+  | { mode: 'list'; tools: string[] };
+
 export interface AgentDefinition {
   file: string;
   name: string;
   description: string;
   tools: string[];
+  toolsSpec: AgentToolsSpec;
   disallowedTools: string[];
   model?: string;
   permissionMode?: string;

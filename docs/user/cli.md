@@ -157,7 +157,7 @@ JSON output includes one entry per enabled target:
 dab policy explain [--agent <name>] [--target <provider>] [--json]
 ```
 
-Shows target and provider, runtime version, default mode, allow/ask/deny rules, hooks in execution order, source files and limitations. With `--agent`, it adds the role's tools, disallowed tools, permission mode, memory mode and appended hooks.
+Shows target and provider, runtime version, default mode, allow/ask/deny rules, hooks in execution order, source files and limitations. With `--agent`, it adds the role's tools, disallowed tools, effective tools, permission mode, memory mode and appended hooks. `disallowedTools` applies even when `tools` is omitted; an explicitly empty `tools` list is reported as no tools with a warning.
 
 - Without `--target`, the first enabled target is explained.
 - `--target <provider>` selects a configured target. An enabled target without an adapter fails with `target.unsupported`.

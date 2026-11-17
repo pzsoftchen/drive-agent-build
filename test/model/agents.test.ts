@@ -45,6 +45,51 @@ describe('agent discovery', () => {
     });
   });
 
+  it('distinguishes omitted, wildcard, empty and explicit tool specs', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/inherit.md',
+      agent('inherit', 'disallowedTools: Bash\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/wild.md',
+      agent('wild', 'tools: "*"\ndisallowedTools: Bash\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/empty.md',
+      agent('empty', 'tools: ""\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/listed.md',
+      agent('listed', 'tools: Read, Grep\ndisallowedTools: Bash\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.items.find((item) => item.name === 'inherit')?.toolsSpec).toEqual({
+      mode: 'all',
+      explicit: false,
+    });
+    expect(result.items.find((item) => item.name === 'wild')?.toolsSpec).toEqual({
+      mode: 'all',
+      explicit: true,
+    });
+    expect(result.items.find((item) => item.name === 'empty')?.toolsSpec).toEqual({
+      mode: 'none',
+    });
+    expect(result.items.find((item) => item.name === 'listed')?.toolsSpec).toEqual({
+      mode: 'list',
+      tools: ['Read', 'Grep'],
+    });
+    expect(
+      result.diagnostics.filter((item) => item.code === 'agent.tools-empty'),
+    ).toHaveLength(1);
+  });
+
   it('rejects memory: project with a specific diagnostic', async () => {
     const fixture = await project();
     await writeProjectFile(

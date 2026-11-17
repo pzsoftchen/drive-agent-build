@@ -54,8 +54,10 @@ export interface AgentPolicyView {
   name: string;
   description: string;
   tools: string[];
+  toolsMode: 'all' | 'none' | 'list';
   disallowedTools: string[];
   effectiveTools: string[];
+  effectiveToolsExcluded: string[];
   permissionMode?: string;
   memory?: string;
   hooks: AgentDefinition['hooks'];
@@ -77,15 +79,33 @@ export interface PolicyExplainResult {
 }
 
 function agentView(agent: AgentDefinition): AgentPolicyView {
-  const effectiveTools = agent.tools.length === 0
-    ? ['*']
-    : agent.tools.filter((tool) => !agent.disallowedTools.includes(tool));
+  const disallowed = agent.disallowedTools;
+  let effectiveTools: string[];
+  let effectiveToolsExcluded: string[];
+  switch (agent.toolsSpec.mode) {
+    case 'all':
+      effectiveTools = ['*'];
+      effectiveToolsExcluded = [...disallowed];
+      break;
+    case 'none':
+      effectiveTools = [];
+      effectiveToolsExcluded = [];
+      break;
+    case 'list': {
+      const denied = new Set(disallowed);
+      effectiveTools = agent.toolsSpec.tools.filter((tool) => !denied.has(tool));
+      effectiveToolsExcluded = agent.toolsSpec.tools.filter((tool) => denied.has(tool));
+      break;
+    }
+  }
   return {
     name: agent.name,
     description: agent.description,
     tools: agent.tools,
-    disallowedTools: agent.disallowedTools,
+    toolsMode: agent.toolsSpec.mode,
+    disallowedTools: disallowed,
     effectiveTools,
+    effectiveToolsExcluded,
     ...(agent.permissionMode === undefined ? {} : { permissionMode: agent.permissionMode }),
     ...(agent.memory === undefined ? {} : { memory: agent.memory }),
     hooks: agent.hooks,
@@ -290,11 +310,23 @@ function formatHuman(result: PolicyExplainResult): string {
   lines.push(listOrNone(result.effective.sources, '  '));
 
   if (result.agent !== undefined) {
+    const toolsLabel = result.agent.toolsMode === 'all'
+      ? 'all'
+      : result.agent.toolsMode === 'none'
+        ? 'none'
+        : result.agent.tools.join(', ');
+    const effectiveLabel = result.agent.toolsMode === 'all'
+      ? result.agent.effectiveToolsExcluded.length === 0
+        ? '*'
+        : `* except ${result.agent.effectiveToolsExcluded.join(', ')}`
+      : result.agent.effectiveTools.length === 0
+        ? '(none)'
+        : result.agent.effectiveTools.join(', ');
     lines.push(`Agent: ${result.agent.name}`);
     lines.push(`  description: ${result.agent.description}`);
-    lines.push(`  tools: ${result.agent.tools.length === 0 ? 'all' : result.agent.tools.join(', ')}`);
+    lines.push(`  tools: ${toolsLabel}`);
     lines.push(`  disallowedTools: ${result.agent.disallowedTools.join(', ') || '(none)'}`);
-    lines.push(`  effectiveTools: ${result.agent.effectiveTools.join(', ')}`);
+    lines.push(`  effectiveTools: ${effectiveLabel}`);
     lines.push(`  permissionMode: ${result.agent.permissionMode ?? '(default)'}`);
     lines.push(`  memory: ${result.agent.memory ?? '(default)'}`);
     lines.push(`  hooks: ${result.agent.hooks.length === 0 ? '(none)' : result.agent.hooks.map((hook) => hook.id).join(', ')}`);
