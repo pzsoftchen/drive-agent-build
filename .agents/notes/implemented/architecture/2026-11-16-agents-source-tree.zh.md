@@ -31,6 +31,10 @@ DAB 为已有代码和测试的项目管理 Claude Code 配置。直接写进 `.
 
 `pnpm test` 覆盖投影所有权、确定性 settings、幂等 normalize 和漂移检测。`node dist/cli.js detect` 在本仓库通过。`node dist/cli.js normalize --dry-run` 报告无变化。
 
+## Update 2026-11-17
+
+Manifest v2 使用 `targets[].options.instructions`，不再使用 `target.claudeMdShim`。默认的 `.claude/CLAUDE.md` 工件是指向该 scope `AGENTS.md` 的符号链接。生成的导入垫片保留为显式 fallback：project scope 为 `@../AGENTS.md`，global scope 为 `@../.agents/AGENTS.md`。以上事实描述 v2 之前的垫片时期，保留为历史背景。
+
 ## 相关
 
 - [架构](../../../../docs/architecture.zh.md)

@@ -35,5 +35,9 @@ sections:
     translation: 4557407541f07b84f5cfcd4279150aad48e6a5ae2d326b5ce17821b7b7ad1632
   - index: 7
     level: 2
+    source: 38b2e32544e06c42f1e53891696c94a01ab691c92d6d922513f934c3d5d5f3ee
+    translation: edbdc199995ce8cdba59271024d144761bda6658fdccdcfa78e3d729215f1c01
+  - index: 8
+    level: 2
     source: 97741d04dc3e43af7b40b35d31df6d68f4da45429a8a41fb405e3e1207147b6f
     translation: 75614cc4e466f7dd844705ce3029aa3abfea6b9516939509d552fa22be3b8c7f

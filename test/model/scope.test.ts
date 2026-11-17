@@ -110,4 +110,48 @@ describe('scope resolution', () => {
     await expect(resolveSourceRoot({ cwd: home, home }))
       .rejects.toMatchObject({ code: 'config.source-root-missing' });
   });
+
+  it('rejects init through a symlinked parent into an existing project source root', async () => {
+    const home = await tempDir();
+    const project = await tempDir();
+    await mkdir(join(project, '.agents/skills'), { recursive: true });
+    await writeFile(join(project, 'dab.yaml'), 'version: 2\n');
+    const alias = join(home, 'alias');
+    await symlink(join(project, '.agents/skills'), alias, 'dir');
+
+    await expect(assertInitRoot({ root: join(alias, 'missing'), home }))
+      .rejects.toMatchObject({ code: 'config.source-root-nested' });
+
+    await mkdir(join(project, '.agents/skills/existing'), { recursive: true });
+    await expect(assertInitRoot({ root: join(alias, 'existing'), home }))
+      .rejects.toMatchObject({ code: 'config.source-root-nested' });
+  });
+
+  it('rejects global init when $HOME is already a project root', async () => {
+    const home = await tempDir();
+    await mkdir(join(home, '.agents'), { recursive: true });
+    await writeFile(join(home, 'dab.yaml'), 'version: 2\n');
+
+    await expect(assertInitRoot({ root: join(home, '.agents'), home }))
+      .rejects.toMatchObject({ code: 'config.source-root-nested' });
+  });
+
+  it('accepts a global source root that only contains its own manifest', async () => {
+    const home = await tempDir();
+    await mkdir(join(home, '.agents'), { recursive: true });
+    await writeFile(join(home, '.agents/dab.yaml'), 'version: 2\n');
+
+    await expect(assertInitRoot({ root: join(home, '.agents'), home }))
+      .resolves.toBe('global');
+  });
+
+  it('still accepts a symlinked global source root under $HOME', async () => {
+    const home = await tempDir();
+    const real = join(home, 'dot-agents-real');
+    await mkdir(real, { recursive: true });
+    await symlink(real, join(home, '.agents'), 'dir');
+
+    await expect(assertInitRoot({ root: join(home, '.agents'), home }))
+      .resolves.toBe('global');
+  });
 });

@@ -16,6 +16,7 @@ export interface SourceRoot {
 const MISSING_HINT = 'Run "dab init" in the project root or "dab init ~/.agents" for global scope.';
 const GLOBAL_HINT = 'Run dab init ~/.agents for global scope.';
 const NESTED_HINT = 'Run "dab init" from the repository root instead.';
+const HOME_PROJECT_HINT = 'Remove or move $HOME/dab.yaml before running dab init ~/.agents.';
 
 function isEnoent(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT';
@@ -140,26 +141,33 @@ export async function assertInitRoot(
 ): Promise<Scope> {
   const root = resolve(options.root);
   const home = resolve(options.home);
+  const homeCanonical = await canonicalNearest(home);
   const globalSource = join(home, '.agents');
   const globalInfo = await canonical(globalSource);
-  const rootInfo = await canonical(root);
+  const globalCanonical = await canonicalNearest(globalSource);
+  // Resolve every existing prefix so a symlinked parent cannot hide an
+  // enclosing source root from the ancestor walk below.
+  const rootCanonical = await canonicalNearest(root);
 
-  if (rootInfo.real === globalInfo.real) {
-    return 'global';
-  }
-  if (globalInfo.exists) {
-    const containmentRoot = await canonicalNearest(root);
-    if (isPathInside(globalInfo.real, containmentRoot)) {
+  if (rootCanonical === globalCanonical) {
+    if (await hasManifest(homeCanonical)) {
       throw new ConfigError(
-        `refusing to initialize inside the global source root: ${root}`,
+        'refusing to initialize global scope while $HOME is a project root',
         'config.source-root-nested',
-        { hint: GLOBAL_HINT },
+        { hint: HOME_PROJECT_HINT },
       );
     }
+    return 'global';
+  }
+  if (globalInfo.exists && isPathInside(globalCanonical, rootCanonical)) {
+    throw new ConfigError(
+      `refusing to initialize inside the global source root: ${root}`,
+      'config.source-root-nested',
+      { hint: GLOBAL_HINT },
+    );
   }
 
-  const homeInfo = await canonical(home);
-  if (globalInfo.exists && (root === home || rootInfo.real === homeInfo.real)) {
+  if (globalInfo.exists && rootCanonical === homeCanonical) {
     throw new ConfigError(
       'refusing to initialize project scope at $HOME while ~/.agents is the global source root',
       'config.source-root-nested',
@@ -167,11 +175,11 @@ export async function assertInitRoot(
     );
   }
 
-  let candidate = dirname(root);
+  let candidate = dirname(rootCanonical);
   for (;;) {
     const manifest = await hasManifest(candidate);
     const agents = await hasAgentsTree(candidate);
-    const isHome = (await canonical(candidate)).real === homeInfo.real;
+    const isHome = await canonicalNearest(candidate) === homeCanonical;
     if (!(isHome && agents && !manifest) && (manifest || agents)) {
       throw new ConfigError(
         `refusing to initialize inside an existing source root: ${candidate}`,

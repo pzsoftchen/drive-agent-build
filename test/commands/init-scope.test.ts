@@ -265,6 +265,73 @@ describe('scope-aware init', () => {
     expect(await lstatOrNull(join(root, '.agents/skills/new/AGENTS.md'))).toBeNull();
   });
 
+  it('refuses init through a symlinked parent into an existing project source root', async () => {
+    const project = await tempDir('dab-init-symlink-parent-');
+    await mkdir(join(project, '.agents/skills'), { recursive: true });
+    await writeFile(join(project, 'dab.yaml'), 'version: 2\n');
+    const home = await tempDir('dab-init-symlink-alias-');
+    const alias = join(home, 'alias');
+    await symlink(join(project, '.agents/skills'), alias, 'dir');
+
+    const pinned = ['AGENTS.md', 'dab.yaml', '.agents', '.claude', '.gitignore'];
+    const missing = capture();
+    const missingCode = await runInit(
+      { cwd: home, path: 'alias/missing', home, json: true },
+      missing.io,
+    );
+
+    expect(missingCode).toBe(3);
+    const missingPayload = JSON.parse(missing.stdout.join('')) as {
+      error: { code: string };
+    };
+    expect(missingPayload.error.code).toBe('config.source-root-nested');
+    for (const relative of pinned) {
+      expect(await lstatOrNull(join(project, '.agents/skills/missing', relative)), relative)
+        .toBeNull();
+    }
+
+    await mkdir(join(project, '.agents/skills/existing'), { recursive: true });
+    const existing = capture();
+    const existingCode = await runInit(
+      { cwd: home, path: 'alias/existing', home, json: true },
+      existing.io,
+    );
+
+    expect(existingCode).toBe(3);
+    const existingPayload = JSON.parse(existing.stdout.join('')) as {
+      error: { code: string };
+    };
+    expect(existingPayload.error.code).toBe('config.source-root-nested');
+    for (const relative of pinned) {
+      expect(await lstatOrNull(join(project, '.agents/skills/existing', relative)), relative)
+        .toBeNull();
+    }
+  });
+
+  it('refuses global init at $HOME when $HOME is already a project root', async () => {
+    const home = await tempDir('dab-home-overlap-');
+    const projectCode = await runInit(
+      { cwd: home, home, runner: goodRunner, json: true },
+      capture().io,
+    );
+    expect(projectCode).toBe(0);
+    expect(await lstatOrNull(join(home, 'dab.yaml'))).not.toBeNull();
+
+    const captureResult = capture();
+    const code = await runInit(
+      { cwd: home, path: '.agents', home, runner: goodRunner, json: true },
+      captureResult.io,
+    );
+
+    expect(code).toBe(3);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      error: { code: string };
+    };
+    expect(payload.error.code).toBe('config.source-root-nested');
+    expect(await lstatOrNull(join(home, '.agents/dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(home, '.agents/AGENTS.md'))).toBeNull();
+  });
+
   it('rejects a legacy v1 global manifest before writing anything', async () => {
     const home = await tempDir('dab-home-init-');
     await mkdir(join(home, '.agents'), { recursive: true });
