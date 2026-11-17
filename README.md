@@ -2,14 +2,36 @@ English | [中文](README.zh.md)
 
 # DAB — Drive Agent as Builder
 
-DAB is a project-level control plane for developers who use agents to build software. It turns `AGENTS.md` and `.agents/` into governed Claude Code configuration, detects drift, and keeps the authored source and generated configuration comparable.
+DAB is a project-level control plane for Builders who use agents to produce durable work. The first implementation is developer-first: it turns `AGENTS.md` and `.agents/` into governed Claude Code configuration, detects drift, and keeps the authored source and generated configuration comparable.
 
-## Why DAB
+## The idea behind DAB
 
-- Agent configuration written directly into `.claude/` drifts from the project's instructions.
+I started DAB from a change in where leverage lives. As agents take on more execution, I believe the Builder's advantage moves from completing every step by hand to designing the conditions under which agents can build reliably: goals, context, roles, capabilities, permissions, verification and durable learning.
+
+Two observations shaped my thinking:
+
+- A DeepSeek operator developer described a likely shift from designing, writing and optimizing operators to driving agents that perform that work.
+- Robin Li's Builder framing broadens the creator role beyond people who write code.
+
+The first observation makes the new role concrete; the second makes its scope larger. I combine them in DAB: **Drive Agent as Builder**.
+
+I first explored a narrower version: DAD (Drive Agent Development), which means defining how agents should carry out development work and driving them through that process. DAD showed me the value of an authored source, explicit projections, drift detection, decision records and shared memory. DAB keeps that engineering discipline but removes the assumption that the only thing worth building is software. I am starting DAB with development because I am the first Builder, not because development is the endpoint.
+
+## Principles
+
+- DAB is a control plane, not an agent runtime.
+- The Builder owns intent, constraints, acceptance and judgment; agents execute.
+- The harness is replaceable. Claude Code is the first target, not the definition of DAB.
+- Knowledge that should survive a session belongs in reviewable files, not hidden prompts.
+- Repeatability beats one-off prompting; authored facts and generated configuration must remain comparable.
+
+## Why a control plane?
+
+- Capability alone does not produce repeatability.
+- Workflows kept only in chat do not survive handoffs, review or a change of agent.
 - Personal auto memory is useful, but it is not a team fact source.
 - Bilingual documentation rots when only one side is updated.
-- A builder needs repeatable configuration, not one-off prompts.
+- A Builder needs governed configuration, not one-off prompts.
 
 ## What v0.1 does
 
