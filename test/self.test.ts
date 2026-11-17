@@ -1,14 +1,18 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { readFile, readlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { runDetect } from '../src/commands/detect.ts';
 import { normalizeProject } from '../src/commands/normalize.ts';
-import { renderClaudeMdShim, discoverProjections } from '../src/adapter/claude-code/projection.ts';
+import { discoverProjections } from '../src/adapter/claude-code/projection.ts';
 import type { CommandRunner } from '../src/core/command.ts';
 import { runCommand } from '../src/core/command.ts';
 import { lstatOrNull } from '../src/core/fs-atomic.ts';
 import { runDocSync } from '../src/docs/doc-sync.ts';
-import { loadProjectManifest, resolveProjectPaths } from '../src/model/project-manifest.ts';
+import {
+  getTarget,
+  loadProjectManifest,
+  resolveProjectPaths,
+} from '../src/model/project-manifest.ts';
 
 const root = process.cwd();
 const fakeRunner: CommandRunner = async () => ({
@@ -35,7 +39,7 @@ describe('DAB dogfood', () => {
   it('declares the feature profile', async () => {
     const loaded = await loadProjectManifest(root);
     expect(loaded.manifest.profile).toBe('feature');
-    expect(loaded.manifest.target.provider).toBe('claude-code');
+    expect(getTarget(loaded.manifest, 'claude-code')?.provider).toBe('claude-code');
   });
 
   it('keeps AGENTS.md English-only and within budget', async () => {
@@ -48,9 +52,10 @@ describe('DAB dogfood', () => {
     expect(await lstatOrNull(join(root, 'CLAUDE.md'))).toBeNull();
   });
 
-  it('generates the compatibility shim and ignores generated outputs', async () => {
-    const shim = await readFile(join(root, '.claude/CLAUDE.md'), 'utf8');
-    expect(shim).toBe(renderClaudeMdShim());
+  it('links the compatibility shim and ignores generated outputs', async () => {
+    const link = await lstatOrNull(join(root, '.claude/CLAUDE.md'));
+    expect(link?.isSymbolicLink()).toBe(true);
+    expect(await readlink(join(root, '.claude/CLAUDE.md'))).toBe('../AGENTS.md');
     const settingsIgnored = await runCommand(
       'git',
       ['check-ignore', '-q', '.claude/settings.json'],

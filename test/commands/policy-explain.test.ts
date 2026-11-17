@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { rm } from 'node:fs/promises';
-import { runPolicyExplain } from '../../src/commands/policy-explain.ts';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { explainPolicy, runPolicyExplain } from '../../src/commands/policy-explain.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
+import { makeGlobalFixture } from '../helpers/global.ts';
 import { makeInitializedProject } from '../helpers/initialized.ts';
 import { writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 
 const projects: ProjectFixture[] = [];
+const homes: string[] = [];
 
 async function initialized(): Promise<ProjectFixture> {
   const project = await makeInitializedProject();
@@ -66,6 +69,7 @@ You are hooked.
 
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
+  await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
 });
 
 describe('runPolicyExplain', () => {
@@ -85,6 +89,7 @@ describe('runPolicyExplain', () => {
 
     expect(code).toBe(0);
     const text = captureResult.stdout.join('');
+    expect(text).toContain('Target: claude-code');
     expect(text).toContain('reviewer');
     expect(text).toContain('Read');
     expect(text).toContain('WebFetch');
@@ -243,6 +248,25 @@ Duplicate.
     expect(payload.effective.permissions.deny.length).toBeGreaterThan(0);
   });
 
+  it('notes that global settings are not managed in this phase', async () => {
+    const project = await initialized();
+    const local = await explainPolicy({ cwd: project.root, runner: goodRunner });
+    expect(local.effective.limitations).not.toContain(
+      'global settings are not managed in this phase',
+    );
+
+    const home = await makeGlobalFixture();
+    homes.push(home.home);
+    const global = await explainPolicy({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+    expect(global.effective.limitations).toContain(
+      'global settings are not managed in this phase',
+    );
+  });
+
   it('returns backend 4 when the installed version is too old', async () => {
     const project = await initialized();
     const captureResult = capture();
@@ -287,5 +311,55 @@ Duplicate.
       diagnostics: Array<{ code: string }>;
     };
     expect(payload.diagnostics.map((item) => item.code)).toContain('agent.memory-project');
+  });
+});
+
+describe('explainPolicy target selection', () => {
+  it('selects a configured target and rejects an unsupported one', async () => {
+    const project = await initialized();
+    const claude = await explainPolicy({
+      cwd: project.root,
+      target: 'claude-code',
+      runner: goodRunner,
+    });
+    expect(claude.target).toBe('claude-code');
+
+    await expect(explainPolicy({
+      cwd: project.root,
+      target: 'dsh',
+      runner: goodRunner,
+    })).rejects.toMatchObject({ code: 'target.not-configured' });
+
+    const path = join(project.root, 'dab.yaml');
+    const text = await readFile(path, 'utf8');
+    await writeFile(
+      path,
+      text.replace(
+        '  - provider: claude-code\n    enabled: true\n',
+        '  - provider: claude-code\n    enabled: true\n  - provider: codex\n    enabled: true\n',
+      ),
+    );
+    await expect(explainPolicy({
+      cwd: project.root,
+      target: 'codex',
+      runner: goodRunner,
+    })).rejects.toMatchObject({ code: 'target.unsupported' });
+  });
+
+  it('defaults to the first enabled target', async () => {
+    const project = await initialized();
+    const result = await explainPolicy({ cwd: project.root, runner: goodRunner });
+
+    expect(result.target).toBe('claude-code');
+  });
+
+  it('rejects a manifest with no enabled target', async () => {
+    const project = await initialized();
+    const path = join(project.root, 'dab.yaml');
+    const text = await readFile(path, 'utf8');
+    await writeFile(path, text.replace('enabled: true', 'enabled: false'));
+
+    await expect(explainPolicy({ cwd: project.root, runner: goodRunner }))
+      .rejects.toMatchObject({ code: 'target.none' });
   });
 });

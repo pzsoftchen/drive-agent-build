@@ -7,9 +7,10 @@ const root = process.cwd();
 describe('DAB narrative', () => {
   it('ships a phased roadmap in both languages', async () => {
     const roadmap = await readFile(join(root, 'docs/roadmap.md'), 'utf8');
-    for (const phase of ['v0.1', 'v0.1.x', 'v0.2', 'v0.3', 'v0.4']) {
+    for (const phase of ['v0.1', 'v0.1.x', 'v0.2', 'v0.3']) {
       expect(roadmap).toContain(phase);
     }
+    expect(roadmap).not.toContain('v0.4');
     expect(await readFile(join(root, 'docs/roadmap.zh.md'), 'utf8')).toContain('# 路线图');
     expect(await readFile(join(root, 'docs/roadmap.i18n.yaml'), 'utf8')).toContain('version: 1');
   });

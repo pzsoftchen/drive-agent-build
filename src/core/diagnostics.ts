@@ -37,6 +37,14 @@ export function hasErrors(items: readonly Diagnostic[]): boolean {
   return items.some((item) => item.severity === 'error');
 }
 
+export function withFixWarning(item: Diagnostic): Diagnostic {
+  return {
+    ...item,
+    severity: 'warning',
+    hint: 'Resolved with --fix; the original was backed up under .dab/backups/.',
+  };
+}
+
 export function formatDiagnostics(items: readonly Diagnostic[]): string {
   if (items.length === 0) {
     return '';

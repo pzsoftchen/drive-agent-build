@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject, runDetect } from '../../src/commands/detect.ts';
+import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
+import { makeGlobalFixture } from '../helpers/global.ts';
 import { populateProject } from '../helpers/initialized.ts';
 import { makeInitializedProject } from '../helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
 const projects: ProjectFixture[] = [];
+const homes: string[] = [];
 
 async function initialized(): Promise<ProjectFixture> {
   const project = await makeInitializedProject();
@@ -42,6 +45,7 @@ function detectOptions(project: ProjectFixture, runner: CommandRunner = goodRunn
 
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
+  await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
 });
 
 describe('detectProject', () => {
@@ -52,6 +56,7 @@ describe('detectProject', () => {
     expect(result.exitCode).toBe(0);
     expect(result.ok).toBe(true);
     expect(result.diagnostics.filter((item) => item.severity === 'error')).toEqual([]);
+    expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
   });
 
   it('warns but does not fail when Claude Code is missing', async () => {
@@ -84,15 +89,19 @@ describe('detectProject', () => {
     expect(result.diagnostics.map((item) => item.code)).toContain('claude-md.unmanaged');
   });
 
-  it('flags a missing or drifted generated shim', async () => {
+  it('flags missing or drifted instructions', async () => {
     const project = await initialized();
     await rm(join(project.root, '.claude/CLAUDE.md'));
     const missing = await detectProject(detectOptions(project));
-    expect(missing.diagnostics.map((item) => item.code)).toContain('claude-md.shim-missing');
+    expect(missing.diagnostics.map((item) => item.code)).toContain(
+      'claude-md.instructions-missing',
+    );
 
-    await writeProjectFile(project.root, '.claude/CLAUDE.md', 'drifted\n');
+    await symlink('missing.md', join(project.root, '.claude/CLAUDE.md'));
     const drifted = await detectProject(detectOptions(project));
-    expect(drifted.diagnostics.map((item) => item.code)).toContain('claude-md.shim-drift');
+    expect(drifted.diagnostics.map((item) => item.code)).toContain(
+      'claude-md.instructions-drift',
+    );
   });
 
   it('warns about an ancestor CLAUDE.md', async () => {
@@ -274,6 +283,31 @@ order: 10
 
     expect(result.diagnostics.map((item) => item.code)).toContain('claude-md.unmanaged');
   });
+
+  it('warns instead of failing for read-only global settings', async () => {
+    const home = await makeGlobalFixture();
+    homes.push(home.home);
+    await normalizeProject({ cwd: home.agents, home: home.home, runner: goodRunner });
+    const settings = join(home.home, '.claude/settings.json');
+    const content = '{"permissions":{"allow":["Bash(echo)"]}}\n';
+    await writeFile(settings, content);
+
+    const result = await detectProject({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(
+      result.diagnostics.some(
+        (item) => item.code === 'claude-settings.global-not-adopted'
+          && item.severity === 'warning',
+      ),
+    ).toBe(true);
+    expect(result.diagnostics.map((item) => item.code)).not.toContain('generated.missing');
+    expect(await readFile(settings, 'utf8')).toBe(content);
+  });
 });
 
 describe('runDetect', () => {
@@ -302,11 +336,14 @@ describe('runDetect', () => {
       ok: boolean;
       exitCode: number;
       diagnostics: unknown[];
+      targets: Array<{ provider: string; statuses: unknown[] }>;
       summary: { errors: number; warnings: number };
     };
     expect(payload.ok).toBe(true);
     expect(payload.exitCode).toBe(0);
     expect(Array.isArray(payload.diagnostics)).toBe(true);
+    expect(payload.targets.map((item) => item.provider)).toEqual(['claude-code']);
+    expect(payload.targets[0]?.statuses.length).toBeGreaterThan(0);
     expect(payload.summary.errors).toBe(0);
 
     await writeProjectFile(project.root, 'CLAUDE.md', '# user\n');

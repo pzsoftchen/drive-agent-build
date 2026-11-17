@@ -4,12 +4,12 @@ import {
   mkdir,
   readFile,
   readdir,
+  readlink,
   rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { renderClaudeMdShim } from '../src/adapter/claude-code/projection.ts';
 import { detectProject } from '../src/commands/detect.ts';
 import { runInit } from '../src/commands/init.ts';
 import { normalizeProject, runNormalize } from '../src/commands/normalize.ts';
@@ -19,6 +19,7 @@ import { parseFrontmatter } from '../src/model/frontmatter.ts';
 import { discoverHooks } from '../src/model/hooks.ts';
 import { loadProjectManifest } from '../src/model/project-manifest.ts';
 import { AgentFrontmatterSchema } from '../src/model/schemas.ts';
+import { makeGlobalFixture } from './helpers/global.ts';
 import { makeInitializedProject, populateProject } from './helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from './helpers/project.ts';
 import { makeTempDir } from './helpers/tmp.ts';
@@ -282,21 +283,42 @@ Duplicate.
 });
 
 describe('shim and backend safety', () => {
-  it('backs up a drifted managed shim before repairing it', async () => {
+  it('repairs a managed instruction symlink without a backup', async () => {
     const project = await initialized();
     const shim = join(project.root, '.claude/CLAUDE.md');
-    await writeFile(shim, 'user drift\n');
+    await rm(shim);
+    await symlink('missing.md', shim);
 
     const result = await normalizeProject({
       cwd: project.root,
+      runner: goodRunner,
+      now: new Date('2026-11-16T12:00:00Z'),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.backups).toEqual([]);
+    expect(await readlink(shim)).toBe('../AGENTS.md');
+  });
+
+  it('backs up an unmanaged instruction symlink with --fix', async () => {
+    const project = await freshPopulated();
+    const shim = join(project.root, '.claude/CLAUDE.md');
+    await mkdir(join(project.root, '.claude'), { recursive: true });
+    await symlink('missing.md', shim);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      fix: true,
+      runner: goodRunner,
       now: new Date('2026-11-16T12:00:00Z'),
     });
 
     expect(result.ok).toBe(true);
     const backup = result.backups.find((item) => item.endsWith('.claude/CLAUDE.md'));
     expect(backup).toBeDefined();
-    expect(await readFile(backup ?? '', 'utf8')).toBe('user drift\n');
-    expect(await readFile(shim, 'utf8')).toBe(renderClaudeMdShim());
+    expect((await lstatOrNull(backup ?? ''))?.isSymbolicLink()).toBe(true);
+    expect(await readlink(backup ?? '')).toBe('missing.md');
+    expect(await readlink(shim)).toBe('../AGENTS.md');
   });
 
   it('repairs a directory at the shim path with --fix', async () => {
@@ -309,12 +331,31 @@ describe('shim and backend safety', () => {
     const result = await normalizeProject({
       cwd: project.root,
       fix: true,
+      runner: goodRunner,
       now: new Date('2026-11-16T12:00:00Z'),
     });
 
     expect(result.ok).toBe(true);
-    expect(await readFile(shim, 'utf8')).toBe(renderClaudeMdShim());
+    expect(await readlink(shim)).toBe('../AGENTS.md');
     expect(result.backups.some((item) => item.endsWith('.claude/CLAUDE.md'))).toBe(true);
+  });
+
+  it('does not write any target when a global target path escapes HOME', async () => {
+    const home = await makeGlobalFixture();
+    extraDirs.push(home.home);
+    const outside = await tempDir();
+    await rm(join(home.home, '.claude'), { recursive: true, force: true });
+    await symlink(outside, join(home.home, '.claude'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('path.symlink-escape');
+    expect(await readdir(outside)).toEqual([]);
   });
 
   it('classifies malformed policy as validation 3', async () => {
@@ -336,6 +377,23 @@ describe('shim and backend safety', () => {
     const payload = JSON.parse(stdout.join('')) as { error: { code: string } };
     expect(payload.error.code).toBe('policy.invalid');
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
+  });
+
+  it('prefers backend 4 over a malformed policy validation error', async () => {
+    const project = await freshPopulated();
+    await writeProjectFile(
+      project.root,
+      '.agents/policies/project.yaml',
+      'version: 1\ndefaultMode: auto\n',
+    );
+
+    const result = await normalizeProject({ cwd: project.root, runner: oldRunner });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(4);
+    expect(result.diagnostics.map((item) => item.code)).toContain('backend.version');
+    expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.claude/CLAUDE.md'))).toBeNull();
   });
 
   it('returns backend 4 on an old Claude Code and warns when it is missing', async () => {

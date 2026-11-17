@@ -1,6 +1,7 @@
-import { join } from 'node:path';
+import { relative } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
+import { toPosix } from '../core/paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
 
 export interface AgentsMdCheck {
@@ -15,9 +16,13 @@ function countLines(text: string): number {
   return text.replace(/\n$/, '').split('\n').length;
 }
 
-export async function checkAgentsMd(root: string, maxLines = 200): Promise<AgentsMdCheck> {
-  const path = join(root, 'AGENTS.md');
-  if ((await lstatOrNull(path)) === null) {
+export async function checkAgentsMd(
+  scopeRoot: string,
+  instructions: string,
+  maxLines = 200,
+): Promise<AgentsMdCheck> {
+  const file = toPosix(relative(scopeRoot, instructions));
+  if ((await lstatOrNull(instructions)) === null) {
     return {
       lineCount: 0,
       diagnostics: [
@@ -25,14 +30,14 @@ export async function checkAgentsMd(root: string, maxLines = 200): Promise<Agent
           code: DiagnosticCodes.agentsMdMissing,
           severity: 'warning',
           message: 'AGENTS.md is missing',
-          file: 'AGENTS.md',
+          file,
           hint: 'Run "dab init" or author AGENTS.md as the project instruction source.',
         },
       ],
     };
   }
 
-  const text = await readTextFile(path);
+  const text = await readTextFile(instructions);
   const lineCount = countLines(text);
   const diagnostics: Diagnostic[] = [];
   if (lineCount > maxLines) {
@@ -40,7 +45,7 @@ export async function checkAgentsMd(root: string, maxLines = 200): Promise<Agent
       code: DiagnosticCodes.agentsMdTooLarge,
       severity: 'warning',
       message: `AGENTS.md has ${lineCount} lines; the budget is ${maxLines}`,
-      file: 'AGENTS.md',
+      file,
       hint: 'Move long procedures into skills, architecture into docs, and atomic facts into memory.',
     });
   }

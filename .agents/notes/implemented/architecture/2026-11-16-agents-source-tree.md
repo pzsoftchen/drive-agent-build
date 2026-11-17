@@ -31,6 +31,10 @@ DAB manages Claude Code configuration for projects that already have code and te
 
 `pnpm test` covers projection ownership, deterministic settings, idempotent normalize and drift detection. `node dist/cli.js detect` passes on this repository. `node dist/cli.js normalize --dry-run` reports no changes.
 
+## Update 2026-11-17
+
+Manifest v2 uses `targets[].options.instructions` and no longer uses `target.claudeMdShim`. The default `.claude/CLAUDE.md` artifact is a symlink to the scope's `AGENTS.md`. The generated import shim remains an explicit fallback: `@../AGENTS.md` for project scope and `@../.agents/AGENTS.md` for global scope. The facts above describe the pre-v2 shim era and remain historical context.
+
 ## Related
 
 - [Architecture](../../../../docs/architecture.md)

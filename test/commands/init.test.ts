@@ -3,10 +3,12 @@ import { mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
-import { renderClaudeMdShim } from '../../src/adapter/claude-code/projection.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
-import { loadProjectManifest } from '../../src/model/project-manifest.ts';
+import {
+  getGeneratedTarget,
+  loadProjectManifest,
+} from '../../src/model/project-manifest.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
 const dirs: string[] = [];
@@ -55,16 +57,21 @@ describe('runInit', () => {
     expect(code).toBe(0);
     const payload = JSON.parse(captureResult.stdout.join('')) as {
       ok: boolean;
+      scope: string;
+      root: string;
       created: string[];
       normalize: { ok: boolean };
     };
     expect(payload.ok).toBe(true);
+    expect(payload.scope).toBe('project');
+    expect(payload.root).toBe(root);
     expect(payload.created).toEqual(expect.arrayContaining(['AGENTS.md', 'dab.yaml']));
     expect(payload.normalize.ok).toBe(true);
 
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).not.toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).not.toBeNull();
-    expect(await readFile(join(root, '.claude/CLAUDE.md'), 'utf8')).toBe(renderClaudeMdShim());
+    expect((await lstatOrNull(join(root, '.claude/CLAUDE.md')))?.isSymbolicLink()).toBe(true);
+    expect(await readlink(join(root, '.claude/CLAUDE.md'))).toBe('../AGENTS.md');
     expect(await lstatOrNull(join(root, '.claude/settings.json'))).not.toBeNull();
     expect(await readlink(join(root, '.claude/agents/implementer.md'))).toContain(
       '.agents/agents/implementer.md',
@@ -77,7 +84,10 @@ describe('runInit', () => {
 
     const manifest = await loadProjectManifest(root);
     expect(manifest.manifest.profile).toBe('feature');
-    expect((manifest.manifest.generated?.projections.length ?? 0)).toBeGreaterThan(0);
+    expect(manifest.manifest.scope).toBe('project');
+    const generated = getGeneratedTarget(manifest.manifest, 'claude-code');
+    expect(generated?.instructions?.mode).toBe('symlink');
+    expect(generated?.projections.length ?? 0).toBeGreaterThan(0);
   });
 
   it('preserves an existing AGENTS.md', async () => {

@@ -31,6 +31,10 @@ Claude Code 2.1.277 增加了原生 `AGENTS.md` 加载。在开发机器上，�
 
 本地探针确认：在开关关闭的构建上，`.claude/CLAUDE.md` 配合 `@../AGENTS.md` 能加载唯一标记，而只有 `AGENTS.md` 不能。`dab detect` 检查垫片存在和漂移；`pnpm test` 覆盖垫片所有权和修复。
 
+## Update 2026-11-17
+
+Manifest v2 使用 `targets[].options.instructions`，不再使用 `target.claudeMdShim`。默认的指令工件是从 `.claude/CLAUDE.md` 指向该 scope `AGENTS.md` 的符号链接。生成的导入垫片保留为显式 fallback：project scope 为 `@../AGENTS.md`，global scope 为 `@../.agents/AGENTS.md`。以上事实描述 v2 之前的垫片时期，保留为历史背景。
+
 ## 相关
 
 - [架构](../../../../docs/architecture.zh.md)

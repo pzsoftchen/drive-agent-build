@@ -12,13 +12,16 @@ DAB 按窄阶段交付。每个阶段必须先产出可运行、可测试的软�
 - 双语文档门禁。
 - 状态：已交付。
 
-## v0.1.x 采用与结构
+## v0.1.x 跨 Harness 对齐
 
-- `dab init --dry-run`，以及把生成冲突交给 `dab normalize --fix`。
-- DSH 风格的 Agent 决策记录 lifecycle 和 class 树。
-- `HarnessAdapter` seam、能力模型和 artifact 模型。
-- 用 `dab.lock` 保存生成状态。
-- 状态：下一步。
+这是 v0.1.x 的第一优先级。Project 和 global scope 独立配置；DAB 不提供 `dab global` 命令，也从不合并 scope。
+
+- 基础：基于位置的 scope root、包含 `scope` 和 `targets` 的 v2 manifest、target adapter 契约、所有权与失败语义。状态：已在本分支交付。
+- Claude target：symlink 优先的指令、逐项投影、project settings、managed/unmanaged 冲突和 `--fix` 备份。状态：已在本分支交付。
+- Codex adapter：原生 subagents 和 skills，映射 settings。状态：下一步。
+- DSH adapter：原生 subagents 和 skills，映射 profile 和 settings。状态：Codex 之后。
+- Global settings adoption/merge：每个 target 显式 opt-in 并备份。状态：DSH 之后。
+- Global `$HOME/.gitignore` 在所有计划中保持只读。
 
 ## v0.2 证据
 
@@ -35,14 +38,8 @@ DAB 按窄阶段交付。每个阶段必须先产出可运行、可测试的软�
 - Agent 决策记录归档工作流。
 - 状态：计划中。
 
-## v0.4 Harness Adapters
-
-- Codex adapter。
-- DSH adapter。
-- 同一编写树，adapter 专属产物和 launch。
-- 状态：计划中。
-
 ## 非目标
 
 - GUI、独立 Agent Loop、插件市场或团队权限。
 - 自动 DAD 迁移或 Windows junction 支持。
+- 跨 scope 继承或合并。

@@ -4,15 +4,23 @@ import type {
   AgentFrontmatterSchema,
   ClaudeCodePolicySchema,
   GeneratedManifestSchema,
+  GeneratedTargetSchema,
   HookSpecSchema,
+  LegacyProjectManifestSchema,
   MemoryEntrySchema,
   PolicySpecSchema,
   ProjectManifestSchema,
   ProjectionSchema,
+  TargetConfigSchema,
 } from './schemas.ts';
+import type { Scope } from './scope.ts';
 
 export type ProjectManifest = z.infer<typeof ProjectManifestSchema>;
+export type LegacyProjectManifest = z.infer<typeof LegacyProjectManifestSchema>;
 export type GeneratedManifest = z.infer<typeof GeneratedManifestSchema>;
+export type TargetProvider = z.infer<typeof TargetConfigSchema>['provider'];
+export type TargetConfig = z.infer<typeof TargetConfigSchema>;
+export type GeneratedTarget = z.infer<typeof GeneratedTargetSchema>;
 export type Projection = z.infer<typeof ProjectionSchema>;
 export type PolicySpec = z.infer<typeof PolicySpecSchema>;
 export type ClaudeCodePolicy = z.infer<typeof ClaudeCodePolicySchema>;
@@ -22,9 +30,11 @@ export type MemoryEntryFrontmatter = z.infer<typeof MemoryEntrySchema>;
 
 export interface ProjectPaths {
   root: string;
+  scope: Scope;
   agents: string;
   claude: string;
   manifest: string;
+  instructions: string;
 }
 
 export interface DiscoveryResult<T> {

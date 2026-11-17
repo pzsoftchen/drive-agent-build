@@ -38,14 +38,18 @@ export async function populateProject(project: ProjectFixture): Promise<void> {
   await writeProjectFile(
     project.root,
     'dab.yaml',
-    `version: 1
+    `version: 2
+scope: project
 project:
   id: demo
   name: Demo
 profile: feature
-target:
-  provider: claude-code
-  minVersion: 2.1.277
+targets:
+  - provider: claude-code
+    enabled: true
+    options:
+      minVersion: 2.1.277
+      instructions: symlink
 paths:
   agents: .agents
   claude: .claude

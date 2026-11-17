@@ -83,6 +83,7 @@ const EXCLUDED_PREFIXES = [
   '.agents/adapters/',
   '.agents/notes/archived/',
   'docs/i18n/',
+  'docs/superpowers/',
 ];
 
 function relativePath(root: string, file: string): string {

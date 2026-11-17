@@ -31,6 +31,10 @@ When `target.claudeMdShim` is true, DAB generates `.claude/CLAUDE.md` containing
 
 A local probe confirmed that `.claude/CLAUDE.md` with `@../AGENTS.md` loads a unique marker while `AGENTS.md` alone does not on the gated build. `dab detect` checks shim presence and drift; `pnpm test` covers shim ownership and repair.
 
+## Update 2026-11-17
+
+Manifest v2 uses `targets[].options.instructions` and no longer uses `target.claudeMdShim`. The default instruction artifact is a symlink from `.claude/CLAUDE.md` to the scope's `AGENTS.md`. The generated import shim remains an explicit fallback: `@../AGENTS.md` for project scope and `@../.agents/AGENTS.md` for global scope. The facts above describe the pre-v2 shim era and remain historical context.
+
 ## Related
 
 - [Architecture](../../../../docs/architecture.md)

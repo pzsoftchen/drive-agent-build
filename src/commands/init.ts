@@ -1,11 +1,13 @@
-import { mkdir, readlink } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
+import { readlink, realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import { runCommand } from '../core/command.ts';
 import { formatDiagnostics, type Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
-import { ensureDir, lstatOrNull, readTextFile, writeFileAtomic } from '../core/fs-atomic.ts';
+import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
 import { stableJson } from '../core/json.ts';
 import {
   assertParentInsideRoot,
@@ -14,18 +16,23 @@ import {
 } from '../core/paths.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
 import {
-  discoverProjections,
-  renderClaudeMdShim,
-} from '../adapter/claude-code/projection.ts';
+  inspectInstructionTarget,
+  type InstructionMode,
+} from '../adapter/claude-code/instructions.ts';
+import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
+import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import { discoverAgents } from '../model/agents.ts';
 import { parseFrontmatter } from '../model/frontmatter.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { discoverMemory } from '../model/memory.ts';
 import {
+  getGeneratedTarget,
+  getTarget,
   loadProjectManifest,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
+import { assertInitRoot, type Scope } from '../model/scope.ts';
 import {
   AgentFrontmatterSchema,
   ClaudeCodePolicySchema,
@@ -47,6 +54,7 @@ import { normalizeProject, type NormalizeResult } from './normalize.ts';
 
 export interface InitOptions {
   cwd: string;
+  home?: string;
   path?: string;
   profile?: 'feature';
   ai?: boolean;
@@ -61,6 +69,7 @@ export interface InitOptions {
 export interface InitResult {
   ok: boolean;
   exitCode: ExitCode;
+  scope: Scope;
   root: string;
   dryRun: boolean;
   created: string[];
@@ -81,6 +90,7 @@ export interface InitIO {
 }
 
 function blocked(
+  scope: Scope,
   root: string,
   diagnostics: Diagnostic[],
   conflicts: Diagnostic[],
@@ -89,6 +99,7 @@ function blocked(
   return {
     ok: false,
     exitCode: ExitCode.Validation,
+    scope,
     root,
     dryRun,
     created: [],
@@ -136,41 +147,35 @@ async function findGeneratedConflicts(
 ): Promise<{ pending: Diagnostic[]; fatal: Diagnostic[] }> {
   const pending: Diagnostic[] = [];
   const fatal: Diagnostic[] = [];
-
-  const settingsPath = join(paths.claude, 'settings.json');
-  if (
-    (await lstatOrNull(settingsPath)) !== null
-    && manifest?.generated?.settings === undefined
-  ) {
-    pending.push({
-      code: 'claude-settings.unmanaged',
-      severity: 'error',
-      message: 'existing .claude/settings.json is not DAB-managed',
-      file: '.claude/settings.json',
-      hint: 'Normalize can back it up and replace it after review.',
-    });
+  const generated = manifest === undefined
+    ? undefined
+    : getGeneratedTarget(manifest, 'claude-code');
+  const claudeTarget = manifest === undefined ? undefined : getTarget(manifest, 'claude-code');
+  if (manifest !== undefined && claudeTarget === undefined) {
+    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
   }
+  const mode: InstructionMode = claudeTarget === undefined
+    ? 'symlink'
+    : parseClaudeTargetOptions(claudeTarget).instructions;
 
-  const shimPath = join(paths.claude, 'CLAUDE.md');
-  const shimInfo = await lstatOrNull(shimPath);
-  if (shimInfo !== null) {
-    const managed = manifest?.generated?.instructions !== undefined
-      && manifest.generated.instructions !== null;
-    const enabled = manifest?.target.claudeMdShim ?? true;
-    const regularFile = shimInfo.isFile() && !shimInfo.isSymbolicLink();
-    let allowed = managed && regularFile;
-    if (!allowed && enabled && regularFile) {
-      allowed = (await readTextFile(shimPath)) === renderClaudeMdShim();
-    }
-    if (!allowed) {
+  // User-level settings under $HOME/.claude are never managed in global scope.
+  if (paths.scope !== 'global') {
+    const settingsPath = join(paths.claude, 'settings.json');
+    const settingsManaged = generated?.settings !== undefined && generated.settings !== null;
+    if ((await lstatOrNull(settingsPath)) !== null && !settingsManaged) {
       pending.push({
-        code: 'claude-md.unmanaged',
+        code: 'claude-settings.unmanaged',
         severity: 'error',
-        message: 'existing .claude/CLAUDE.md is not DAB-managed',
-        file: '.claude/CLAUDE.md',
+        message: 'existing .claude/settings.json is not DAB-managed',
+        file: '.claude/settings.json',
         hint: 'Normalize can back it up and replace it after review.',
       });
     }
+  }
+
+  const instructionConflict = await inspectInstructionTarget(root, paths, mode, generated);
+  if (instructionConflict !== undefined) {
+    pending.push(instructionConflict);
   }
 
   for (const [target, source] of targets) {
@@ -201,7 +206,7 @@ async function findGeneratedConflicts(
     if (info === null) {
       continue;
     }
-    const managed = manifest?.generated?.projections?.some(
+    const managed = generated?.projections.some(
       (projection) => projection.target === target,
     ) ?? false;
     if (info.isSymbolicLink()) {
@@ -342,23 +347,94 @@ function targetMap(existing: readonly Projection[]): Map<string, string> {
   return targets;
 }
 
-async function resolveRoot(options: InitOptions): Promise<string> {
+async function statOrNull(path: string): Promise<Stats | null> {
+  try {
+    return await stat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+interface InitTarget {
+  /** Raw absolute init path, used for reporting and file layout. */
+  root: string;
+  /**
+   * Path used to resolve the scope. For a symlinked init root this is its
+   * canonical target, so the nested-source guard cannot be bypassed by
+   * pointing a symlink into an existing source tree.
+   */
+  scopePath: string;
+}
+
+async function resolveInitRoot(options: InitOptions): Promise<InitTarget> {
   const root = resolve(options.cwd, options.path ?? '.');
   const info = await lstatOrNull(root);
-  if (info !== null && !info.isDirectory()) {
+  if (info === null) {
+    return { root, scopePath: root };
+  }
+  if (!info.isSymbolicLink()) {
+    if (!info.isDirectory()) {
+      throw new ConfigError(
+        `init target is not a directory: ${root}`,
+        'config.not-directory',
+      );
+    }
+    return { root, scopePath: root };
+  }
+  // A symlinked source root is supported; it must resolve to a directory. Scope
+  // must be validated on the canonical target, never on the lexical link path.
+  const target = await statOrNull(root);
+  if (target === null || !target.isDirectory()) {
     throw new ConfigError(
       `init target is not a directory: ${root}`,
       'config.not-directory',
     );
   }
-  if (info === null && options.dryRun !== true) {
-    await mkdir(root, { recursive: true });
+  return { root, scopePath: await realpath(root) };
+}
+
+async function resolveInitScope(initRoot: string, home: string): Promise<Scope> {
+  try {
+    return await assertInitRoot({ root: initRoot, home });
+  } catch (error) {
+    if (error instanceof DabError && error.code === 'config.source-root-nested') {
+      // `dab init` reports a refused nested target as a validation failure while
+      // preserving the source-root diagnostic code.
+      throw new ValidationError(error.message, error.code, {
+        ...(error.hint === undefined ? {} : { hint: error.hint }),
+      });
+    }
+    throw error;
   }
-  return root;
+}
+
+interface InitLayout {
+  scopeRoot: string;
+  manifestPath: string;
+}
+
+function resolveInitLayout(initRoot: string, scope: Scope, home: string): InitLayout {
+  if (scope === 'global') {
+    // Global init targets the canonical $HOME/.agents source root; its generated
+    // projections live under $HOME, never next to an alias path.
+    return {
+      scopeRoot: home,
+      manifestPath: join(initRoot, 'dab.yaml'),
+    };
+  }
+  return {
+    scopeRoot: initRoot,
+    manifestPath: join(initRoot, 'dab.yaml'),
+  };
 }
 
 function formatInit(result: InitResult): string {
-  const lines = [`dab init ${result.root}${result.dryRun ? ' (dry run)' : ''}`];
+  const lines = [
+    `dab init ${result.root} scope=${result.scope}${result.dryRun ? ' (dry run)' : ''}`,
+  ];
   if (result.created.length > 0) {
     lines.push(result.dryRun ? 'would create:' : 'created:');
     for (const file of result.created) {
@@ -424,26 +500,39 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     );
   }
 
-  const root = await resolveRoot(options);
+  const home = resolve(options.home ?? homedir());
+  const dryRun = options.dryRun === true;
+  const initTarget = await resolveInitRoot(options);
+  const root = initTarget.root;
+  const scope = await resolveInitScope(initTarget.scopePath, home);
+  const layout = resolveInitLayout(root, scope, home);
+  if (!dryRun) {
+    await ensureDir(root);
+  }
+
   const scan: ScanResult = await scanProject(root);
-  const manifestPath = join(root, 'dab.yaml');
-  const existingManifest = (await lstatOrNull(manifestPath)) === null
+  const existingManifest = (await lstatOrNull(layout.manifestPath)) === null
     ? undefined
-    : await loadProjectManifest(root);
-  const paths: ProjectPaths = existingManifest === undefined
-    ? {
-      root,
-      agents: join(root, '.agents'),
-      claude: join(root, '.claude'),
-      manifest: manifestPath,
-    }
-    : resolveProjectPaths(root, existingManifest.manifest);
+    : await loadProjectManifest(layout.scopeRoot, { scope });
+  const manifest: ProjectManifest = existingManifest?.manifest ?? {
+    version: 2,
+    scope,
+    project: { id: scan.projectId, name: scan.projectName },
+    profile: 'feature',
+    targets: [{
+      provider: 'claude-code',
+      enabled: true,
+      options: { minVersion: '2.1.277', instructions: 'symlink' },
+    }],
+    paths: { agents: '.agents', claude: '.claude' },
+  };
+  const paths: ProjectPaths = resolveProjectPaths(layout.scopeRoot, manifest);
 
   const safety: Diagnostic[] = [];
   try {
-    await assertRealPathInsideRoot(root, '.claude');
-    await assertRealPathInsideRoot(root, '.agents');
-    await assertRealPathsDisjoint(root, '.agents', '.claude');
+    await assertRealPathInsideRoot(layout.scopeRoot, '.claude');
+    await assertRealPathInsideRoot(layout.scopeRoot, '.agents');
+    await assertRealPathsDisjoint(layout.scopeRoot, '.agents', '.claude');
     for (const directory of [
       '.agents/agents',
       '.agents/skills',
@@ -457,7 +546,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       '.claude/skills',
       '.claude/rules',
     ]) {
-      await assertRealPathInsideRoot(root, directory);
+      await assertRealPathInsideRoot(layout.scopeRoot, directory);
     }
   } catch (error) {
     if (error instanceof DabError) {
@@ -465,39 +554,29 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         code: error.code,
         severity: 'error',
         message: error.message,
-        file: 'dab.yaml',
+        file: scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml',
       });
-      return blocked(root, [...scan.diagnostics, ...safety], safety, options.dryRun === true);
+      return blocked(scope, root, [...scan.diagnostics, ...safety], safety, dryRun);
     }
     throw error;
   }
 
-  const authoredConflicts = await findAuthoredConflicts(root);
-  const authored = await validateExistingAuthored(root, paths);
+  const authoredConflicts = await findAuthoredConflicts(layout.scopeRoot);
+  const authored = await validateExistingAuthored(layout.scopeRoot, paths);
   const authoredErrors = [
     ...authoredConflicts,
     ...authored.filter((item) => item.severity === 'error'),
   ];
   if (authoredErrors.length > 0) {
-    return blocked(
-      root,
-      [...scan.diagnostics, ...authoredErrors],
-      authoredErrors,
-      options.dryRun === true,
-    );
+    return blocked(scope, root, [...scan.diagnostics, ...authoredErrors], authoredErrors, dryRun);
   }
 
   let existingProjections: Projection[] = [];
   if ((await lstatOrNull(paths.agents)) !== null) {
-    const existing = await discoverProjections(root, paths);
+    const existing = await discoverProjections(layout.scopeRoot, paths);
     const errors = existing.diagnostics.filter((item) => item.severity === 'error');
     if (errors.length > 0) {
-      return blocked(
-        root,
-        [...scan.diagnostics, ...existing.diagnostics],
-        errors,
-        options.dryRun === true,
-      );
+      return blocked(scope, root, [...scan.diagnostics, ...existing.diagnostics], errors, dryRun);
     }
     existingProjections = existing.projections;
   }
@@ -536,6 +615,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       return {
         ok: true,
         exitCode: ExitCode.Ok,
+        scope,
         root,
         dryRun: false,
         created: [],
@@ -550,7 +630,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     aiApplied = true;
   }
 
-  const files = templateFiles(scan, proposal?.agentsMdAddition);
+  const files = templateFiles(scan, scope, proposal?.agentsMdAddition);
   for (const agent of proposal?.agents ?? []) {
     files[`.agents/agents/${agent.name}.md`] = renderAgentFromProposal(agent);
   }
@@ -560,26 +640,22 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     targets.set(`.claude/agents/${agent.name}.md`, `.agents/agents/${agent.name}.md`);
   }
   const generated = await findGeneratedConflicts(
-    root,
+    layout.scopeRoot,
     paths,
     existingManifest?.manifest,
     targets,
   );
   if (generated.fatal.length > 0) {
-    return blocked(
-      root,
-      [...scan.diagnostics, ...generated.fatal],
-      generated.fatal,
-      options.dryRun === true,
-    );
+    return blocked(scope, root, [...scan.diagnostics, ...generated.fatal], generated.fatal, dryRun);
   }
   const pending = generated.pending.map(pendingDiagnostic);
 
-  if (options.dryRun === true) {
-    const preview = await planFileWrites(root, files);
+  if (dryRun) {
+    const preview = await planFileWrites(layout.scopeRoot, files);
     return {
       ok: true,
       exitCode: ExitCode.Ok,
+      scope,
       root,
       dryRun: true,
       created: preview.created,
@@ -595,7 +671,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   const created: string[] = [];
   const skipped: string[] = [];
   for (const file of Object.keys(files).sort()) {
-    await writeIfMissing(root, file, files[file] ?? '', created, skipped);
+    await writeIfMissing(layout.scopeRoot, file, files[file] ?? '', created, skipped);
   }
   await ensureDir(join(paths.agents, 'notes'));
 
@@ -603,6 +679,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     return {
       ok: true,
       exitCode: ExitCode.Ok,
+      scope,
       root,
       dryRun: false,
       created,
@@ -617,12 +694,14 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
 
   const normalize = await normalizeProject({
     cwd: root,
+    home,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
   const diagnostics = [...scan.diagnostics, ...normalize.diagnostics];
   return {
     ok: normalize.ok,
     exitCode: normalize.exitCode,
+    scope,
     root,
     dryRun: false,
     created,

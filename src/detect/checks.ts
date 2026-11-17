@@ -6,13 +6,17 @@ import { sha256 } from '../core/hash.ts';
 import { extractMarkdownLinks } from '../core/markdown-links.ts';
 import { isPathInside, toPosix } from '../core/paths.ts';
 import { scanSecrets } from '../core/security.ts';
-import { renderClaudeMdShim } from '../adapter/claude-code/projection.ts';
+import {
+  planInstructions,
+  type InstructionMode,
+} from '../adapter/claude-code/instructions.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverMemory } from '../model/memory.ts';
+import type { Scope } from '../model/scope.ts';
 import type {
   AgentDefinition,
+  GeneratedTarget,
   LoadedHook,
-  ProjectManifest,
   ProjectPaths,
   Projection,
 } from '../model/types.ts';
@@ -25,11 +29,12 @@ function relativeFile(root: string, absolute: string): string {
 export async function checkSettings(
   root: string,
   paths: ProjectPaths,
-  manifest: ProjectManifest,
+  generated: GeneratedTarget | undefined,
   expected: string,
 ): Promise<Diagnostic[]> {
   const absolute = join(paths.claude, 'settings.json');
   const file = relativeFile(root, absolute);
+  const record = generated?.settings ?? null;
   const info = await lstatOrNull(absolute);
   if (info === null) {
     return [{
@@ -52,9 +57,7 @@ export async function checkSettings(
   const actual = await readTextFile(absolute);
   if (actual !== expected) {
     return [{
-      code: manifest.generated?.settings === undefined
-        ? 'claude-settings.unmanaged'
-        : 'generated.drift',
+      code: record === null ? 'claude-settings.unmanaged' : 'generated.drift',
       severity: 'error',
       message: 'generated settings do not match the current authored sources',
       file,
@@ -64,7 +67,7 @@ export async function checkSettings(
 
   const diagnostics: Diagnostic[] = [];
   const expectedHash = sha256(expected);
-  if (manifest.generated?.settings === undefined) {
+  if (record === null) {
     diagnostics.push({
       code: 'generated.manifest-stale',
       severity: 'warning',
@@ -72,8 +75,8 @@ export async function checkSettings(
       file: 'dab.yaml',
     });
   } else if (
-    manifest.generated.settings.sha256 !== expectedHash
-    || manifest.generated.settings.path !== '.claude/settings.json'
+    record.sha256 !== expectedHash
+    || record.path !== '.claude/settings.json'
   ) {
     diagnostics.push({
       code: 'generated.manifest-stale',
@@ -85,10 +88,10 @@ export async function checkSettings(
   return diagnostics;
 }
 
-export async function checkShim(
+export async function checkInstructionEnvironment(
   root: string,
-  manifest: ProjectManifest,
   home?: string,
+  scope: Scope = 'project',
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
 
@@ -100,6 +103,11 @@ export async function checkShim(
       file: 'CLAUDE.md',
       hint: 'Merge its content into AGENTS.md and remove the file.',
     });
+  }
+  if (scope === 'global') {
+    // $HOME/.claude is the user's Claude Code home, not a project tree. Files
+    // beside it and ancestor directories above HOME are user-level data.
+    return diagnostics;
   }
   if ((await lstatOrNull(join(root, 'CLAUDE.local.md'))) !== null) {
     diagnostics.push({
@@ -118,62 +126,69 @@ export async function checkShim(
     });
   }
 
-  const shimPath = join(root, '.claude', 'CLAUDE.md');
-  const info = await lstatOrNull(shimPath);
-  const managed = manifest.generated?.instructions !== undefined
-    && manifest.generated.instructions !== null;
-  const enabled = manifest.target.claudeMdShim;
+  return diagnostics;
+}
 
-  if (enabled) {
-    if (info === null) {
-      diagnostics.push({
-        code: 'claude-md.shim-missing',
-        severity: 'error',
-        message: 'generated .claude/CLAUDE.md shim is missing',
-        file: '.claude/CLAUDE.md',
-        hint: 'Run dab normalize to generate the AGENTS.md import shim.',
-      });
-    } else if (!info.isFile() || info.isSymbolicLink()) {
-      diagnostics.push({
-        code: 'claude-md.unmanaged',
-        severity: 'error',
-        message: '.claude/CLAUDE.md is not a regular generated file',
-        file: '.claude/CLAUDE.md',
-      });
-    } else if ((await readTextFile(shimPath)) !== renderClaudeMdShim()) {
-      diagnostics.push({
-        code: managed ? 'claude-md.shim-drift' : 'claude-md.unmanaged',
-        severity: 'error',
-        message: 'generated .claude/CLAUDE.md shim has drifted',
-        file: '.claude/CLAUDE.md',
-        hint: 'Run dab normalize; do not edit the shim by hand.',
-      });
-    }
-    if (!managed) {
-      diagnostics.push({
-        code: 'generated.manifest-stale',
-        severity: 'warning',
-        message: 'dab.yaml does not record the generated CLAUDE.md shim',
-        file: 'dab.yaml',
-      });
-    }
-  } else {
-    if (info !== null) {
-      diagnostics.push({
-        code: managed ? 'claude-md.shim-drift' : 'claude-md.unmanaged',
-        severity: 'error',
-        message: 'shim exists while target.claudeMdShim is false',
-        file: '.claude/CLAUDE.md',
-      });
-    }
-    if (managed) {
+export async function checkInstructions(
+  root: string,
+  paths: ProjectPaths,
+  mode: InstructionMode,
+  generated?: GeneratedTarget,
+): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
+  const target = join(root, '.claude', 'CLAUDE.md');
+  const plan = await planInstructions({ root, paths, mode, generated });
+
+  if (plan.conflict !== undefined) {
+    diagnostics.push(plan.conflict);
+  } else if (plan.action !== 'none') {
+    const present = (await lstatOrNull(target)) !== null;
+    diagnostics.push({
+      code: present ? 'claude-md.instructions-drift' : 'claude-md.instructions-missing',
+      severity: 'error',
+      message: present
+        ? '.claude/CLAUDE.md does not match the DAB-managed instructions'
+        : 'DAB-managed .claude/CLAUDE.md instructions are missing',
+      file: '.claude/CLAUDE.md',
+      hint: 'Run dab normalize to rebuild the instruction output; do not edit it by hand.',
+    });
+  }
+
+  const record = generated?.instructions ?? null;
+  if (mode === 'disabled') {
+    if (record !== null) {
       diagnostics.push({
         code: 'generated.manifest-stale',
         severity: 'warning',
-        message: 'dab.yaml records a shim while target.claudeMdShim is false',
+        message: 'dab.yaml records instructions while claude-code instructions are disabled',
         file: 'dab.yaml',
       });
     }
+    return diagnostics;
+  }
+  if ((await lstatOrNull(paths.instructions)) === null) {
+    // The missing source is reported as agents-md.missing; there is no stale record.
+    return diagnostics;
+  }
+
+  if (record === null) {
+    diagnostics.push({
+      code: 'generated.manifest-stale',
+      severity: 'warning',
+      message: 'dab.yaml does not record the managed .claude/CLAUDE.md instructions',
+      file: 'dab.yaml',
+    });
+  } else if (
+    record.path !== '.claude/CLAUDE.md'
+    || record.mode !== mode
+    || (plan.sha256 !== undefined && record.sha256 !== plan.sha256)
+  ) {
+    diagnostics.push({
+      code: 'generated.manifest-stale',
+      severity: 'warning',
+      message: 'dab.yaml records stale .claude/CLAUDE.md instructions',
+      file: 'dab.yaml',
+    });
   }
 
   return diagnostics;
@@ -183,11 +198,11 @@ export async function checkProjections(
   root: string,
   paths: ProjectPaths,
   projections: readonly Projection[],
-  manifest: ProjectManifest,
+  generated: GeneratedTarget | undefined,
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
   const managed = new Map(
-    (manifest.generated?.projections ?? []).map((projection) => [projection.target, projection]),
+    (generated?.projections ?? []).map((projection) => [projection.target, projection]),
   );
   const expected = new Set(projections.map((projection) => projection.target));
 
@@ -302,13 +317,13 @@ export async function checkProjections(
     }
   }
 
-  if (manifest.generated !== undefined) {
+  if (generated !== undefined) {
     const fingerprint = (items: readonly Projection[]): string =>
       items
         .map((item) => `${item.target}|${item.source}|${item.sourceSha256}`)
         .sort()
         .join('\n');
-    if (fingerprint(projections) !== fingerprint(manifest.generated.projections)) {
+    if (fingerprint(projections) !== fingerprint(generated.projections)) {
       diagnostics.push({
         code: 'generated.manifest-stale',
         severity: 'warning',
@@ -461,8 +476,8 @@ async function walkFiles(dir: string, depth = 0): Promise<string[]> {
 
 export async function checkSecrets(root: string, paths: ProjectPaths): Promise<Diagnostic[]> {
   const candidates = new Set<string>([
-    join(root, 'AGENTS.md'),
-    join(root, 'dab.yaml'),
+    paths.instructions,
+    paths.manifest,
     ...(await walkFiles(paths.agents)),
   ]);
   const diagnostics: Diagnostic[] = [];
@@ -511,31 +526,39 @@ export async function checkMemory(
     }
   }
 
-  for (const dir of ['agent-memory', 'agent-memory-local', 'memory', 'projects']) {
-    const absolute = join(paths.claude, dir);
-    if ((await lstatOrNull(absolute)) !== null) {
-      diagnostics.push({
-        code: 'memory.project-artifact',
-        severity: 'error',
-        message: `team memory or auto memory artifact exists in the repository: ${dir}`,
-        file: toPosix(relative(root, absolute)),
-        hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/memory/.',
-      });
+  // In global scope paths.claude is the user's $HOME/.claude, so those
+  // directories are normal Claude Code user data, not project artifacts.
+  if (paths.scope === 'project') {
+    for (const dir of ['agent-memory', 'agent-memory-local', 'memory', 'projects']) {
+      const absolute = join(paths.claude, dir);
+      if ((await lstatOrNull(absolute)) !== null) {
+        diagnostics.push({
+          code: 'memory.project-artifact',
+          severity: 'error',
+          message: `team memory or auto memory artifact exists in the repository: ${dir}`,
+          file: toPosix(relative(root, absolute)),
+          hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/memory/.',
+        });
+      }
     }
   }
 
   return diagnostics;
 }
 
-export async function checkAgentsMdState(root: string): Promise<Diagnostic[]> {
-  const size = await checkAgentsMd(root);
+export async function checkAgentsMdState(
+  scopeRoot: string,
+  paths: ProjectPaths,
+): Promise<Diagnostic[]> {
+  const size = await checkAgentsMd(scopeRoot, paths.instructions);
   const diagnostics = [...size.diagnostics];
-  const path = join(root, 'AGENTS.md');
-  if ((await lstatOrNull(path)) === null) {
+  if ((await lstatOrNull(paths.instructions)) === null) {
     return diagnostics;
   }
 
-  const text = await readTextFile(path);
+  const file = relativeFile(scopeRoot, paths.instructions);
+  const base = dirname(paths.instructions);
+  const text = await readTextFile(paths.instructions);
   for (const link of extractMarkdownLinks(text)) {
     const target = link.target.split('#')[0] ?? '';
     if (
@@ -546,13 +569,13 @@ export async function checkAgentsMdState(root: string): Promise<Diagnostic[]> {
     ) {
       continue;
     }
-    const absolute = target.startsWith('/') ? target : resolve(root, target);
-    if (!isPathInside(root, absolute) || (await lstatOrNull(absolute)) === null) {
+    const absolute = target.startsWith('/') ? target : resolve(base, target);
+    if (!isPathInside(scopeRoot, absolute) || (await lstatOrNull(absolute)) === null) {
       diagnostics.push({
         code: 'agents-md.broken-link',
         severity: 'error',
         message: `AGENTS.md link does not resolve: ${link.target}`,
-        file: 'AGENTS.md',
+        file,
         line: link.line,
       });
     }

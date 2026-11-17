@@ -1,6 +1,7 @@
 import { stringify } from 'yaml';
 import type { ScanResult } from './scanner.ts';
 import type { AiProposalAgent } from './ai-proposal.ts';
+import type { Scope } from '../model/scope.ts';
 
 function commandOrTodo(command: string | undefined): string {
   return command ?? 'TODO: add a command';
@@ -245,16 +246,19 @@ Link every entry from this index. Personal auto memory stays machine-local.
 `;
 }
 
-export function renderDabYaml(scan: ScanResult): string {
-  return `version: 1
+export function renderDabYaml(scan: ScanResult, scope: Scope): string {
+  return `version: 2
+scope: ${scope}
 project:
   id: ${JSON.stringify(scan.projectId)}
   name: ${JSON.stringify(scan.projectName)}
 profile: feature
-target:
-  provider: claude-code
-  minVersion: 2.1.277
-  claudeMdShim: true
+targets:
+  - provider: claude-code
+    enabled: true
+    options:
+      minVersion: 2.1.277
+      instructions: symlink
 paths:
   agents: .agents
   claude: .claude
@@ -275,11 +279,14 @@ ${agent.body.trim()}
 
 export function templateFiles(
   scan: ScanResult,
+  scope: Scope,
   aiAddition?: string,
 ): Record<string, string> {
+  const agentsMd = scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
+  const manifest = scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml';
   return {
-    'AGENTS.md': renderAgentsMd(scan, aiAddition),
-    'dab.yaml': renderDabYaml(scan),
+    [agentsMd]: renderAgentsMd(scan, aiAddition),
+    [manifest]: renderDabYaml(scan, scope),
     '.agents/agents/implementer.md': renderImplementerAgent(),
     '.agents/agents/reviewer.md': renderReviewerAgent(),
     '.agents/skills/feature-delivery/SKILL.md': renderFeatureDeliverySkill(scan),

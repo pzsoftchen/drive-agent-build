@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
@@ -10,6 +11,8 @@ import { runDetect } from './commands/detect.ts';
 import { runInit } from './commands/init.ts';
 import { runNormalize } from './commands/normalize.ts';
 import { runPolicyExplain } from './commands/policy-explain.ts';
+import { TARGET_PROVIDERS } from './model/schemas.ts';
+import type { TargetProvider } from './model/types.ts';
 
 export const PROGRAM_VERSION = '0.1.0';
 
@@ -28,7 +31,7 @@ Usage:
   dab init [path] [--profile feature] [--ai] [--dry-run] [--json]
   dab detect [--json]
   dab normalize [--dry-run] [--fix] [--json]
-  dab policy explain [--agent <name>] [--json]
+  dab policy explain [--agent <name>] [--target <provider>] [--json]
   dab --help
   dab --version
 
@@ -130,6 +133,7 @@ async function dispatchInit(
   return runInit(
     {
       cwd: ctx.cwd,
+      home: homedir(),
       ...(parsed.path === undefined ? {} : { path: parsed.path }),
       profile: parsed.profile,
       ai: parsed.ai,
@@ -173,6 +177,15 @@ async function dispatchNormalize(
   );
 }
 
+function parseTargetProvider(value: string): TargetProvider {
+  if (!(TARGET_PROVIDERS as readonly string[]).includes(value)) {
+    throw new UsageError(`unknown target: ${value}`, 'usage.invalid-target', {
+      hint: `Supported targets: ${TARGET_PROVIDERS.join(', ')}`,
+    });
+  }
+  return value as TargetProvider;
+}
+
 async function dispatchPolicy(
   rest: string[],
   ctx: CliContext,
@@ -181,16 +194,19 @@ async function dispatchPolicy(
   const [subcommand, ...args] = rest;
   if (subcommand !== 'explain') {
     throw new UsageError(
-      'usage: dab policy explain [--agent <name>] [--json]',
+      'usage: dab policy explain [--agent <name>] [--target <provider>] [--json]',
       'usage.invalid-policy-command',
     );
   }
-  rejectUnknownOptions(args, ['--agent']);
+  rejectUnknownOptions(args, ['--agent', '--target']);
   const agent = takeOption(args, '--agent');
+  const rawTarget = takeOption(args, '--target');
+  const target = rawTarget === undefined ? undefined : parseTargetProvider(rawTarget);
   return runPolicyExplain(
     {
       cwd: ctx.cwd,
       ...(agent === undefined ? {} : { agent }),
+      ...(target === undefined ? {} : { target }),
       json,
       ...(ctx.runner === undefined ? {} : { runner: ctx.runner }),
     },
