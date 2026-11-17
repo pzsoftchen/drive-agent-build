@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, readFile, readlink, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { runInit } from '../../src/commands/init.ts';
@@ -64,7 +64,7 @@ describe('scope-aware init', () => {
     const captureResult = capture();
 
     const code = await runInit(
-      { cwd: home, path: '.agents', home, json: true },
+      { cwd: home, path: '.agents', home, runner: goodRunner, json: true },
       captureResult.io,
     );
 
@@ -89,6 +89,61 @@ describe('scope-aware init', () => {
     expect(payload.ok).toBe(true);
     expect(payload.scope).toBe('global');
     expect(payload.root).toBe(join(home, '.agents'));
+  });
+
+  it('bootstraps a symlinked global source root under HOME', async () => {
+    const home = await tempDir('dab-home-init-');
+    const real = join(home, 'dot-agents-real');
+    await mkdir(join(real, 'skills'), { recursive: true });
+    await symlink(real, join(home, '.agents'), 'dir');
+    const captureResult = capture();
+
+    const code = await runInit(
+      { cwd: home, path: '.agents', home, runner: goodRunner, json: true },
+      captureResult.io,
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      ok: boolean;
+      scope: string;
+      root: string;
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.scope).toBe('global');
+    expect(payload.root).toBe(join(home, '.agents'));
+    expect(await lstatOrNull(join(real, 'AGENTS.md'))).not.toBeNull();
+    expect(await lstatOrNull(join(real, 'dab.yaml'))).not.toBeNull();
+    expect(await lstatOrNull(join(home, 'AGENTS.md'))).toBeNull();
+    expect(await readlink(join(home, '.claude/CLAUDE.md'))).toBe('../.agents/AGENTS.md');
+
+    const manifest = await loadProjectManifest(home, { scope: 'global' });
+    expect(manifest.manifest.scope).toBe('global');
+  });
+
+  it('refuses a project symlink that targets an existing source root', async () => {
+    const project = await tempDir('dab-init-symlink-project-');
+    await mkdir(join(project, '.agents/skills/new'), { recursive: true });
+    await writeFile(join(project, 'dab.yaml'), 'version: 2\n');
+    const linkParent = await tempDir('dab-init-symlink-');
+    const link = join(linkParent, 'innocent-link');
+    await symlink(join(project, '.agents/skills/new'), link, 'dir');
+    const captureResult = capture();
+
+    const code = await runInit(
+      { cwd: linkParent, path: 'innocent-link', home: linkParent, json: true },
+      captureResult.io,
+    );
+
+    expect(code).toBe(3);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      error: { code: string };
+    };
+    expect(payload.error.code).toBe('config.source-root-nested');
+    expect(await lstatOrNull(join(link, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(link, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(link, '.agents'))).toBeNull();
+    expect(await lstatOrNull(join(link, '.claude'))).toBeNull();
   });
 
   it('writes the authored template under .agents for global scope', async () => {

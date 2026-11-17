@@ -1,5 +1,5 @@
 import type { Stats } from 'node:fs';
-import { readlink, stat } from 'node:fs/promises';
+import { readlink, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
@@ -358,20 +358,42 @@ async function statOrNull(path: string): Promise<Stats | null> {
   }
 }
 
-async function resolveInitRoot(options: InitOptions): Promise<string> {
+interface InitTarget {
+  /** Raw absolute init path, used for reporting and file layout. */
+  root: string;
+  /**
+   * Path used to resolve the scope. For a symlinked init root this is its
+   * canonical target, so the nested-source guard cannot be bypassed by
+   * pointing a symlink into an existing source tree.
+   */
+  scopePath: string;
+}
+
+async function resolveInitRoot(options: InitOptions): Promise<InitTarget> {
   const root = resolve(options.cwd, options.path ?? '.');
   const info = await lstatOrNull(root);
-  if (info !== null) {
-    // A symlinked source root is supported; it must resolve to a directory.
-    const target = info.isSymbolicLink() ? await statOrNull(root) : info;
-    if (target === null || !target.isDirectory()) {
+  if (info === null) {
+    return { root, scopePath: root };
+  }
+  if (!info.isSymbolicLink()) {
+    if (!info.isDirectory()) {
       throw new ConfigError(
         `init target is not a directory: ${root}`,
         'config.not-directory',
       );
     }
+    return { root, scopePath: root };
   }
-  return root;
+  // A symlinked source root is supported; it must resolve to a directory. Scope
+  // must be validated on the canonical target, never on the lexical link path.
+  const target = await statOrNull(root);
+  if (target === null || !target.isDirectory()) {
+    throw new ConfigError(
+      `init target is not a directory: ${root}`,
+      'config.not-directory',
+    );
+  }
+  return { root, scopePath: await realpath(root) };
 }
 
 async function resolveInitScope(initRoot: string, home: string): Promise<Scope> {
@@ -480,8 +502,9 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
 
   const home = resolve(options.home ?? homedir());
   const dryRun = options.dryRun === true;
-  const root = await resolveInitRoot(options);
-  const scope = await resolveInitScope(root, home);
+  const initTarget = await resolveInitRoot(options);
+  const root = initTarget.root;
+  const scope = await resolveInitScope(initTarget.scopePath, home);
   const layout = resolveInitLayout(root, scope, home);
   if (!dryRun) {
     await ensureDir(root);
