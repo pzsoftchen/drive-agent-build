@@ -45,11 +45,15 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 ## Target 与 Adapter
 
-v2 manifest 声明 `scope`、`targets` 和逐 target 的生成记录：
+完整的 v2 project manifest（`dab normalize` 写入 `generated` 记录）：
 
 ```yaml
 version: 2
 scope: project
+project:
+  id: example
+  name: Example
+profile: feature
 targets:
   - provider: claude-code
     enabled: true
@@ -59,6 +63,17 @@ targets:
 paths:
   agents: .agents
   claude: .claude
+generated:
+  targets:
+    - provider: claude-code
+      settings:
+        path: .claude/settings.json
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      instructions:
+        path: .claude/CLAUDE.md
+        mode: symlink
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      projections: []
 ```
 
 - Target adapter 把 common facts 映射到一个 harness，并解析该 target 的 provider options。Adapter 绝不拥有 agent、skill 或 rule 定义。
@@ -69,17 +84,18 @@ paths:
 
 ## 所有权与失败语义
 
-- 只有当 manifest 的生成记录表明 DAB 创建了某个 target path 时，它才是 managed：指向预期 source 的符号链接，或与记录哈希匹配的生成文件。
-- 其他已存在的文件、目录或外来符号链接是 unmanaged。`normalize` 和 `detect` 报告冲突，冲突存在时 `normalize` 不写入任何内容。
-- `dab normalize --fix` 在采用前把 unmanaged target path 移入带时间戳的 `.dab/backups/` 目录。没有 `--fix` 时，DAB 永不替换或删除 unmanaged path。
-- 已配置但没有安全映射的 target 是错误。一个 target 失败会阻止所有 target 的写入，因此运行不会留下半对齐的树。
-- `--dry-run` 运行同一预检和退出码，但不写入。
+- Manifest 的 `generated` 记录是 target path 所有权的权威依据。
+- 已记录的 instruction 产物或 projection 符号链接发生漂移时会原地修复（`repair`/`repair-link`），不需要 `--fix` 或备份。已记录的 settings 文件与预期内容不一致时会先备份再重写，即使它是符号链接或目录。
+- 未记录且尚不匹配预期产物的 path 是 unmanaged。`normalize` 和 `detect` 会报告它，`normalize` 没有 `--fix` 时不写入任何内容。
+- Projection target 上的物理文件或目录即使已记录也是冲突。`dab normalize --fix` 会先把它移入带时间戳的 `.dab/backups/` 目录再替换；unmanaged 符号链接和 settings 文件同样需要 `--fix`。
+- `normalize` 会采用并记录未记录但已指向预期 source 的符号链接，或已匹配配置模式的 instruction 产物，无需重写。
+- 已配置但没有安全映射的 target 会以 `target.unsupported` 失败。一个 target 失败会阻止所有 target 的写入，`--dry-run` 运行同一预检和退出码但不写入。
 - 根 `CLAUDE.md` 归用户所有，始终是致命冲突。
 
 ## Claude Code 指令
 
 - `.claude/CLAUDE.md` 默认是指向 scope 指令的符号链接：project scope 为 `../AGENTS.md`，global scope 为 `../.agents/AGENTS.md`。
-- `instructions: generated` 改为写入 `@../AGENTS.md` 导入垫片。当 Claude Code 构建无法跟随符号链接时使用它。
+- `instructions: generated` 改为写入导入垫片：project scope 为 `@../AGENTS.md`，global scope 为 `@../.agents/AGENTS.md`。当 Claude Code 构建无法跟随符号链接时使用它。
 - `instructions: disabled` 不写入指令产物，并移除 managed 产物。
 - Managed 产物原地修复。Unmanaged 产物需要 `--fix`，且会先备份。
 - 指令记录为 `generated` 状态，绝不是 `native`，因为 DAB 物化了 Claude Code 读取的产物。

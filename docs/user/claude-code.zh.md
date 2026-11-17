@@ -18,7 +18,7 @@ DAB 面向 Claude Code `>=2.1.277`，只写入公开配置格式。本阶段它�
 ## 指令产物
 
 - `.claude/CLAUDE.md` 在 project scope 是指向 `../AGENTS.md` 的符号链接，在 global scope 指向 `../.agents/AGENTS.md`。
-- 部分 Claude Code 构建会关闭原生 `AGENTS.md` 加载，部分文件系统也无法可靠跟随链接。此时在 target 上设置 `instructions: generated`，改为写入 `@../AGENTS.md` 导入垫片。
+- 部分 Claude Code 构建会关闭原生 `AGENTS.md` 加载，部分文件系统也无法可靠跟随链接。此时在 target 上设置 `instructions: generated`，改为写入导入垫片：project scope 为 `@../AGENTS.md`，global scope 为 `@../.agents/AGENTS.md`。
 - 设置 `instructions: disabled` 会不写入指令产物，并移除 managed 产物。
 - 根 `CLAUDE.md` 归用户所有且始终致命；把内容合并进 `AGENTS.md` 后删除它。
 - 该产物记录为 `generated`，绝不是 `native`，因为 DAB 物化了 Claude Code 读取的文件。
@@ -34,10 +34,10 @@ targets:
 ## 所有权与冲突
 
 - DAB 逐项链接 agents、skills 和 rules，而不是链接整个目录。这样后续可以保留 provider 专属文件，并让所有权明确。
-- 只有当生成记录列出某个 path 时它才是 managed：指向预期 source 的符号链接，或与哈希匹配的生成文件。
-- 已存在的物理副本、目录或外来符号链接是 unmanaged。`dab detect` 会报告，`dab normalize` 在它存在时拒绝写入。
-- `dab normalize --fix` 在替换前把每个 unmanaged path 备份到 `.dab/backups/`。运行前请检查备份路径。
-- 身份检查使用真实路径，因此逃逸 scope root 的符号链接 `.claude` 目录会失败，而不是写到目录之外。
+- 生成记录决定所有权。已记录的 instruction 产物或 projection 符号链接发生漂移时会原地修复（`repair`/`repair-link`），不需要 `--fix` 或备份。
+- 已记录的 settings 与预期内容不一致时会先备份再重写，即使该 path 是符号链接或目录。
+- Projection target 上的物理文件或目录即使已记录也是冲突；未记录且尚不匹配预期产物的 path 是 unmanaged。`dab normalize --fix` 会先把它备份到 `.dab/backups/` 再替换；没有 `--fix` 时 `normalize` 拒绝写入。
+- `normalize` 会采用并记录未记录但已指向预期 source 的符号链接，或已匹配配置模式的 instruction 产物，无需重写。身份检查使用真实路径，因此逃逸 scope root 的符号链接 `.claude` 目录会失败，而不是写到目录之外。
 
 ## 记忆模型
 

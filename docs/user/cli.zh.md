@@ -69,11 +69,11 @@ generated:
     - provider: claude-code
       settings:
         path: .claude/settings.json
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       instructions:
         path: .claude/CLAUDE.md
         mode: symlink
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       projections: []
 ```
 
@@ -97,7 +97,8 @@ paths:
 ```
 
 - `scope` 必须匹配解析出的位置；不匹配是错误。
-- `targets` 可以禁用或省略。启用的 target 没有 adapter 时会以 `target.unsupported` 失败。
+- `targets` 是必需的，且至少包含一个条目。单个条目可以设置 `enabled: false`；必须至少保留一个启用的 target，否则 normalize 和 detect 会以 `target.none` 失败。
+- 启用的 target 没有 adapter 时会以 `target.unsupported` 失败。
 - `generated` 由 `dab normalize` 写入；永远不要手工编辑。
 - Legacy v1 manifest 会按 project scope 迁移到 v2。
 
@@ -132,14 +133,14 @@ JSON 输出包含每个启用 target 的条目：
       "actions": [],
       "settings": {
         "path": ".claude/settings.json",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "changed": false
       },
       "instructions": {
         "path": ".claude/CLAUDE.md",
         "mode": "symlink",
         "action": "none",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       },
       "backups": []
     }

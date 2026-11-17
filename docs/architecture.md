@@ -45,11 +45,15 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 
 ## Targets and adapters
 
-A v2 manifest declares `scope`, `targets` and the per-target generated records:
+A complete v2 project manifest (`dab normalize` writes the `generated` records):
 
 ```yaml
 version: 2
 scope: project
+project:
+  id: example
+  name: Example
+profile: feature
 targets:
   - provider: claude-code
     enabled: true
@@ -59,6 +63,17 @@ targets:
 paths:
   agents: .agents
   claude: .claude
+generated:
+  targets:
+    - provider: claude-code
+      settings:
+        path: .claude/settings.json
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      instructions:
+        path: .claude/CLAUDE.md
+        mode: symlink
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      projections: []
 ```
 
 - A target adapter maps common facts into one harness and parses that target's provider options. Adapters never own agent, skill or rule definitions.
@@ -69,17 +84,18 @@ paths:
 
 ## Ownership and failure semantics
 
-- A target path is managed only when the manifest's generated record says DAB created it: a symlink to the expected source, or a generated file matching its recorded hash.
-- Any other existing file, directory or foreign symlink is unmanaged. `normalize` and `detect` report a conflict, and `normalize` writes nothing while a conflict exists.
-- `dab normalize --fix` moves an unmanaged target path into a timestamped `.dab/backups/` directory before adopting it. Without `--fix`, DAB never replaces or deletes an unmanaged path.
-- A configured target with no safe mapping is an error. One failing target blocks writes for every target, so a run never leaves a half-aligned tree.
-- `--dry-run` runs the same precheck and exit codes without writing.
+- The manifest's `generated` record is the ownership authority for a target path.
+- A recorded instruction artifact or projection symlink that drifts is repaired in place (`repair`/`repair-link`) without `--fix` or a backup. A recorded settings file that differs from the expected content is backed up and rewritten, even when it is a symlink or directory.
+- An unrecorded path that does not already match the expected artifact is unmanaged. `normalize` and `detect` report it, and `normalize` writes nothing without `--fix`.
+- A physical file or directory at a projection target is a conflict even when recorded. `dab normalize --fix` moves it into a timestamped `.dab/backups/` directory before replacing it; unmanaged symlinks and settings files require the same `--fix`.
+- `normalize` adopts and records an unrecorded symlink that already points at the expected source, or an instruction artifact that already matches the configured mode, without a rewrite.
+- A configured target with no safe mapping fails with `target.unsupported`. One failing target blocks writes for every target, and `--dry-run` runs the same precheck and exit codes without writing.
 - A root `CLAUDE.md` is user-owned and is always a fatal conflict.
 
 ## Claude Code instructions
 
 - `.claude/CLAUDE.md` is a symlink to the scope's instructions by default: `../AGENTS.md` in project scope and `../.agents/AGENTS.md` in global scope.
-- `instructions: generated` writes the `@../AGENTS.md` import shim instead. Use it when a Claude Code build cannot follow the symlink.
+- `instructions: generated` writes an import shim instead: `@../AGENTS.md` in project scope and `@../.agents/AGENTS.md` in global scope. Use it when a Claude Code build cannot follow the symlink.
 - `instructions: disabled` writes no instruction artifact and removes a managed one.
 - A managed artifact is repaired in place. An unmanaged artifact needs `--fix`, which backs it up first.
 - Instructions are recorded as `generated` status, never `native`, because DAB materializes the artifact Claude Code reads.

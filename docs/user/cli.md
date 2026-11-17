@@ -69,11 +69,11 @@ generated:
     - provider: claude-code
       settings:
         path: .claude/settings.json
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       instructions:
         path: .claude/CLAUDE.md
         mode: symlink
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000
+        sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       projections: []
 ```
 
@@ -97,7 +97,8 @@ paths:
 ```
 
 - `scope` must match the resolved location; a mismatch is an error.
-- `targets` may be disabled or omitted. An enabled target without an adapter fails with `target.unsupported`.
+- `targets` is required and must contain at least one entry. Individual entries may set `enabled: false`; at least one target must stay enabled or normalize and detect fail with `target.none`.
+- An enabled target without an adapter fails with `target.unsupported`.
 - `generated` is written by `dab normalize`; never edit it by hand.
 - A legacy v1 manifest is migrated to v2 as project scope.
 
@@ -132,14 +133,14 @@ JSON output includes one entry per enabled target:
       "actions": [],
       "settings": {
         "path": ".claude/settings.json",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "changed": false
       },
       "instructions": {
         "path": ".claude/CLAUDE.md",
         "mode": "symlink",
         "action": "none",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       },
       "backups": []
     }
