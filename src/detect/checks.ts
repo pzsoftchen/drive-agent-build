@@ -159,6 +159,10 @@ export async function checkInstructions(
     }
     return diagnostics;
   }
+  if ((await lstatOrNull(paths.instructions)) === null) {
+    // The missing source is reported as agents-md.missing; there is no stale record.
+    return diagnostics;
+  }
 
   if (record === null) {
     diagnostics.push({

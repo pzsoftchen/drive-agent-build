@@ -205,6 +205,57 @@ describe('symlink instructions', () => {
   });
 });
 
+describe('missing instruction source', () => {
+  it('plans no artifact when AGENTS.md is missing', async () => {
+    const fixture = await project();
+    await rm(join(fixture.root, 'AGENTS.md'));
+    const paths = projectPaths(fixture.root, 'project');
+
+    for (const mode of ['symlink', 'generated'] as const) {
+      const plan = await planInstructions({ root: fixture.root, paths, mode });
+      expect(plan).toMatchObject({ action: 'none' });
+      expect(plan.conflict).toBeUndefined();
+      expect(plan.sha256).toBeUndefined();
+    }
+  });
+
+  it('removes a managed artifact when AGENTS.md disappears', async () => {
+    const fixture = await project();
+    const paths = projectPaths(fixture.root, 'project');
+    const created = await planInstructions({ root: fixture.root, paths, mode: 'symlink' });
+    await applyInstructions(fixture.root, created);
+    await rm(join(fixture.root, 'AGENTS.md'));
+
+    const plan = await planInstructions({
+      root: fixture.root,
+      paths,
+      mode: 'symlink',
+      generated: managed(),
+    });
+    expect(plan.action).toBe('remove');
+    await applyInstructions(fixture.root, plan);
+    expect(await lstatOrNull(join(fixture.root, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
+  it('keeps an unmanaged target fatal even with fix when AGENTS.md is missing', async () => {
+    const fixture = await project();
+    await writeProjectFile(fixture.root, '.claude/CLAUDE.md', 'user memory\n');
+    await rm(join(fixture.root, 'AGENTS.md'));
+    const paths = projectPaths(fixture.root, 'project');
+
+    const plan = await planInstructions({
+      root: fixture.root,
+      paths,
+      mode: 'symlink',
+      fix: true,
+    });
+
+    expect(plan.action).toBe('none');
+    expect(plan.conflict?.code).toBe('claude-md.unmanaged');
+    expect(await readFile(join(fixture.root, '.claude/CLAUDE.md'), 'utf8')).toBe('user memory\n');
+  });
+});
+
 describe('generated instructions', () => {
   it('creates, accepts and repairs the gated shim according to ownership', async () => {
     const fixture = await project();

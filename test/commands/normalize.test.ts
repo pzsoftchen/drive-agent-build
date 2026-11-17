@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { ConfigError } from '../../src/core/errors.ts';
@@ -353,6 +354,77 @@ describe('normalizeProject', () => {
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
     expect(await lstatOrNull(join(project.root, '.claude/CLAUDE.md'))).toBeNull();
     expect(await lstatOrNull(join(project.root, '.claude/agents/reviewer.md'))).toBeNull();
+    expect((await loadProjectManifest(project.root)).manifest.generated).toBeUndefined();
+  });
+
+  it('writes no instruction artifact when AGENTS.md is missing', async () => {
+    const project = await projectFixture();
+    await rm(join(project.root, 'AGENTS.md'));
+
+    const result = await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    expect(result.ok).toBe(true);
+    expect(await lstatOrNull(join(project.root, '.claude/CLAUDE.md'))).toBeNull();
+    const generated = getGeneratedTarget(
+      (await loadProjectManifest(project.root)).manifest,
+      'claude-code',
+    );
+    expect(generated?.instructions).toBeNull();
+
+    const detected = await detectProject({
+      cwd: project.root,
+      runner: goodRunner,
+      home: dirname(project.root),
+    });
+    const codes = detected.diagnostics.map((item) => item.code);
+    expect(codes).toContain('agents-md.missing');
+    expect(codes).not.toContain('generated.manifest-stale');
+  });
+
+  it('removes a managed instruction symlink when AGENTS.md disappears', async () => {
+    const project = await projectFixture();
+    await normalizeProject({ cwd: project.root, runner: goodRunner });
+    const shim = join(project.root, '.claude/CLAUDE.md');
+    expect(await readlink(shim)).toBe('../AGENTS.md');
+    await rm(join(project.root, 'AGENTS.md'));
+
+    const result = await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    expect(result.ok).toBe(true);
+    expect(result.backups).toEqual([]);
+    expect(await lstatOrNull(shim)).toBeNull();
+    const generated = getGeneratedTarget(
+      (await loadProjectManifest(project.root)).manifest,
+      'claude-code',
+    );
+    expect(generated?.instructions).toBeNull();
+
+    const detected = await detectProject({
+      cwd: project.root,
+      runner: goodRunner,
+      home: dirname(project.root),
+    });
+    const codes = detected.diagnostics.map((item) => item.code);
+    expect(codes).toContain('agents-md.missing');
+    expect(codes).not.toContain('generated.manifest-stale');
+  });
+
+  it('keeps an unmanaged instruction target fatal when AGENTS.md is missing', async () => {
+    const project = await projectFixture();
+    await rm(join(project.root, 'AGENTS.md'));
+    await writeProjectFile(project.root, '.claude/CLAUDE.md', 'user memory\n');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      fix: true,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('claude-md.unmanaged');
+    expect(await readFile(join(project.root, '.claude/CLAUDE.md'), 'utf8')).toBe('user memory\n');
+    expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
     expect((await loadProjectManifest(project.root)).manifest.generated).toBeUndefined();
   });
 

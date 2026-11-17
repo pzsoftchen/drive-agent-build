@@ -100,6 +100,34 @@ export async function planInstructions(
     return { action: 'none', mode, path: TARGET, conflict: rootClaudeConflict() };
   }
 
+  const actual = await lstatOrNull(target);
+  const managed = generated?.instructions !== undefined
+    && generated?.instructions !== null;
+  const sourcePresent = (await lstatOrNull(source)) !== null;
+
+  if (mode !== 'disabled' && !sourcePresent) {
+    // Without AGENTS.md there is no instruction artifact to build; never leave a
+    // dangling link or shim behind. Managed artifacts are removed without a backup.
+    const content = renderClaudeMdShim(relativeLink(target, source));
+    const base: InstructionPlan = { action: 'none', mode, path: TARGET, source, content };
+    if (actual === null) {
+      return base;
+    }
+    const managedArtifact = managed
+      ? actual.isSymbolicLink() || actual.isFile()
+      : (actual.isSymbolicLink() && await resolvesTo(target, source))
+        || (mode === 'generated'
+          && actual.isFile()
+          && (await readTextFile(target)) === content);
+    if (managedArtifact) {
+      return { ...base, action: 'remove' };
+    }
+    return {
+      ...base,
+      conflict: unmanaged('AGENTS.md is missing and .claude/CLAUDE.md is not DAB-managed'),
+    };
+  }
+
   const content = mode === 'disabled'
     ? undefined
     : renderClaudeMdShim(relativeLink(target, source));
@@ -116,9 +144,6 @@ export async function planInstructions(
     ...(digest === undefined ? {} : { sha256: digest }),
     ...(content === undefined ? {} : { content }),
   };
-  const actual = await lstatOrNull(target);
-  const managed = generated?.instructions !== undefined
-    && generated?.instructions !== null;
 
   if (mode === 'disabled') {
     if (actual === null) {
