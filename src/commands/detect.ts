@@ -14,27 +14,19 @@ import {
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
-import { compilePolicy } from '../adapter/claude-code/policy-compile.ts';
-import { discoverProjections } from '../adapter/claude-code/projection.ts';
-import { renderSettings } from '../adapter/claude-code/settings.ts';
-import { checkClaudeCode } from '../adapter/claude-code/version.ts';
+import { claudeCodeAdapter } from '../adapter/claude-code/adapter.ts';
 import {
   checkAgentHookIds,
   checkAgentsMdState,
   checkHookSafety,
+  checkInstructionEnvironment,
   checkMemory,
-  checkProjections,
   checkSecrets,
-  checkSettings,
-  checkShim,
 } from '../detect/checks.ts';
-import { discoverAgents } from '../model/agents.ts';
-import { discoverHooks } from '../model/hooks.ts';
-import { loadPolicySources } from '../model/policy.ts';
+import { discoverSourceFacts } from '../model/facts.ts';
 import {
   getTarget,
   loadProjectManifest,
-  parseInterimClaudeOptions,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
 import { resolveSourceRoot } from '../model/scope.ts';
@@ -118,7 +110,6 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   if (claudeTarget === undefined) {
     throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
   }
-  const claudeOptions = parseInterimClaudeOptions(claudeTarget);
   const diagnostics: Diagnostic[] = [];
 
   try {
@@ -153,26 +144,26 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     throw error;
   }
 
-  const backend = await checkClaudeCode(claudeOptions.minVersion, options.runner);
-  diagnostics.push(...backend.diagnostics);
+  const facts = await discoverSourceFacts(root, paths);
+  diagnostics.push(
+    ...facts.agents.diagnostics,
+    ...facts.skills.diagnostics,
+    ...facts.rules.diagnostics,
+    ...facts.hooks.diagnostics,
+  );
+  diagnostics.push(...checkAgentHookIds(facts.agents.items, facts.hooks.items));
 
-  const discovered = await discoverProjections(root, paths);
-  const agents = await discoverAgents(root, paths.agents);
-  const hooks = await discoverHooks(root, paths.agents);
-  diagnostics.push(...discovered.diagnostics);
-  diagnostics.push(...agents.diagnostics);
-  diagnostics.push(...hooks.diagnostics);
-  diagnostics.push(...checkAgentHookIds(agents.items, hooks.items));
+  const outcome = await claudeCodeAdapter.detect({
+    paths,
+    manifest: loaded.manifest,
+    target: claudeTarget,
+    facts,
+    ...(options.runner === undefined ? {} : { runner: options.runner }),
+  });
+  diagnostics.push(...outcome.diagnostics);
 
-  const policies = await loadPolicySources(paths);
-  const compiled = compilePolicy(policies.project, policies.adapter, hooks.items);
-  diagnostics.push(...compiled.diagnostics);
-  const expectedSettings = renderSettings(compiled.effective);
-
-  diagnostics.push(...await checkSettings(root, paths, loaded.manifest, expectedSettings));
-  diagnostics.push(...await checkShim(root, loaded.manifest, home));
-  diagnostics.push(...await checkProjections(root, paths, discovered.projections, loaded.manifest));
-  diagnostics.push(...await checkHookSafety(hooks.items));
+  diagnostics.push(...await checkInstructionEnvironment(root, home));
+  diagnostics.push(...await checkHookSafety(facts.hooks.items));
   diagnostics.push(...await checkSecrets(root, paths));
   diagnostics.push(...await checkMemory(root, paths, options.now));
   diagnostics.push(...await checkAgentsMdState(root, paths));

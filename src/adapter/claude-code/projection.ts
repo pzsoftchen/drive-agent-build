@@ -1,7 +1,6 @@
 import { lstat, readdir, readFile, readlink, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../../core/diagnostics.ts';
-import { ConfigError } from '../../core/errors.ts';
 import {
   backupPath,
   lstatOrNull,
@@ -18,23 +17,26 @@ import {
   toPosix,
 } from '../../core/paths.ts';
 import { discoverAgents } from '../../model/agents.ts';
-import {
-  getGeneratedTarget,
-  getTarget,
-  parseInterimClaudeOptions,
-} from '../../model/project-manifest.ts';
 import { discoverRules } from '../../model/rules.ts';
 import { discoverSkills } from '../../model/skills.ts';
 import type {
+  AgentDefinition,
   GeneratedTarget,
-  ProjectManifest,
   ProjectPaths,
   Projection,
+  RuleDefinition,
+  SkillDefinition,
 } from '../../model/types.ts';
 
 export interface ProjectionDiscovery {
   projections: Projection[];
   diagnostics: Diagnostic[];
+}
+
+export interface ProjectionSources {
+  agents: readonly AgentDefinition[];
+  skills: readonly SkillDefinition[];
+  rules: readonly RuleDefinition[];
 }
 
 export type ProjectionAction =
@@ -100,15 +102,29 @@ async function hashSource(
 export async function discoverProjections(
   root: string,
   paths: ProjectPaths,
+  sources?: ProjectionSources,
 ): Promise<ProjectionDiscovery> {
-  const agents = await discoverAgents(root, paths.agents);
-  const skills = await discoverSkills(root, paths.agents);
-  const rules = await discoverRules(root, paths.agents);
-  const diagnostics = [
-    ...agents.diagnostics,
-    ...skills.diagnostics,
-    ...rules.diagnostics,
-  ];
+  let agentItems: readonly AgentDefinition[];
+  let skillItems: readonly SkillDefinition[];
+  let ruleItems: readonly RuleDefinition[];
+  const diagnostics: Diagnostic[] = [];
+  if (sources === undefined) {
+    const agents = await discoverAgents(root, paths.agents);
+    const skills = await discoverSkills(root, paths.agents);
+    const rules = await discoverRules(root, paths.agents);
+    diagnostics.push(
+      ...agents.diagnostics,
+      ...skills.diagnostics,
+      ...rules.diagnostics,
+    );
+    agentItems = agents.items;
+    skillItems = skills.items;
+    ruleItems = rules.items;
+  } else {
+    agentItems = sources.agents;
+    skillItems = sources.skills;
+    ruleItems = sources.rules;
+  }
   const projections: Projection[] = [];
   const targets = new Set<string>();
 
@@ -132,7 +148,7 @@ export async function discoverProjections(
     projections.push({ ...projection, sourceSha256 });
   };
 
-  for (const agent of agents.items) {
+  for (const agent of agentItems) {
     await addProjection({
       kind: 'agent',
       name: agent.name,
@@ -141,7 +157,7 @@ export async function discoverProjections(
       link: 'symlink',
     });
   }
-  for (const skill of skills.items) {
+  for (const skill of skillItems) {
     await addProjection({
       kind: 'skill',
       name: skill.name,
@@ -150,7 +166,7 @@ export async function discoverProjections(
       link: 'symlink',
     });
   }
-  for (const rule of rules.items) {
+  for (const rule of ruleItems) {
     await addProjection({
       kind: 'rule',
       name: rule.name,
@@ -372,8 +388,7 @@ function unmanagedClaudeConflict(message: string): Diagnostic {
 
 export async function planClaudeMdShim(
   root: string,
-  manifest: ProjectManifest,
-  options: { fix?: boolean } = {},
+  options: { enabled: boolean; generated?: GeneratedTarget; fix?: boolean },
 ): Promise<ClaudeMdPlan> {
   const rootClaude = join(root, 'CLAUDE.md');
   if ((await lstatOrNull(rootClaude)) !== null) {
@@ -385,14 +400,9 @@ export async function planClaudeMdShim(
 
   const target = join(root, '.claude', 'CLAUDE.md');
   const actual = await lstatOrNull(target);
-  const generated = getGeneratedTarget(manifest, 'claude-code');
-  const managed = generated?.instructions !== undefined
-    && generated.instructions !== null;
-  const targetConfig = getTarget(manifest, 'claude-code');
-  if (targetConfig === undefined) {
-    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
-  }
-  const enabled = parseInterimClaudeOptions(targetConfig).instructions === 'generated';
+  const managed = options.generated?.instructions !== undefined
+    && options.generated?.instructions !== null;
+  const enabled = options.enabled;
 
   if (!enabled) {
     if (actual === null) {

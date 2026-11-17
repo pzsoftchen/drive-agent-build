@@ -12,7 +12,6 @@ import { replaceSymlink } from '../../src/core/fs-atomic.ts';
 import { relativeLink } from '../../src/core/paths.ts';
 import type {
   GeneratedTarget,
-  ProjectManifest,
   ProjectPaths,
   Projection,
 } from '../../src/model/types.ts';
@@ -61,25 +60,6 @@ function generated(
     settings: { path: '.claude/settings.json', sha256: 'a'.repeat(64) },
     instructions,
     projections,
-  };
-}
-
-function manifest(
-  instructions: 'generated' | 'disabled' = 'generated',
-  generatedTarget?: GeneratedTarget,
-): ProjectManifest {
-  return {
-    version: 2,
-    scope: 'project',
-    project: { id: 'demo', name: 'Demo' },
-    profile: 'feature',
-    targets: [{
-      provider: 'claude-code',
-      enabled: true,
-      options: { minVersion: '2.1.277', instructions },
-    }],
-    paths: { agents: '.agents', claude: '.claude' },
-    ...(generatedTarget === undefined ? {} : { generated: { targets: [generatedTarget] } }),
   };
 }
 
@@ -243,39 +223,41 @@ describe('generated CLAUDE.md shim', () => {
 
   it('creates, accepts, repairs, and removes the shim according to ownership', async () => {
     const project = await fixture();
-    const absent = await planClaudeMdShim(project.root, manifest());
+    const absent = await planClaudeMdShim(project.root, { enabled: true });
     expect(absent).toMatchObject({ action: 'create' });
     expect(absent.conflict).toBeUndefined();
 
     await writeProjectFile(project.root, '.claude/CLAUDE.md', renderClaudeMdShim());
-    expect((await planClaudeMdShim(project.root, manifest())).action).toBe('none');
+    expect((await planClaudeMdShim(project.root, { enabled: true })).action).toBe('none');
 
     await writeProjectFile(project.root, '.claude/CLAUDE.md', 'drifted\n');
-    const managed = manifest('generated', generated([], {
+    const managed = generated([], {
       path: '.claude/CLAUDE.md',
       mode: 'generated',
       sha256: 'b'.repeat(64),
-    }));
-    expect(await planClaudeMdShim(project.root, managed)).toMatchObject({ action: 'repair' });
+    });
+    expect(await planClaudeMdShim(project.root, {
+      enabled: true,
+      generated: managed,
+    })).toMatchObject({ action: 'repair' });
 
-    const removed = await planClaudeMdShim(project.root, manifest('disabled', generated([], {
-      path: '.claude/CLAUDE.md',
-      mode: 'generated',
-      sha256: 'b'.repeat(64),
-    })));
+    const removed = await planClaudeMdShim(project.root, {
+      enabled: false,
+      generated: managed,
+    });
     expect(removed).toMatchObject({ action: 'remove' });
   });
 
   it('reports unmanaged root or .claude CLAUDE.md files as conflicts', async () => {
     const project = await fixture();
     await writeProjectFile(project.root, 'CLAUDE.md', '# user instructions\n');
-    expect((await planClaudeMdShim(project.root, manifest())).conflict?.code).toBe(
+    expect((await planClaudeMdShim(project.root, { enabled: true })).conflict?.code).toBe(
       'claude-md.unmanaged',
     );
 
     await unlink(join(project.root, 'CLAUDE.md'));
     await writeProjectFile(project.root, '.claude/CLAUDE.md', 'user memory\n');
-    expect((await planClaudeMdShim(project.root, manifest())).conflict?.code).toBe(
+    expect((await planClaudeMdShim(project.root, { enabled: true })).conflict?.code).toBe(
       'claude-md.unmanaged',
     );
   });

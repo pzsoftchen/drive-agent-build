@@ -1,7 +1,6 @@
 import { readdir, readlink } from 'node:fs/promises';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
-import { ConfigError } from '../core/errors.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { sha256 } from '../core/hash.ts';
 import { extractMarkdownLinks } from '../core/markdown-links.ts';
@@ -10,15 +9,10 @@ import { scanSecrets } from '../core/security.ts';
 import { renderClaudeMdShim } from '../adapter/claude-code/projection.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverMemory } from '../model/memory.ts';
-import {
-  getGeneratedTarget,
-  getTarget,
-  parseInterimClaudeOptions,
-} from '../model/project-manifest.ts';
 import type {
   AgentDefinition,
+  GeneratedTarget,
   LoadedHook,
-  ProjectManifest,
   ProjectPaths,
   Projection,
 } from '../model/types.ts';
@@ -31,12 +25,12 @@ function relativeFile(root: string, absolute: string): string {
 export async function checkSettings(
   root: string,
   paths: ProjectPaths,
-  manifest: ProjectManifest,
+  generated: GeneratedTarget | undefined,
   expected: string,
 ): Promise<Diagnostic[]> {
   const absolute = join(paths.claude, 'settings.json');
   const file = relativeFile(root, absolute);
-  const record = getGeneratedTarget(manifest, 'claude-code')?.settings ?? null;
+  const record = generated?.settings ?? null;
   const info = await lstatOrNull(absolute);
   if (info === null) {
     return [{
@@ -90,9 +84,8 @@ export async function checkSettings(
   return diagnostics;
 }
 
-export async function checkShim(
+export async function checkInstructionEnvironment(
   root: string,
-  manifest: ProjectManifest,
   home?: string,
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
@@ -123,16 +116,19 @@ export async function checkShim(
     });
   }
 
+  return diagnostics;
+}
+
+export async function checkShim(
+  root: string,
+  options: { enabled: boolean; generated?: GeneratedTarget },
+): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
   const shimPath = join(root, '.claude', 'CLAUDE.md');
   const info = await lstatOrNull(shimPath);
-  const generated = getGeneratedTarget(manifest, 'claude-code');
-  const managed = generated?.instructions !== undefined
-    && generated.instructions !== null;
-  const target = getTarget(manifest, 'claude-code');
-  if (target === undefined) {
-    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
-  }
-  const enabled = parseInterimClaudeOptions(target).instructions === 'generated';
+  const managed = options.generated?.instructions !== undefined
+    && options.generated?.instructions !== null;
+  const enabled = options.enabled;
 
   if (enabled) {
     if (info === null) {
@@ -193,10 +189,9 @@ export async function checkProjections(
   root: string,
   paths: ProjectPaths,
   projections: readonly Projection[],
-  manifest: ProjectManifest,
+  generated: GeneratedTarget | undefined,
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
-  const generated = getGeneratedTarget(manifest, 'claude-code');
   const managed = new Map(
     (generated?.projections ?? []).map((projection) => [projection.target, projection]),
   );
