@@ -220,6 +220,24 @@ describe('translation pairing', () => {
     expect(gaps.orphanTranslations).toContain('orphan.zh.md');
   });
 
+  it('keeps docs/superpowers specs and plans Chinese-only', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, 'docs/superpowers/specs'), { recursive: true });
+    await mkdir(join(root, 'docs/superpowers/plans'), { recursive: true });
+    await writeFile(join(root, 'docs/superpowers/specs/spec.md'), '# 规范\n');
+    await writeFile(join(root, 'docs/superpowers/plans/plan.md'), '# 计划\n');
+    await writeFile(join(root, 'docs/superpowers/specs/old.zh.md'), '# 旧规范\n');
+    await writeFile(join(root, 'docs/superpowers/plans/old.i18n.yaml'), 'version: 1\n');
+
+    expect(await discoverPairedDocs(root)).toEqual([]);
+    expect(await listPairingGaps(root)).toEqual({
+      missingTranslations: [],
+      missingRecords: [],
+      orphanTranslations: [],
+      orphanRecords: [],
+    });
+  });
+
   it('runs all pair checks and reports missing records', async () => {
     const root = await tempDir();
     await writePair(root, 'README.md');

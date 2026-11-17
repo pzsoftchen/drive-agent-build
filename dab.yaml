@@ -36,7 +36,7 @@ generated:
       source: .agents/skills/doc-sync
       target: .claude/skills/doc-sync
       link: symlink
-      sourceSha256: e65cc4515c71c7d1f4cb2fe034b14d065f677f564924a42e778c340b9b4b47db
+      sourceSha256: f53cd4b318adeee3a9fc9041e1e8a2e19aee7213b903c307765baeac864a34d1
     - kind: skill
       name: feature-delivery
       source: .agents/skills/feature-delivery
@@ -48,7 +48,7 @@ generated:
       source: .agents/rules/docs-bilingual.md
       target: .claude/rules/docs-bilingual.md
       link: symlink
-      sourceSha256: bb1939fcc0a3c9c3db9053f28f1ccb6692d17ecf98eb4abeab1d67af9505fec5
+      sourceSha256: 7d128eb546f2b7a01aed43091716fabac0dd4db3f42fc0758f8e655683560391
     - kind: rule
       name: generated-files
       source: .agents/rules/generated-files.md
