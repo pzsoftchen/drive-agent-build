@@ -122,6 +122,14 @@ describe('normalizeProject', () => {
 
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
+    expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
+    expect(result.targets[0]?.settings?.path).toBe('.claude/settings.json');
+    expect(result.targets[0]?.instructions).toMatchObject({
+      path: '.claude/CLAUDE.md',
+      mode: 'generated',
+      action: 'create',
+    });
+    expect(result.actions).toEqual(result.targets.flatMap((item) => item.actions));
     const settingsText = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
     const settings = JSON.parse(settingsText) as {
       permissions: { deny: string[]; ask: string[] };
@@ -269,6 +277,8 @@ describe('normalizeProject', () => {
 
     expect(result.ok).toBe(true);
     expect(result.actions.length).toBeGreaterThan(0);
+    expect(result.targets).toHaveLength(1);
+    expect(result.targets[0]?.provider).toBe('claude-code');
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
     expect(await lstatOrNull(join(project.root, '.claude/CLAUDE.md'))).toBeNull();
     expect(await lstatOrNull(join(project.root, '.claude/agents/reviewer.md'))).toBeNull();

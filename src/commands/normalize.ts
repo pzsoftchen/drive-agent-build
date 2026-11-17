@@ -7,7 +7,7 @@ import {
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
-import { ConfigError, DabError, ValidationError } from '../core/errors.ts';
+import { DabError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
 import { DAB_GITIGNORE_ENTRIES, ensureGitignoreBlock } from '../core/gitignore.ts';
@@ -19,20 +19,21 @@ import {
   realPathNearest,
   toPosix,
 } from '../core/paths.ts';
-import { claudeCodeAdapter } from '../adapter/claude-code/adapter.ts';
+import { getTargetAdapter } from '../adapter/registry.ts';
+import type {
+  TargetInstructionsPlan,
+  TargetNormalizePlan,
+  TargetSettingsPlan,
+} from '../adapter/types.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
-import {
-  discoverProjections,
-  type ClaudeMdPlan,
-  type ProjectionAction,
-} from '../adapter/claude-code/projection.ts';
+import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { checkClaudeCode } from '../adapter/claude-code/version.ts';
 import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
 import {
+  getEnabledTargets,
   getGeneratedTarget,
-  getTarget,
   loadProjectManifest,
   resolveProjectPaths,
   updateGeneratedManifest,
@@ -42,6 +43,7 @@ import type {
   GeneratedManifest,
   GeneratedTarget,
   Projection,
+  TargetProvider,
 } from '../model/types.ts';
 
 export interface NormalizeOptions {
@@ -60,18 +62,27 @@ export interface NormalizeIO {
   stderr: (value: string) => void;
 }
 
+export interface TargetNormalizeResult {
+  provider: TargetProvider;
+  actions: string[];
+  settings?: TargetSettingsPlan;
+  instructions?: TargetInstructionsPlan;
+  backups: string[];
+}
+
 export interface NormalizeResult {
   ok: boolean;
   dryRun: boolean;
   exitCode: ExitCode;
-  actions: ProjectionAction[];
+  actions: string[];
+  targets: TargetNormalizeResult[];
   diagnostics: Diagnostic[];
   settings: {
     path: string;
     sha256: string;
     changed: boolean;
   };
-  shimAction: ClaudeMdPlan['action'];
+  shimAction: string;
   backups: string[];
   gitignore: {
     changed: boolean;
@@ -102,28 +113,68 @@ function errorDiagnostic(error: DabError, file = 'dab.yaml'): Diagnostic {
   };
 }
 
+function emptySettings(): NormalizeResult['settings'] {
+  return {
+    path: '.claude/settings.json',
+    sha256: '',
+    changed: false,
+  };
+}
+
+function targetResult(
+  plan: TargetNormalizePlan,
+  backups: readonly string[] = [],
+): TargetNormalizeResult {
+  return {
+    provider: plan.provider,
+    actions: plan.actions,
+    ...(plan.settings === undefined ? {} : { settings: plan.settings }),
+    ...(plan.instructions === undefined ? {} : { instructions: plan.instructions }),
+    backups: [...backups],
+  };
+}
+
+function claudeTargetResult(
+  targets: readonly TargetNormalizeResult[],
+): TargetNormalizeResult | undefined {
+  return targets.find((item) => item.provider === 'claude-code');
+}
+
+function topLevelSettings(
+  targets: readonly TargetNormalizeResult[],
+  changed?: boolean,
+): NormalizeResult['settings'] {
+  const settings = claudeTargetResult(targets)?.settings;
+  if (settings === undefined) {
+    return emptySettings();
+  }
+  return changed === undefined ? { ...settings } : { ...settings, changed };
+}
+
+function compatShimAction(targets: readonly TargetNormalizeResult[]): string {
+  return claudeTargetResult(targets)?.instructions?.action ?? 'none';
+}
+
 function blockedResult(
   options: NormalizeOptions,
   diagnostics: Diagnostic[],
   extras: {
-    actions?: ProjectionAction[];
-    shimAction?: ClaudeMdPlan['action'];
-    settings?: NormalizeResult['settings'];
+    targets?: TargetNormalizeResult[];
+    compatTargets?: readonly TargetNormalizeResult[];
     exitCode?: ExitCode;
   } = {},
 ): NormalizeResult {
+  const targets = extras.targets ?? [];
+  const compat = extras.compatTargets ?? targets;
   return {
     ok: false,
     dryRun: options.dryRun === true,
     exitCode: extras.exitCode ?? ExitCode.Validation,
-    actions: extras.actions ?? [],
+    actions: targets.flatMap((item) => item.actions),
+    targets,
     diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
-    settings: extras.settings ?? {
-      path: '.claude/settings.json',
-      sha256: '',
-      changed: false,
-    },
-    shimAction: extras.shimAction ?? 'none',
+    settings: topLevelSettings(compat, false),
+    shimAction: compatShimAction(compat),
     backups: [],
     gitignore: { changed: false, path: '' },
     manifestUpdated: false,
@@ -133,25 +184,6 @@ function blockedResult(
 function backupRootFor(root: string, now: Date): string {
   const stamp = now.toISOString().replaceAll(':', '-').replaceAll('.', '-');
   return join(root, '.dab', 'backups', stamp);
-}
-
-const SHIM_ACTIONS = new Set<ClaudeMdPlan['action']>([
-  'none',
-  'create',
-  'repair',
-  'remove',
-  'backup-and-repair',
-  'backup-and-remove',
-]);
-
-function shimActionOf(action: string | undefined): ClaudeMdPlan['action'] {
-  if (action === undefined) {
-    return 'none';
-  }
-  if (!SHIM_ACTIONS.has(action as ClaudeMdPlan['action'])) {
-    throw new Error(`unexpected instruction action: ${action}`);
-  }
-  return action as ClaudeMdPlan['action'];
 }
 
 async function assertSourceTreesSafe(root: string): Promise<void> {
@@ -233,11 +265,13 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const root = sourceRoot.root;
   const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
-  const claudeTarget = getTarget(loaded.manifest, 'claude-code');
-  if (claudeTarget === undefined) {
-    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
-  }
-  const claudeOptions = parseClaudeTargetOptions(claudeTarget);
+  const enabledTargets = getEnabledTargets(loaded.manifest);
+  const claudeTarget = enabledTargets.find((target) => target.provider === 'claude-code');
+  // Parse before source safety so malformed Claude options still fail loudly for
+  // direct callers, matching the pre-adapter behavior.
+  const claudeOptions = claudeTarget === undefined
+    ? undefined
+    : parseClaudeTargetOptions(claudeTarget);
   const diagnostics: Diagnostic[] = [];
 
   try {
@@ -251,11 +285,13 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
 
   // Runtime incompatibility takes precedence over authored-source validation, as
   // it did before the adapter seam. The adapter still checks for direct callers.
-  const runtime = await checkClaudeCode(claudeOptions.minVersion, options.runner);
-  if (runtime.diagnostics.some(
-    (item) => item.code === 'backend.version' && item.severity === 'error',
-  )) {
-    return blockedResult(options, runtime.diagnostics, { exitCode: ExitCode.Backend });
+  if (claudeOptions !== undefined) {
+    const runtime = await checkClaudeCode(claudeOptions.minVersion, options.runner);
+    if (runtime.diagnostics.some(
+      (item) => item.code === 'backend.version' && item.severity === 'error',
+    )) {
+      return blockedResult(options, runtime.diagnostics, { exitCode: ExitCode.Backend });
+    }
   }
 
   const facts = await discoverSourceFacts(root, paths);
@@ -269,65 +305,82 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   diagnostics.push(...await checkHookSafety(facts.hooks.items));
   diagnostics.push(...await checkSecrets(root, paths));
 
-  const discovered = await discoverProjections(root, paths, {
-    agents: facts.agents.items,
-    skills: facts.skills.items,
-    rules: facts.rules.items,
-  });
-  diagnostics.push(...discovered.diagnostics);
-  diagnostics.push(...await projectionOverlapDiagnostics(
-    root,
-    discovered.projections,
-    getGeneratedTarget(loaded.manifest, 'claude-code'),
-  ));
+  if (claudeTarget !== undefined) {
+    const discovered = await discoverProjections(root, paths, {
+      agents: facts.agents.items,
+      skills: facts.skills.items,
+      rules: facts.rules.items,
+    });
+    diagnostics.push(...discovered.diagnostics);
+    diagnostics.push(...await projectionOverlapDiagnostics(
+      root,
+      discovered.projections,
+      getGeneratedTarget(loaded.manifest, 'claude-code'),
+    ));
+  }
 
   const agentsMd = await checkAgentsMd(root, paths.instructions);
   diagnostics.push(...agentsMd.diagnostics);
 
-  if (hasErrors(diagnostics)) {
+  if (enabledTargets.length === 0) {
+    diagnostics.push({
+      code: 'target.none',
+      severity: 'error',
+      file: 'dab.yaml',
+      message: 'manifest has no enabled targets',
+      hint: 'Enable at least one target or omit it from the manifest.',
+    });
     return blockedResult(options, diagnostics);
   }
 
-  const plan = await claudeCodeAdapter.normalize({
-    paths,
-    manifest: loaded.manifest,
-    target: claudeTarget,
-    facts,
-    fix: options.fix === true,
-    dryRun: options.dryRun === true,
-    ...(options.runner === undefined ? {} : { runner: options.runner }),
-    ...(options.now === undefined ? {} : { now: options.now }),
-  });
-  diagnostics.push(...plan.diagnostics);
-
-  const settingsResult = plan.settings ?? {
-    path: '.claude/settings.json',
-    sha256: '',
-    changed: false,
-  };
-  const shimAction = shimActionOf(plan.instructions?.action);
+  const plans: TargetNormalizePlan[] = [];
+  for (const target of enabledTargets) {
+    const adapter = getTargetAdapter(target.provider);
+    if (adapter === undefined) {
+      diagnostics.push({
+        code: 'target.unsupported',
+        severity: 'error',
+        file: 'dab.yaml',
+        message: `no adapter is available for target ${target.provider}`,
+        hint: 'Remove or disable the target until its adapter is implemented.',
+      });
+      continue;
+    }
+    const plan = await adapter.normalize({
+      paths,
+      manifest: loaded.manifest,
+      target,
+      facts,
+      fix: options.fix === true,
+      dryRun: options.dryRun === true,
+      ...(options.runner === undefined ? {} : { runner: options.runner }),
+      ...(options.now === undefined ? {} : { now: options.now }),
+    });
+    diagnostics.push(...plan.diagnostics);
+    plans.push(plan);
+  }
 
   if (hasErrors(diagnostics)) {
     const backendError = diagnostics.some(
       (item) => item.code === 'backend.version' && item.severity === 'error',
     );
     return blockedResult(options, diagnostics, {
-      actions: plan.projectionActions,
-      shimAction,
-      settings: { ...settingsResult, changed: false },
+      compatTargets: plans.map((plan) => targetResult(plan)),
       ...(backendError ? { exitCode: ExitCode.Backend } : {}),
     });
   }
 
   if (options.dryRun === true) {
+    const targets = plans.map((plan) => targetResult(plan));
     return {
       ok: true,
       dryRun: true,
       exitCode: ExitCode.Ok,
-      actions: plan.projectionActions,
+      actions: targets.flatMap((item) => item.actions),
+      targets,
       diagnostics: sortDiagnostics(diagnostics),
-      settings: settingsResult,
-      shimAction,
+      settings: topLevelSettings(targets),
+      shimAction: compatShimAction(targets),
       backups: [],
       gitignore: { changed: false, path: join(root, '.gitignore') },
       manifestUpdated: false,
@@ -335,9 +388,15 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   }
 
   const backupRoot = backupRootFor(root, options.now ?? new Date());
-  const applied = await plan.apply({ backupRoot });
+  const targets: TargetNormalizeResult[] = [];
+  for (const plan of plans) {
+    const applied = await plan.apply({ backupRoot });
+    targets.push(targetResult(plan, applied.backups));
+  }
 
-  const generated: GeneratedManifest = { targets: [plan.generated] };
+  const generated: GeneratedManifest = {
+    targets: plans.map((plan) => plan.generated),
+  };
   const manifestUpdated = loaded.legacy
     || stableJson(loaded.manifest.generated ?? null) !== stableJson(generated);
   if (manifestUpdated) {
@@ -350,31 +409,22 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     ok: true,
     dryRun: false,
     exitCode: ExitCode.Ok,
-    actions: plan.projectionActions,
+    actions: targets.flatMap((item) => item.actions),
+    targets,
     diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
-    settings: settingsResult,
-    shimAction,
-    backups: applied.backups,
+    settings: topLevelSettings(targets),
+    shimAction: compatShimAction(targets),
+    backups: claudeTargetResult(targets)?.backups ?? [],
     gitignore,
     manifestUpdated,
   };
-}
-
-function describeAction(action: ProjectionAction): string {
-  switch (action.type) {
-    case 'add-manifest':
-    case 'remove-manifest':
-      return `${action.type} ${action.projection.target}`;
-    default:
-      return `${action.type} ${action.projection.target} -> ${action.linkTarget}`;
-  }
 }
 
 function formatHuman(result: NormalizeResult): string {
   const lines: string[] = [];
   lines.push(`dab normalize${result.dryRun ? ' (dry run)' : ''}`);
   for (const action of result.actions) {
-    lines.push(`  ${describeAction(action)}`);
+    lines.push(`  ${action}`);
   }
   lines.push(`  settings ${result.settings.changed ? 'changed' : 'unchanged'}: ${result.settings.path}`);
   lines.push(`  shim ${result.shimAction}`);

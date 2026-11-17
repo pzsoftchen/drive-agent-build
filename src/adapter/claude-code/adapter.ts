@@ -35,12 +35,6 @@ import { applySettings, planSettings } from './settings-plan.ts';
 import { renderSettings } from './settings.ts';
 import { checkClaudeCode } from './version.ts';
 
-export interface ClaudeTargetNormalizePlan extends TargetNormalizePlan {
-  // Compatibility bridge for the single-target normalize command. Task 4
-  // switches the public result to string actions and can drop this field.
-  projectionActions: ProjectionAction[];
-}
-
 function describeProjectionAction(action: ProjectionAction): string {
   switch (action.type) {
     case 'add-manifest':
@@ -89,7 +83,7 @@ function projectedStatus(
   };
 }
 
-async function normalize(input: TargetNormalizeInput): Promise<ClaudeTargetNormalizePlan> {
+async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePlan> {
   const options = parseClaudeTargetOptions(input.target);
   const generatedRecord = getGeneratedTarget(input.manifest, 'claude-code');
   const backend = await checkClaudeCode(options.minVersion, input.runner);
@@ -100,7 +94,6 @@ async function normalize(input: TargetNormalizeInput): Promise<ClaudeTargetNorma
       provider: 'claude-code',
       diagnostics,
       actions: [],
-      projectionActions: [],
       generated: {
         provider: 'claude-code',
         settings: null,
@@ -203,7 +196,6 @@ async function normalize(input: TargetNormalizeInput): Promise<ClaudeTargetNorma
     provider: 'claude-code',
     diagnostics,
     actions,
-    projectionActions: [...projectionPlan.actions],
     generated,
     settings: {
       path: settingsPlan.path,

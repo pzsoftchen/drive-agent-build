@@ -15,23 +15,31 @@ import {
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
 import { readClaudeVersion } from '../core/version-check.ts';
+import { getTargetAdapter } from '../adapter/registry.ts';
 import { compilePolicy, type EffectivePolicy } from '../adapter/claude-code/policy-compile.ts';
 import { discoverAgents } from '../model/agents.ts';
 import { discoverHooks } from '../model/hooks.ts';
 import { loadPolicySources } from '../model/policy.ts';
 import {
+  getEnabledTargets,
   getTarget,
   loadProjectManifest,
   parseInterimClaudeOptions,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
 import { resolveSourceRoot } from '../model/scope.ts';
-import type { AgentDefinition } from '../model/types.ts';
+import type {
+  AgentDefinition,
+  ProjectManifest,
+  TargetConfig,
+  TargetProvider,
+} from '../model/types.ts';
 
 export interface PolicyExplainOptions {
   cwd: string;
   home?: string;
   agent?: string;
+  target?: TargetProvider;
   json?: boolean;
   runner?: CommandRunner;
 }
@@ -55,6 +63,7 @@ export interface AgentPolicyView {
 export interface PolicyExplainResult {
   ok: boolean;
   exitCode: ExitCode;
+  target: TargetProvider;
   effective: EffectivePolicy;
   agent?: AgentPolicyView;
   runtime: {
@@ -114,17 +123,44 @@ function backendDiagnostic(installed: boolean, compatible: boolean, minimum: str
   return undefined;
 }
 
+function selectTarget(
+  manifest: ProjectManifest,
+  explicit: TargetProvider | undefined,
+): TargetConfig {
+  if (explicit !== undefined) {
+    const target = getTarget(manifest, explicit);
+    if (target === undefined) {
+      throw new ConfigError('target is not configured', 'target.not-configured', {
+        hint: 'Add the target to dab.yaml or omit --target to use the first enabled target.',
+      });
+    }
+    return target;
+  }
+
+  const target = getEnabledTargets(manifest)[0];
+  if (target === undefined) {
+    throw new ConfigError('manifest has no enabled targets', 'target.none', {
+      hint: 'Enable at least one target or omit it from the manifest.',
+    });
+  }
+  return target;
+}
+
 export async function explainPolicy(options: PolicyExplainOptions): Promise<PolicyExplainResult> {
   const home = options.home ?? homedir();
   const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
   const root = sourceRoot.root;
   const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
-  const claudeTarget = getTarget(loaded.manifest, 'claude-code');
-  if (claudeTarget === undefined) {
-    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
+  const target = selectTarget(loaded.manifest, options.target);
+  if (getTargetAdapter(target.provider) === undefined) {
+    throw new ConfigError(
+      `no adapter is available for target ${target.provider}`,
+      'target.unsupported',
+      { hint: 'Remove or disable the target until its adapter is implemented.' },
+    );
   }
-  const claudeOptions = parseInterimClaudeOptions(claudeTarget);
+  const claudeOptions = parseInterimClaudeOptions(target);
   try {
     await assertRealPathInsideRoot(root, '.claude');
     await assertRealPathInsideRoot(root, '.agents');
@@ -196,6 +232,7 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
   return {
     ok: exitCode === ExitCode.Ok,
     exitCode,
+    target: target.provider,
     effective: compiled.effective,
     ...(agent === undefined ? {} : { agent: agentView(agent) }),
     runtime: {
@@ -217,6 +254,7 @@ function listOrNone(values: readonly string[], indent = '    '): string {
 
 function formatHuman(result: PolicyExplainResult): string {
   const lines: string[] = ['dab policy explain'];
+  lines.push(`Target: ${result.target}`);
   lines.push(`Provider: ${result.effective.provider}`);
   const runtime = result.runtime.installed
     ? `${result.runtime.version ?? 'unknown'} (${result.runtime.compatible ? 'compatible' : 'incompatible'}, minimum ${result.runtime.minimum})`

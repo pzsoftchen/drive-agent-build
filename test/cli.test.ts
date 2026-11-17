@@ -33,6 +33,7 @@ describe('cli contract', () => {
     expect(help).toContain('detect');
     expect(help).toContain('normalize');
     expect(help).toContain('policy explain');
+    expect(help).toContain('--target <provider>');
   });
 
   it('rejects an unknown command with a usage error', async () => {
@@ -60,5 +61,12 @@ describe('cli contract', () => {
 
     await expect(runCli(['init', '--profile', 'nope'], ctx)).resolves.toBe(2);
     expect(stderr.join('')).toContain('feature');
+  });
+
+  it('rejects an unknown policy target before reading the project', async () => {
+    const { ctx, stderr } = capture();
+
+    await expect(runCli(['policy', 'explain', '--target', 'wat'], ctx)).resolves.toBe(2);
+    expect(stderr.join('')).toContain('unknown target');
   });
 });

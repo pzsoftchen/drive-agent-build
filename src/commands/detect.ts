@@ -7,14 +7,18 @@ import {
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
-import { ConfigError, DabError } from '../core/errors.ts';
+import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { stableJson } from '../core/json.ts';
 import {
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
-import { claudeCodeAdapter } from '../adapter/claude-code/adapter.ts';
+import { getTargetAdapter } from '../adapter/registry.ts';
+import type {
+  TargetDetectOutcome,
+  TargetFactKind,
+} from '../adapter/types.ts';
 import {
   checkAgentHookIds,
   checkAgentsMdState,
@@ -25,11 +29,13 @@ import {
 } from '../detect/checks.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
 import {
-  getTarget,
+  getEnabledTargets,
+  getGeneratedTarget,
   loadProjectManifest,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
 import { resolveSourceRoot } from '../model/scope.ts';
+import type { TargetProvider } from '../model/types.ts';
 
 export interface DetectOptions {
   cwd: string;
@@ -44,6 +50,7 @@ export interface DetectResult {
   ok: boolean;
   exitCode: ExitCode;
   diagnostics: Diagnostic[];
+  targets: TargetDetectOutcome[];
   summary: {
     errors: number;
     warnings: number;
@@ -82,7 +89,10 @@ function dedupe(diagnostics: readonly Diagnostic[]): Diagnostic[] {
   });
 }
 
-function buildResult(diagnostics: readonly Diagnostic[]): DetectResult {
+function buildResult(
+  diagnostics: readonly Diagnostic[],
+  targets: TargetDetectOutcome[] = [],
+): DetectResult {
   const sorted = sortDiagnostics(dedupe(diagnostics));
   const backendError = sorted.some(
     (item) => item.code === 'backend.version' && item.severity === 'error',
@@ -96,6 +106,7 @@ function buildResult(diagnostics: readonly Diagnostic[]): DetectResult {
     ok: exitCode === ExitCode.Ok,
     exitCode,
     diagnostics: sorted,
+    targets,
     summary: summarize(sorted),
   };
 }
@@ -106,10 +117,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   const root = sourceRoot.root;
   const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
-  const claudeTarget = getTarget(loaded.manifest, 'claude-code');
-  if (claudeTarget === undefined) {
-    throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
-  }
+  const enabledTargets = getEnabledTargets(loaded.manifest);
   const diagnostics: Diagnostic[] = [];
 
   try {
@@ -153,32 +161,89 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   );
   diagnostics.push(...checkAgentHookIds(facts.agents.items, facts.hooks.items));
 
-  const outcome = await claudeCodeAdapter.detect({
-    paths,
-    manifest: loaded.manifest,
-    target: claudeTarget,
-    facts,
-    ...(options.runner === undefined ? {} : { runner: options.runner }),
-  });
-  diagnostics.push(...outcome.diagnostics);
-
   diagnostics.push(...await checkInstructionEnvironment(root, home));
   diagnostics.push(...await checkHookSafety(facts.hooks.items));
   diagnostics.push(...await checkSecrets(root, paths));
   diagnostics.push(...await checkMemory(root, paths, options.now));
   diagnostics.push(...await checkAgentsMdState(root, paths));
 
-  if (loaded.manifest.generated === undefined) {
+  const targets: TargetDetectOutcome[] = [];
+  if (enabledTargets.length === 0) {
     diagnostics.push({
-      code: 'generated.missing',
+      code: 'target.none',
       severity: 'error',
-      message: 'dab.yaml has no generated manifest',
       file: 'dab.yaml',
-      hint: 'Run dab normalize to record generated outputs.',
+      message: 'manifest has no enabled targets',
+      hint: 'Enable at least one target or omit it from the manifest.',
     });
   }
+  for (const target of enabledTargets) {
+    const adapter = getTargetAdapter(target.provider);
+    if (adapter === undefined) {
+      diagnostics.push({
+        code: 'target.unsupported',
+        severity: 'error',
+        file: 'dab.yaml',
+        message: `no adapter is available for target ${target.provider}`,
+        hint: 'Remove or disable the target until its adapter is implemented.',
+      });
+      continue;
+    }
+    const outcome = await adapter.detect({
+      paths,
+      manifest: loaded.manifest,
+      target,
+      facts,
+      ...(options.runner === undefined ? {} : { runner: options.runner }),
+    });
+    diagnostics.push(...outcome.diagnostics);
+    targets.push(outcome);
+  }
 
-  return buildResult(diagnostics);
+  for (const target of enabledTargets) {
+    if (getGeneratedTarget(loaded.manifest, target.provider) === undefined) {
+      diagnostics.push({
+        code: 'generated.missing',
+        severity: 'error',
+        message: `dab.yaml has no generated record for target ${target.provider}`,
+        file: 'dab.yaml',
+        hint: 'Run dab normalize to record generated outputs.',
+      });
+    }
+  }
+
+  return buildResult(diagnostics, targets);
+}
+
+const TARGET_LABELS: Record<TargetProvider, string> = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  dsh: 'dsh',
+};
+
+const STATUS_KIND_ORDER: readonly TargetFactKind[] = [
+  'agent',
+  'skill',
+  'rule',
+  'instructions',
+  'policy',
+  'hook',
+];
+
+function formatStatuses(targets: readonly TargetDetectOutcome[]): string[] {
+  const lines: string[] = [];
+  for (const target of targets) {
+    const statuses = [...target.statuses].sort(
+      (left, right) =>
+        STATUS_KIND_ORDER.indexOf(left.kind) - STATUS_KIND_ORDER.indexOf(right.kind),
+    );
+    for (const status of statuses) {
+      lines.push(
+        `${status.kind} ${status.name}: ${TARGET_LABELS[target.provider]}=${status.status}`,
+      );
+    }
+  }
+  return lines;
 }
 
 function formatHuman(result: DetectResult): string {
@@ -189,6 +254,7 @@ function formatHuman(result: DetectResult): string {
   } else {
     lines.push('No issues found.');
   }
+  lines.push(...formatStatuses(result.targets));
   lines.push(
     `Errors: ${result.summary.errors}, warnings: ${result.summary.warnings}, info: ${result.summary.info}`,
   );

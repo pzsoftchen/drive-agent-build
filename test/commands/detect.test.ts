@@ -52,6 +52,7 @@ describe('detectProject', () => {
     expect(result.exitCode).toBe(0);
     expect(result.ok).toBe(true);
     expect(result.diagnostics.filter((item) => item.severity === 'error')).toEqual([]);
+    expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
   });
 
   it('warns but does not fail when Claude Code is missing', async () => {
@@ -302,11 +303,14 @@ describe('runDetect', () => {
       ok: boolean;
       exitCode: number;
       diagnostics: unknown[];
+      targets: Array<{ provider: string; statuses: unknown[] }>;
       summary: { errors: number; warnings: number };
     };
     expect(payload.ok).toBe(true);
     expect(payload.exitCode).toBe(0);
     expect(Array.isArray(payload.diagnostics)).toBe(true);
+    expect(payload.targets.map((item) => item.provider)).toEqual(['claude-code']);
+    expect(payload.targets[0]?.statuses.length).toBeGreaterThan(0);
     expect(payload.summary.errors).toBe(0);
 
     await writeProjectFile(project.root, 'CLAUDE.md', '# user\n');
