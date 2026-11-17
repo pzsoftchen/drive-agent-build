@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { claudeCodeAdapter } from '../../src/adapter/claude-code/adapter.ts';
+import type { CommandRunner } from '../../src/core/command.ts';
 import { discoverSourceFacts } from '../../src/model/facts.ts';
 import {
   getTarget,
@@ -11,6 +12,16 @@ import { makeInitializedProject } from '../helpers/initialized.ts';
 import type { ProjectFixture } from '../helpers/project.ts';
 
 const projects: ProjectFixture[] = [];
+
+const goodRunner: CommandRunner = async () => ({
+  stdout: '2.1.325 (Claude Code)\n',
+  stderr: '',
+  exitCode: 0,
+});
+
+const missingRunner: CommandRunner = async () => {
+  throw new Error('ENOENT');
+};
 
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
@@ -40,6 +51,7 @@ describe('claudeCodeAdapter', () => {
       facts,
       fix: false,
       dryRun: true,
+      runner: goodRunner,
     });
 
     expect(plan.diagnostics).toEqual([]);
@@ -53,12 +65,39 @@ describe('claudeCodeAdapter', () => {
     ]);
   });
 
+  it('plans with a warning when Claude Code is missing', async () => {
+    const project = await makeInitializedProject();
+    projects.push(project);
+    const { manifest, paths, target, facts } = await manifestAndFacts(project);
+
+    const plan = await claudeCodeAdapter.normalize({
+      paths,
+      manifest,
+      target,
+      facts,
+      fix: false,
+      dryRun: true,
+      runner: missingRunner,
+    });
+
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'backend.missing', severity: 'warning' }),
+    );
+    expect(plan.generated.projections).toHaveLength(3);
+  });
+
   it('returns per-fact statuses for detect', async () => {
     const project = await makeInitializedProject();
     projects.push(project);
     const { manifest, paths, target, facts } = await manifestAndFacts(project);
 
-    const outcome = await claudeCodeAdapter.detect({ paths, manifest, target, facts });
+    const outcome = await claudeCodeAdapter.detect({
+      paths,
+      manifest,
+      target,
+      facts,
+      runner: goodRunner,
+    });
 
     expect(outcome.statuses).toEqual(expect.arrayContaining([
       { kind: 'instructions', name: 'CLAUDE.md', status: 'generated' },

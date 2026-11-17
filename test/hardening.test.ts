@@ -338,6 +338,23 @@ describe('shim and backend safety', () => {
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
   });
 
+  it('prefers backend 4 over a malformed policy validation error', async () => {
+    const project = await freshPopulated();
+    await writeProjectFile(
+      project.root,
+      '.agents/policies/project.yaml',
+      'version: 1\ndefaultMode: auto\n',
+    );
+
+    const result = await normalizeProject({ cwd: project.root, runner: oldRunner });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(4);
+    expect(result.diagnostics.map((item) => item.code)).toContain('backend.version');
+    expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
   it('returns backend 4 on an old Claude Code and warns when it is missing', async () => {
     const oldProject = await freshPopulated();
     const old = await normalizeProject({ cwd: oldProject.root, runner: oldRunner });

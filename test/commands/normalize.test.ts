@@ -242,6 +242,27 @@ describe('normalizeProject', () => {
     ).toBe('physical copy\n');
   });
 
+  it('keeps an unresolvable root CLAUDE.md conflict fatal with --fix', async () => {
+    const project = await projectFixture();
+    await writeProjectFile(project.root, 'CLAUDE.md', '# user instructions\n');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      fix: true,
+      now: new Date('2026-11-16T12:00:00Z'),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'claude-md.unmanaged', severity: 'error' }),
+    ]));
+    expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.claude/CLAUDE.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.claude/agents/reviewer.md'))).toBeNull();
+    expect((await loadProjectManifest(project.root)).manifest.generated).toBeUndefined();
+  });
+
   it('writes nothing during a dry run', async () => {
     const project = await projectFixture();
     const result = await normalizeProject({ cwd: project.root, dryRun: true });

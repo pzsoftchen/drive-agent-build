@@ -20,11 +20,13 @@ import {
   toPosix,
 } from '../core/paths.ts';
 import { claudeCodeAdapter } from '../adapter/claude-code/adapter.ts';
+import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import {
   discoverProjections,
   type ClaudeMdPlan,
   type ProjectionAction,
 } from '../adapter/claude-code/projection.ts';
+import { checkClaudeCode } from '../adapter/claude-code/version.ts';
 import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
@@ -235,6 +237,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   if (claudeTarget === undefined) {
     throw new ConfigError('manifest has no claude-code target', 'target.claude-missing');
   }
+  const claudeOptions = parseClaudeTargetOptions(claudeTarget);
   const diagnostics: Diagnostic[] = [];
 
   try {
@@ -244,6 +247,15 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       return blockedResult(options, [errorDiagnostic(error)]);
     }
     throw error;
+  }
+
+  // Runtime incompatibility takes precedence over authored-source validation, as
+  // it did before the adapter seam. The adapter still checks for direct callers.
+  const runtime = await checkClaudeCode(claudeOptions.minVersion, options.runner);
+  if (runtime.diagnostics.some(
+    (item) => item.code === 'backend.version' && item.severity === 'error',
+  )) {
+    return blockedResult(options, runtime.diagnostics, { exitCode: ExitCode.Backend });
   }
 
   const facts = await discoverSourceFacts(root, paths);

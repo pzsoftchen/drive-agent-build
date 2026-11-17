@@ -143,24 +143,45 @@ async function normalize(input: TargetNormalizeInput): Promise<ClaudeTargetNorma
     { fix: input.fix },
   );
 
-  const conflictDiagnostics = [
-    ...projectionPlan.conflicts,
-    ...(shimPlan.conflict === undefined ? [] : [shimPlan.conflict]),
-    ...(settingsPlan.conflict === undefined ? [] : [settingsPlan.conflict]),
-  ];
+  const backupTargets = new Set(
+    projectionPlan.actions
+      .filter(
+        (action) =>
+          action.type === 'backup-and-replace' || action.type === 'backup-and-remove',
+      )
+      .map((action) => action.projection.target),
+  );
+  const projectionsWarnable = input.fix && backupTargets.size > 0;
+  const shimBacksUp = shimPlan.action === 'backup-and-repair'
+    || shimPlan.action === 'backup-and-remove';
+  const settingsBacksUp = settingsPlan.action === 'backup-and-write';
   diagnostics.push(
-    ...conflictDiagnostics.map((item) => (input.fix ? withFixWarning(item) : item)),
+    ...projectionPlan.conflicts.map((item) =>
+      (projectionsWarnable && item.file !== undefined && backupTargets.has(item.file)
+        ? withFixWarning(item)
+        : item)),
+    ...(shimPlan.conflict === undefined
+      ? []
+      : [input.fix && shimBacksUp ? withFixWarning(shimPlan.conflict) : shimPlan.conflict]),
+    ...(settingsPlan.conflict === undefined
+      ? []
+      : [input.fix && settingsBacksUp
+        ? withFixWarning(settingsPlan.conflict)
+        : settingsPlan.conflict]),
   );
 
   const shimContent = renderClaudeMdShim();
   const shimRemoved = shimPlan.action === 'remove' || shimPlan.action === 'backup-and-remove';
+  const shimPlanned = options.instructions === 'generated'
+    && shimPlan.conflict === undefined
+    && !shimRemoved;
   const generated: GeneratedTarget = {
     provider: 'claude-code',
     settings: {
       path: settingsPlan.path,
       sha256: sha256(settingsContent),
     },
-    instructions: options.instructions === 'generated' && !shimRemoved
+    instructions: shimPlanned
       ? {
         path: '.claude/CLAUDE.md',
         mode: 'generated',
