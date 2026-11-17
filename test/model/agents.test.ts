@@ -107,12 +107,20 @@ describe('agent discovery', () => {
       '.agents/agents/bad-deny.md',
       agent('bad-deny', 'disallowedTools: Bash Read\n'),
     );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/two-specifiers.md',
+      agent('two-specifiers', 'tools: "Read(./src/**) Bash(rm -rf:*)"\n'),
+    );
 
     const result = await discoverAgents(fixture.root, fixture.agents);
 
     const invalid = result.diagnostics.filter((item) => item.code === 'agent.tools-invalid');
-    expect(invalid).toHaveLength(3);
+    expect(invalid).toHaveLength(4);
     expect(result.items.find((item) => item.name === 'space')?.toolsSpec).toEqual({
+      mode: 'none',
+    });
+    expect(result.items.find((item) => item.name === 'two-specifiers')?.toolsSpec).toEqual({
       mode: 'none',
     });
   });

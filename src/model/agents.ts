@@ -26,7 +26,7 @@ function normalizeToolList(value: string | string[] | undefined): string[] {
 }
 
 function invalidToolToken(token: string): boolean {
-  return /\s/.test(token) && !/^[A-Za-z][A-Za-z0-9_:-]*\(.+\)$/.test(token);
+  return /\s/.test(token) && !/^[A-Za-z][A-Za-z0-9_:-]*\([^)]*\)$/.test(token);
 }
 
 function invalidToolTokenDiagnostic(

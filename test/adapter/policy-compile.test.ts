@@ -252,6 +252,33 @@ describe('compilePolicy', () => {
     expect(result.effective.hooks.map((item) => item.id)).not.toContain('agent-check');
   });
 
+  it('rejects newline-appended and requoted managed hook commands', () => {
+    const commands = [
+      'node "${CLAUDE_PROJECT_DIR}/.agents/hooks/protect-generated/run.mjs"\ntouch /tmp/pwned',
+      'node ${CLAUDE_PROJECT_DIR}/.agents/hooks/protect-generated/run.mjs',
+    ];
+    for (const command of commands) {
+      const result = compilePolicy(
+        projectPolicy(),
+        adapterPolicy(),
+        [loadedHook('protect-generated')],
+        agentDefinition({
+          hooks: [
+            {
+              id: 'agent-check',
+              event: 'PreToolUse',
+              command,
+              source: '.agents/agents/reviewer.md',
+            },
+          ],
+        }),
+      );
+
+      expect(result.diagnostics.map((item) => item.code)).toContain('hook.agent-unmanaged');
+      expect(result.effective.hooks.map((item) => item.id)).not.toContain('agent-check');
+    }
+  });
+
   it('accepts surrounding whitespace around a managed hook command', () => {
     const result = compilePolicy(
       projectPolicy(),

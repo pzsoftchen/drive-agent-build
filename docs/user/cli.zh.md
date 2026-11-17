@@ -157,7 +157,7 @@ JSON 输出包含每个启用 target 的条目：
 dab policy explain [--agent <name>] [--target <provider>] [--json]
 ```
 
-展示 target 和 provider、运行时版本、默认模式、allow/ask/deny 规则、按执行顺序排列的 hooks、来源文件和限制。使用 `--agent` 时会追加角色的 tools、disallowed tools、effective tools、权限模式、记忆模式和后追加的 hooks。`disallowedTools` 在省略 `tools` 时仍然生效；显式空 `tools` 列表会以警告形式报告为无工具。Tool names 使用逗号分隔；`*` 只能单独使用。
+展示 target 和 provider、运行时版本、默认模式、allow/ask/deny 规则、按执行顺序排列的 hooks、来源文件和限制。使用 `--agent` 时会追加角色的 tools、disallowed tools、effective tools、权限模式、记忆模式和后追加的 hooks。`disallowedTools` 在省略 `tools` 时仍然生效；显式空 `tools` 列表会以警告形式报告为无工具。Tool names 使用逗号分隔；对 `tools` 而言，`*` 只能单独使用。
 
 - 没有 `--target` 时解释第一个启用的 target。
 - `--target <provider>` 选择已配置的 target。启用的 target 没有 adapter 时会以 `target.unsupported` 失败。
