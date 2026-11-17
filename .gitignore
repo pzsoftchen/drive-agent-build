@@ -5,6 +5,7 @@ coverage/
 .DS_Store
 .superpowers/
 .worktrees/
+.claude/worktrees/
 
 # >>> dab managed >>>
 .claude/settings.json
