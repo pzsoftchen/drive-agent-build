@@ -9,7 +9,13 @@ export async function findAncestorInstructionFiles(
   home = homedir(),
 ): Promise<string[]> {
   const stop = resolve(home);
-  let current = dirname(resolve(root));
+  const target = resolve(root);
+  if (target === stop) {
+    // The global scope root is HOME itself; nothing above it is an ancestor of
+    // the scope.
+    return [];
+  }
+  let current = dirname(target);
   const found: string[] = [];
 
   while (true) {

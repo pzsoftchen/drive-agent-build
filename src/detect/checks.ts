@@ -12,6 +12,7 @@ import {
 } from '../adapter/claude-code/instructions.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverMemory } from '../model/memory.ts';
+import type { Scope } from '../model/scope.ts';
 import type {
   AgentDefinition,
   GeneratedTarget,
@@ -90,6 +91,7 @@ export async function checkSettings(
 export async function checkInstructionEnvironment(
   root: string,
   home?: string,
+  scope: Scope = 'project',
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
 
@@ -101,6 +103,11 @@ export async function checkInstructionEnvironment(
       file: 'CLAUDE.md',
       hint: 'Merge its content into AGENTS.md and remove the file.',
     });
+  }
+  if (scope === 'global') {
+    // $HOME/.claude is the user's Claude Code home, not a project tree. Files
+    // beside it and ancestor directories above HOME are user-level data.
+    return diagnostics;
   }
   if ((await lstatOrNull(join(root, 'CLAUDE.local.md'))) !== null) {
     diagnostics.push({
@@ -519,16 +526,20 @@ export async function checkMemory(
     }
   }
 
-  for (const dir of ['agent-memory', 'agent-memory-local', 'memory', 'projects']) {
-    const absolute = join(paths.claude, dir);
-    if ((await lstatOrNull(absolute)) !== null) {
-      diagnostics.push({
-        code: 'memory.project-artifact',
-        severity: 'error',
-        message: `team memory or auto memory artifact exists in the repository: ${dir}`,
-        file: toPosix(relative(root, absolute)),
-        hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/memory/.',
-      });
+  // In global scope paths.claude is the user's $HOME/.claude, so those
+  // directories are normal Claude Code user data, not project artifacts.
+  if (paths.scope === 'project') {
+    for (const dir of ['agent-memory', 'agent-memory-local', 'memory', 'projects']) {
+      const absolute = join(paths.claude, dir);
+      if ((await lstatOrNull(absolute)) !== null) {
+        diagnostics.push({
+          code: 'memory.project-artifact',
+          severity: 'error',
+          message: `team memory or auto memory artifact exists in the repository: ${dir}`,
+          file: toPosix(relative(root, absolute)),
+          hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/memory/.',
+        });
+      }
     }
   }
 

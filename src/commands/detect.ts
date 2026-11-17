@@ -161,7 +161,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   );
   diagnostics.push(...checkAgentHookIds(facts.agents.items, facts.hooks.items));
 
-  diagnostics.push(...await checkInstructionEnvironment(root, home));
+  diagnostics.push(...await checkInstructionEnvironment(root, home, sourceRoot.scope));
   diagnostics.push(...await checkHookSafety(facts.hooks.items));
   diagnostics.push(...await checkSecrets(root, paths));
   diagnostics.push(...await checkMemory(root, paths, options.now));

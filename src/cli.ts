@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
@@ -132,6 +133,7 @@ async function dispatchInit(
   return runInit(
     {
       cwd: ctx.cwd,
+      home: homedir(),
       ...(parsed.path === undefined ? {} : { path: parsed.path }),
       profile: parsed.profile,
       ai: parsed.ai,

@@ -57,10 +57,14 @@ describe('runInit', () => {
     expect(code).toBe(0);
     const payload = JSON.parse(captureResult.stdout.join('')) as {
       ok: boolean;
+      scope: string;
+      root: string;
       created: string[];
       normalize: { ok: boolean };
     };
     expect(payload.ok).toBe(true);
+    expect(payload.scope).toBe('project');
+    expect(payload.root).toBe(root);
     expect(payload.created).toEqual(expect.arrayContaining(['AGENTS.md', 'dab.yaml']));
     expect(payload.normalize.ok).toBe(true);
 
