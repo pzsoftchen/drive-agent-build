@@ -222,12 +222,12 @@ Expected: FAIL，`Cannot find module '../../src/model/scope.ts'` 或导出不存
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `pnpm vitest run test/model/scope.test.ts`
-Expected: PASS，4 tests passed。
+Expected: PASS，5 tests passed。
 
 - [ ] **Step 5: 运行完整测试**
 
 Run: `pnpm test`
-Expected: 现有测试全部通过；新增 4 tests passed。
+Expected: 现有测试全部通过；新增 5 tests passed。
 
 - [ ] **Step 6: Commit**
 
@@ -604,6 +604,7 @@ git commit -m "feat: migrate manifests to v2 with scoped targets"
 - Create: `test/model/facts.test.ts`
 - Create: `test/adapter/claude-adapter.test.ts`
 - Modify: `src/adapter/claude-code/projection.ts`
+- Modify: `src/core/diagnostics.ts`
 - Modify: `src/commands/normalize.ts`（暂时仍单 target，但改为使用 adapter plan）
 - Modify: `src/commands/detect.ts`（暂时仍单 target，但改为使用 adapter detect）
 - Modify: `src/detect/checks.ts`
@@ -828,7 +829,7 @@ export const claudeCodeAdapter: TargetAdapter = {
 - 调用 `planSettings(input.paths.root, getGeneratedTarget(input.manifest, 'claude-code'), settingsContent)`。
 - 调用 `planClaudeMdShim(input.paths.root, { enabled: options.instructions !== 'disabled', generated: getGeneratedTarget(input.manifest, 'claude-code'), fix: input.fix })`。
 - 调用 `planProjectionActions(input.paths.root, discovered.projections, getGeneratedTarget(...), { fix: input.fix })`。
-- 把 conflicts 映射为 diagnostics；`--fix` 时沿用 `withFixWarning` 行为。
+- 把 conflicts 映射为 diagnostics；`--fix` 时沿用 `withFixWarning` 行为。把 `normalize.ts` 里的 `withFixWarning` 移到 `src/core/diagnostics.ts` 并导出，adapter 与 command 使用同一实现。
 - `generated` 填 settings/instructions/projections；instructions mode 固定 `'generated'`（Task 5 改为按 options）。
 - `apply` 闭包按顺序调用 `applyProjectionActions`、`applyClaudeMdShim`、`applySettings`，返回 `{ applied, backups }`。
 
