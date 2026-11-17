@@ -18,6 +18,7 @@
 | `src/commands/detect.ts` | 硬编码 `.claude/agents`、`.claude/skills`、`.claude/rules` 和 provider label |
 | `src/commands/policy-explain.ts` | 直接依赖 Claude `compilePolicy`、`parseClaudeTargetOptions`、`readClaudeVersion` 和 Claude 专属 `EffectivePolicy` |
 | `src/commands/init.ts` | 直接导入 Claude instruction/options/projection，并硬编码 `.claude` |
+| `src/detect/checks.ts` | 公共检查直接导入 Claude `buildManagedHookCommands` 等 hook command 构造逻辑 |
 | `src/adapter/types.ts` | `TargetAdapter` 只有 `normalize`/`detect`，没有 target root、instruction artifact、policy explanation 契约 |
 
 ## 目标
@@ -87,6 +88,8 @@ interface TargetPolicyExplanation {
     compatible: boolean;
     minimum?: string;
   };
+  /** Provider-owned JSON payload; Claude keeps its current effective shape. */
+  effective: unknown;
   sections: Array<{ title: string; lines: string[] }>;
   sources: string[];
   limitations: string[];
@@ -142,8 +145,10 @@ interface TargetPolicyExplanation {
 ## 验收
 
 - `src/commands/normalize.ts`、`detect.ts`、`init.ts`、`policy-explain.ts` 不再导入 `src/adapter/claude-code/*`，除 registry 选择外不出现 `.claude` 字面量。
+- `src/detect/checks.ts` 不再直接导入 Claude hook command 构造逻辑；agent hook 校验通过 adapter contract 或者公共检查接收 adapter 提供的 validator。
 - `src/model/schemas.ts` 的 generated instructions path 不再是 `.claude/CLAUDE.md` 字面量。
 - `ProjectPaths` 不再包含 `claude`。
+- Claude `policy explain` 的 `effective` payload 保持当前 JSON 字段；公共命令只透传 provider-owned payload，不重新解释字段。
 - 一个测试用 fake adapter 证明：注册第二个 provider 后，normalize/detect/policy explain 不需要修改公共命令。
 - 现有 Claude Code 测试、normalize/detect/init/policy-explain 行为、v2 manifest 和 global read-only 行为保持不变。
 - `pnpm test`、`pnpm typecheck`、`pnpm doc-sync` 通过。

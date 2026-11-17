@@ -25,6 +25,26 @@ function normalizeToolList(value: string | string[] | undefined): string[] {
   return values.map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
+function invalidToolToken(token: string): boolean {
+  return /\s/.test(token) && !/^[A-Za-z][A-Za-z0-9_:-]*\(.+\)$/.test(token);
+}
+
+function invalidToolTokenDiagnostic(
+  agentName: string,
+  field: 'tools' | 'disallowedTools',
+  tokens: readonly string[],
+  file: string,
+): Diagnostic {
+  return {
+    code: DiagnosticCodes.agentToolsInvalid,
+    severity: 'error',
+    message: `agent ${agentName} has invalid ${field} token(s): ${tokens.join(', ')}`,
+    file,
+    line: 1,
+    hint: 'Use comma-separated tool names; use * only as a standalone tools value.',
+  };
+}
+
 function parseToolsSpec(
   raw: string | string[] | undefined,
   agentName: string,
@@ -34,6 +54,13 @@ function parseToolsSpec(
     return { spec: { mode: 'all', explicit: false }, diagnostics: [] };
   }
   const values = normalizeToolList(raw);
+  const invalid = values.filter(invalidToolToken);
+  if (invalid.length > 0) {
+    return {
+      spec: { mode: 'none' },
+      diagnostics: [invalidToolTokenDiagnostic(agentName, 'tools', invalid, file)],
+    };
+  }
   if (values.length === 0) {
     return {
       spec: { mode: 'none' },
@@ -303,13 +330,20 @@ export async function discoverAgents(
     const tools = parseToolsSpec(data.tools, data.name, file);
     diagnostics.push(...tools.diagnostics);
     const toolsList = tools.spec.mode === 'list' ? tools.spec.tools : [];
+    const disallowedTools = normalizeToolList(data.disallowedTools);
+    const invalidDisallowed = disallowedTools.filter(invalidToolToken);
+    if (invalidDisallowed.length > 0) {
+      diagnostics.push(
+        invalidToolTokenDiagnostic(data.name, 'disallowedTools', invalidDisallowed, file),
+      );
+    }
     items.push({
       file,
       name: data.name,
       description: data.description,
       tools: toolsList,
       toolsSpec: tools.spec,
-      disallowedTools: normalizeToolList(data.disallowedTools),
+      disallowedTools,
       ...(data.model === undefined ? {} : { model: data.model }),
       ...(data.permissionMode === undefined ? {} : { permissionMode: data.permissionMode }),
       ...(data.memory === undefined ? {} : { memory: data.memory }),

@@ -55,6 +55,7 @@ export interface AgentPolicyView {
   description: string;
   tools: string[];
   toolsMode: 'all' | 'none' | 'list';
+  toolsExplicit: boolean;
   disallowedTools: string[];
   effectiveTools: string[];
   effectiveToolsExcluded: string[];
@@ -103,6 +104,7 @@ function agentView(agent: AgentDefinition): AgentPolicyView {
     description: agent.description,
     tools: agent.tools,
     toolsMode: agent.toolsSpec.mode,
+    toolsExplicit: agent.toolsSpec.mode === 'all' ? agent.toolsSpec.explicit : false,
     disallowedTools: disallowed,
     effectiveTools,
     effectiveToolsExcluded,

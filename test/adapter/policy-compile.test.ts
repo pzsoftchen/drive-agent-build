@@ -231,6 +231,48 @@ describe('compilePolicy', () => {
     expect(result.effective.hooks.map((item) => item.id)).not.toContain('agent-check');
   });
 
+  it('rejects shell syntax appended to a managed hook command', () => {
+    const result = compilePolicy(
+      projectPolicy(),
+      adapterPolicy(),
+      [loadedHook('protect-generated')],
+      agentDefinition({
+        hooks: [
+          {
+            id: 'agent-check',
+            event: 'PreToolUse',
+            command: 'node "${CLAUDE_PROJECT_DIR}/.agents/hooks/protect-generated/run.mjs"; touch /tmp/pwned',
+            source: '.agents/agents/reviewer.md',
+          },
+        ],
+      }),
+    );
+
+    expect(result.diagnostics.map((item) => item.code)).toContain('hook.agent-unmanaged');
+    expect(result.effective.hooks.map((item) => item.id)).not.toContain('agent-check');
+  });
+
+  it('accepts surrounding whitespace around a managed hook command', () => {
+    const result = compilePolicy(
+      projectPolicy(),
+      adapterPolicy(),
+      [loadedHook('protect-generated')],
+      agentDefinition({
+        hooks: [
+          {
+            id: 'agent-check',
+            event: 'PreToolUse',
+            command: '  node "${CLAUDE_PROJECT_DIR}/.agents/hooks/protect-generated/run.mjs"  ',
+            source: '.agents/agents/reviewer.md',
+          },
+        ],
+      }),
+    );
+
+    expect(result.diagnostics.map((item) => item.code)).not.toContain('hook.agent-unmanaged');
+    expect(result.effective.hooks.map((item) => item.id)).toContain('agent-check');
+  });
+
   it('renders byte-identical settings with stable ordering', () => {
     const result = compilePolicy(
       projectPolicy({

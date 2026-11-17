@@ -362,6 +362,7 @@ Unsafe.
     expect(result.exitCode).toBe(3);
     expect(result.diagnostics.map((item) => item.code)).toContain('hook.agent-unmanaged');
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.claude/agents/unsafe.md'))).toBeNull();
   });
 
   it('keeps an unresolvable root CLAUDE.md conflict fatal with --fix', async () => {

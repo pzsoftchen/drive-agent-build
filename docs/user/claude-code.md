@@ -49,7 +49,7 @@ targets:
 
 ## Permissions and hooks
 
-Project policy is compiled into `.claude/settings.json`. Project deny rules are a hard boundary for Claude Code file tools, but `Bash`, wrapper commands and other tools can bypass path rules. Agent definitions can narrow tools and append hooks, but cannot remove project hooks. Agent hooks must invoke a generated command from a managed `.agents/hooks/<id>/` entry; arbitrary inline shell commands are rejected. Hook scripts are checked for path escapes, duplicate ids, line endings, executability and secrets.
+Project policy is compiled into `.claude/settings.json`. Project deny rules are a hard boundary for Claude Code file tools, but `Bash`, wrapper commands and other tools can bypass path rules. Agent definitions can narrow tools and append hooks, but cannot remove project hooks. Agent hooks must invoke a generated command from a managed `.agents/hooks/<id>/` entry; arbitrary inline shell commands are rejected. The accepted form is `node "${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"` for node hooks or `"${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"` for exec hooks; agent hook ids must not collide with project hook ids. Hook scripts are checked for path escapes, duplicate ids, line endings, executability and secrets.
 
 ## Global settings
 

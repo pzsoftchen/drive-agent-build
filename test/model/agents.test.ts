@@ -90,6 +90,33 @@ describe('agent discovery', () => {
     ).toHaveLength(1);
   });
 
+  it('rejects whitespace-separated tool tokens and mixed wildcards', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/space.md',
+      agent('space', 'tools: Read Grep\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/mixed.md',
+      agent('mixed', 'tools: ["*", Read]\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/bad-deny.md',
+      agent('bad-deny', 'disallowedTools: Bash Read\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    const invalid = result.diagnostics.filter((item) => item.code === 'agent.tools-invalid');
+    expect(invalid).toHaveLength(3);
+    expect(result.items.find((item) => item.name === 'space')?.toolsSpec).toEqual({
+      mode: 'none',
+    });
+  });
+
   it('rejects memory: project with a specific diagnostic', async () => {
     const fixture = await project();
     await writeProjectFile(

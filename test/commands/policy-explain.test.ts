@@ -192,6 +192,49 @@ Inherits tools.
     expect(human.stdout.join('')).toContain('effectiveTools: * except Bash');
   });
 
+  it('applies disallowedTools to an explicit tool allowlist', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/listed-tools.md',
+      `---
+name: listed-tools
+description: Has a filtered tool list.
+tools: Read, Grep
+disallowedTools: Grep
+---
+Listed tools.
+`,
+    );
+    const captureResult = capture();
+
+    const code = await runPolicyExplain(
+      {
+        cwd: project.root,
+        agent: 'listed-tools',
+        json: true,
+        runner: goodRunner,
+      },
+      captureResult.io,
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      agent: {
+        toolsMode: string;
+        toolsExplicit: boolean;
+        effectiveTools: string[];
+        effectiveToolsExcluded: string[];
+      };
+    };
+    expect(payload.agent).toMatchObject({
+      toolsMode: 'list',
+      toolsExplicit: false,
+      effectiveTools: ['Read'],
+      effectiveToolsExcluded: ['Grep'],
+    });
+  });
+
   it('treats an explicitly empty tools list as no tools', async () => {
     const project = await initialized();
     await writeProjectFile(
