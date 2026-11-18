@@ -20,7 +20,7 @@ import type {
   TargetFactKind,
 } from '../adapter/types.ts';
 import {
-  checkAgentHookIds,
+  checkAgentHooks,
   checkAgentsMdState,
   checkHookSafety,
   checkInstructionEnvironment,
@@ -159,7 +159,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     ...facts.rules.diagnostics,
     ...facts.hooks.diagnostics,
   );
-  diagnostics.push(...checkAgentHookIds(facts.agents.items, facts.hooks.items));
+  diagnostics.push(...checkAgentHooks(facts.agents.items, facts.hooks.items));
 
   diagnostics.push(...await checkInstructionEnvironment(root, home, sourceRoot.scope));
   diagnostics.push(...await checkHookSafety(facts.hooks.items));

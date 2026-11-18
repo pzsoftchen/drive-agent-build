@@ -21,7 +21,7 @@ import {
 } from '../adapter/claude-code/instructions.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import { discoverProjections } from '../adapter/claude-code/projection.ts';
-import { checkAgentHookIds, checkHookSafety, checkSecrets } from '../detect/checks.ts';
+import { checkAgentHooks, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import { discoverAgents } from '../model/agents.ts';
 import { parseFrontmatter } from '../model/frontmatter.ts';
 import { discoverHooks } from '../model/hooks.ts';
@@ -292,7 +292,7 @@ async function validateExistingAuthored(
   const hooks = await discoverHooks(root, paths.agents);
   diagnostics.push(...agents.diagnostics.filter((item) => item.severity === 'error'));
   diagnostics.push(...hooks.diagnostics.filter((item) => item.severity === 'error'));
-  diagnostics.push(...checkAgentHookIds(agents.items, hooks.items));
+  diagnostics.push(...checkAgentHooks(agents.items, hooks.items));
   diagnostics.push(...await checkHookSafety(hooks.items));
 
   const memory = await discoverMemory(root, paths.agents);

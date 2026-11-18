@@ -6,7 +6,14 @@ import type {
   LoadedHook,
   PolicySpec,
 } from '../../model/types.ts';
-import { buildHookCommand, hookMatcher, mapHookEvent } from './hooks.ts';
+import {
+  buildHookCommand,
+  buildManagedHookCommands,
+  hookMatcher,
+  isManagedAgentHookCommand,
+  mapHookEvent,
+  unmanagedAgentHookDiagnostic,
+} from './hooks.ts';
 
 export interface EffectiveHook {
   id: string;
@@ -237,6 +244,7 @@ function effectiveProjectHooks(
 function effectiveAgentHooks(
   agent: AgentDefinition | undefined,
   projectHookIds: Set<string>,
+  managedCommands: ReadonlySet<string>,
   diagnostics: Diagnostic[],
 ): EffectiveHook[] {
   if (agent === undefined) {
@@ -261,6 +269,10 @@ function effectiveAgentHooks(
         message: `agent ${agent.name} hook ${hook.id} has an empty command`,
         file: hook.source,
       });
+      return;
+    }
+    if (!isManagedAgentHookCommand(hook.command, managedCommands)) {
+      diagnostics.push(unmanagedAgentHookDiagnostic(agent.name, hook));
       return;
     }
     ids.add(hook.id);
@@ -345,7 +357,8 @@ export function compilePolicy(
 
   const projectHooks = effectiveProjectHooks(hooks, diagnostics);
   const projectHookIds = new Set(projectHooks.map((hook) => hook.id));
-  const agentHooks = effectiveAgentHooks(agent, projectHookIds, diagnostics);
+  const managedCommands = buildManagedHookCommands(hooks);
+  const agentHooks = effectiveAgentHooks(agent, projectHookIds, managedCommands, diagnostics);
   const effectiveHooks = [...projectHooks, ...agentHooks].sort((left, right) =>
     left.order - right.order || left.id.localeCompare(right.id));
 

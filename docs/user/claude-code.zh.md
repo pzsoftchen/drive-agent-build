@@ -49,7 +49,7 @@ targets:
 
 ## 权限与 hooks
 
-项目策略被编译进 `.claude/settings.json`。项目 deny 规则是 Claude Code 文件工具的硬边界，但 `Bash`、包装命令和其他工具可以绕过路径规则。Agent 定义可以收窄工具并追加 hooks，但不能移除项目 hooks。Project-level hook 脚本会检查路径逃逸、换行符、执行权限和敏感信息。Agent-level hooks 只接受结构和重复 id 校验，不执行同等强度的 shell 安全审查。
+项目策略被编译进 `.claude/settings.json`。项目 deny 规则是 Claude Code 文件工具的硬边界，但 `Bash`、包装命令和其他工具可以绕过路径规则。Agent 定义可以收窄工具并追加 hooks，但不能移除项目 hooks。Agent hooks 必须调用受管 `.agents/hooks/<id>/` 条目生成的命令；任意 inline shell 命令都会被拒绝。接受的形式是 node hook 的 `node "${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"` 或 exec hook 的 `"${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"`；agent hook id 不得与项目 hook id 冲突。Hook 脚本会检查路径逃逸、重复 id、换行符、执行权限和敏感信息。
 
 ## Global Settings
 

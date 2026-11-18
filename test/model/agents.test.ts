@@ -45,6 +45,86 @@ describe('agent discovery', () => {
     });
   });
 
+  it('distinguishes omitted, wildcard, empty and explicit tool specs', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/inherit.md',
+      agent('inherit', 'disallowedTools: Bash\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/wild.md',
+      agent('wild', 'tools: "*"\ndisallowedTools: Bash\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/empty.md',
+      agent('empty', 'tools: ""\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/listed.md',
+      agent('listed', 'tools: Read, Grep\ndisallowedTools: Bash\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    expect(result.items.find((item) => item.name === 'inherit')?.toolsSpec).toEqual({
+      mode: 'all',
+      explicit: false,
+    });
+    expect(result.items.find((item) => item.name === 'wild')?.toolsSpec).toEqual({
+      mode: 'all',
+      explicit: true,
+    });
+    expect(result.items.find((item) => item.name === 'empty')?.toolsSpec).toEqual({
+      mode: 'none',
+    });
+    expect(result.items.find((item) => item.name === 'listed')?.toolsSpec).toEqual({
+      mode: 'list',
+      tools: ['Read', 'Grep'],
+    });
+    expect(
+      result.diagnostics.filter((item) => item.code === 'agent.tools-empty'),
+    ).toHaveLength(1);
+  });
+
+  it('rejects whitespace-separated tool tokens and mixed wildcards', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/space.md',
+      agent('space', 'tools: Read Grep\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/mixed.md',
+      agent('mixed', 'tools: ["*", Read]\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/bad-deny.md',
+      agent('bad-deny', 'disallowedTools: Bash Read\n'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/two-specifiers.md',
+      agent('two-specifiers', 'tools: "Read(./src/**) Bash(rm -rf:*)"\n'),
+    );
+
+    const result = await discoverAgents(fixture.root, fixture.agents);
+
+    const invalid = result.diagnostics.filter((item) => item.code === 'agent.tools-invalid');
+    expect(invalid).toHaveLength(4);
+    expect(result.items.find((item) => item.name === 'space')?.toolsSpec).toEqual({
+      mode: 'none',
+    });
+    expect(result.items.find((item) => item.name === 'two-specifiers')?.toolsSpec).toEqual({
+      mode: 'none',
+    });
+  });
+
   it('rejects memory: project with a specific diagnostic', async () => {
     const fixture = await project();
     await writeProjectFile(

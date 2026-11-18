@@ -1,6 +1,8 @@
+import type { Diagnostic } from '../../core/diagnostics.ts';
 import { assertRelativePath, joinPosix } from '../../core/paths.ts';
+import { DiagnosticCodes } from '../../model/diagnostics-codes.ts';
 import { NEUTRAL_HOOK_EVENTS } from '../../model/schemas.ts';
-import type { LoadedHook } from '../../model/types.ts';
+import type { AgentHookDefinition, LoadedHook } from '../../model/types.ts';
 
 export type NeutralHookEvent = (typeof NEUTRAL_HOOK_EVENTS)[number];
 
@@ -37,4 +39,36 @@ export function buildHookCommand(hook: LoadedHook): string {
     return JSON.stringify(commandPath);
   }
   return `node ${JSON.stringify(commandPath)}`;
+}
+
+export function buildManagedHookCommands(hooks: readonly LoadedHook[]): Set<string> {
+  const commands = new Set<string>();
+  for (const hook of hooks) {
+    try {
+      commands.add(buildHookCommand(hook));
+    } catch {
+      // Invalid project hook paths are reported by the hook discovery checks.
+    }
+  }
+  return commands;
+}
+
+export function isManagedAgentHookCommand(
+  command: string,
+  managedCommands: ReadonlySet<string>,
+): boolean {
+  return managedCommands.has(command.trim());
+}
+
+export function unmanagedAgentHookDiagnostic(
+  agentName: string,
+  hook: AgentHookDefinition,
+): Diagnostic {
+  return {
+    code: DiagnosticCodes.hookAgentUnmanaged,
+    severity: 'error',
+    message: `agent ${agentName} hook ${hook.id} must invoke a managed .agents/hooks entry`,
+    file: hook.source,
+    hint: 'Move the command into .agents/hooks/<id>/ and reference its generated command.',
+  };
 }
