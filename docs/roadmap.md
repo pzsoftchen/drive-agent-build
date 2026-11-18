@@ -10,14 +10,14 @@ DAB ships in narrow phases. Each phase must produce working, testable software b
 - Generated output: `.claude/`.
 - Commands: `dab init`, `dab detect`, `dab normalize`, `dab policy explain`.
 - Bilingual documentation gates.
-- Status: shipped.
+- Status: implemented on `main`; pending a tagged release.
 
 ## v0.1.x Cross-harness alignment
 
 This is the first v0.1.x priority. Project and global scopes are configured independently; DAB provides no `dab global` command and never merges scopes.
 
-- Foundation: location-based scope roots, v2 manifests with `scope` and `targets`, the target adapter contract, ownership and failure semantics. Status: shipped on this branch.
-- Claude target: symlink-first instructions, per-entry projections, project settings, managed/unmanaged conflicts and `--fix` backups. Status: shipped on this branch.
+- Foundation: location-based scope roots, v2 manifests with `scope` and `targets`, the target adapter contract, ownership and failure semantics. Status: implemented on `main`; pending release.
+- Claude target: symlink-first instructions, per-entry projections, project settings, managed/unmanaged conflicts and `--fix` backups. Status: implemented on `main`; pending release.
 - Codex adapter: native subagents and skills, mapped settings. Status: next.
 - DSH adapter: native subagents and skills, mapped profile and settings. Status: after Codex.
 - Global settings adoption/merge: explicit opt-in with backups for each target. Status: after DSH.

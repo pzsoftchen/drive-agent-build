@@ -2,6 +2,13 @@
 
 # 变更日志
 
+## 未发布
+
+- 增加相互独立的 project/global scope、v2 manifest 和逐 target 生成记录。
+- 增加 target adapter 基础层和 symlink 优先的 Claude Code 指令产物。
+- 增加 DAB、DAD 与两层交付系统的中英文概念模型。
+- 明确区分已实现的治理能力与计划中的证据能力。
+
 ## 0.1.0 — 2026-11-16
 
 - 初始 `dab` CLI，包含 `init`、`detect`、`normalize` 和 `policy explain`。

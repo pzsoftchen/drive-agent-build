@@ -1,0 +1,47 @@
+version: 1
+source: docs/concepts/why-dab.md
+translation: docs/concepts/why-dab.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: 76d090de6fd0470396cb2cfb279000f4e4321c76724357cd3d49d6a713fe054d
+    translation: 13629ad659cd98026d50341c695f6fbf4df0542ed85761d7caa5c896156f6f32
+  - index: 2
+    level: 2
+    source: f0b8f7b4b76987f798e9b739169c5871c7b2bec30b4d127796635846322f28cb
+    translation: 4e8a98559f623f9c71d336fea200e6fe9e1761632cfd416c0b25fbe76aa95ef7
+  - index: 3
+    level: 2
+    source: 992ae493c8c0ead9fce38cf2a828cb78055199ed661879114e986b75109fb4d3
+    translation: debd9429484da2be0f9bc9e494a90167037c7082b6ac3a626561a5e90bd60f0f
+  - index: 4
+    level: 2
+    source: 6b28c5d0015b70cb27d0dfd9cc5f4bcef8fc71a2873d7cacbf7d8c220ad38221
+    translation: 190f291f9e40ba62dd1f6f7e9d9135233cccb76660bca391eef68ad12acd619b
+  - index: 5
+    level: 2
+    source: f2a09b5dd26555d3087b8c6b551af813e3a1eb899b09d74b2da89c4474cfc8b2
+    translation: 2b2da10ec0623e6775f1b2a0084d2eae958e7beae4ddf93c45235af051dd84f1
+  - index: 6
+    level: 2
+    source: e65217ebe34c2be44d235cc6901480400819d843a55cf6dcf3245d89122e82da
+    translation: 1e124fe176f13636142891ed02540e8bc9a1ef537c5029a19fdb9e32537ef609
+  - index: 7
+    level: 2
+    source: 831ce47b1b211213a245678ff10e72637c9d19b1615f7bf91d586e3181b78745
+    translation: b17cc831470fc93e2eb0387399203ef7fd20087d0ce7beeaddc7734ad973b865
+  - index: 8
+    level: 2
+    source: f9706141d6e02ff53316c3356fd94ea7aa2e24df255e430873f1390d9694e3c5
+    translation: ca4a99d8240a4afa6473e3e0243b533e10416abadfd6f9621ebed8fc8224b00b
+  - index: 9
+    level: 2
+    source: f429fe1995e59458e8178bd4e9d81ef95cb8b9d206e45ae9428b9d30a45dae2b
+    translation: 223e8fe84d80730419e15d959fef7c2b3023df73fe7950d298306b421ac64807

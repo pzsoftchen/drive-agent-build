@@ -17,9 +17,12 @@ This file is maintained in both languages by design and is excluded from the nor
 | Drift | 漂移 | Generated output diverging from authored source. |
 | Drive | 驱动 | Directing agents toward a goal. |
 | DAB | DAB | Drive Agent as Builder. |
+| DAD | DAD | Drive Agent Development; the development-specific predecessor practice. |
+| Delivery loop | 交付闭环 | The outer loop that drives work toward acceptance and handoff. |
 | Evidence | 证据 | Tests, diffs and records that support a claim. |
 | Gate | 门禁 | A check that must pass before merge. |
 | Harness | 执行底座 | The runtime that executes agents, such as Claude Code. |
+| Driving system | 驾驶系统 | DAB's role: direct and govern an agent without becoming its runtime. |
 | Personal memory | 个人记忆 | Machine-local memory that is not shared with the team. |
 | Projection | 投影 | Generated representation of authored source. |
 | Shared memory | 共享记忆 | Reviewed team facts stored in `.agents/memory/`. |

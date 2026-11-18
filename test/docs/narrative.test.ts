@@ -20,7 +20,10 @@ describe('DAB narrative', () => {
     expect(readme).toContain('## What DAB does not guarantee');
     expect(readme).not.toContain('evaluates the result with evidence');
     expect(readme.toLowerCase()).toContain('not a sandbox');
-    expect(readme).toContain('does not implement a GUI, an agent loop');
+    expect(readme).toContain(
+      'does not yet run its own delivery loop, compare configurations or promote memory automatically',
+    );
+    expect(readme).toContain('a GUI, a plugin marketplace');
   });
 
   it('states the policy guardrail in architecture and the Claude Code guide', async () => {

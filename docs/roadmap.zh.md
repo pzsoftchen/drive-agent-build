@@ -10,14 +10,14 @@ DAB 按窄阶段交付。每个阶段必须先产出可运行、可测试的软�
 - 生成输出：`.claude/`。
 - 命令：`dab init`、`dab detect`、`dab normalize`、`dab policy explain`。
 - 双语文档门禁。
-- 状态：已交付。
+- 状态：已在 `main` 实现，等待带标签的正式发布。
 
 ## v0.1.x 跨 Harness 对齐
 
 这是 v0.1.x 的第一优先级。Project 和 global scope 独立配置；DAB 不提供 `dab global` 命令，也从不合并 scope。
 
-- 基础：基于位置的 scope root、包含 `scope` 和 `targets` 的 v2 manifest、target adapter 契约、所有权与失败语义。状态：已在本分支交付。
-- Claude target：symlink 优先的指令、逐项投影、project settings、managed/unmanaged 冲突和 `--fix` 备份。状态：已在本分支交付。
+- 基础：基于位置的 scope root、包含 `scope` 和 `targets` 的 v2 manifest、target adapter 契约、所有权与失败语义。状态：已在 `main` 实现，等待发布。
+- Claude target：symlink 优先的指令、逐项投影、project settings、managed/unmanaged 冲突和 `--fix` 备份。状态：已在 `main` 实现，等待发布。
 - Codex adapter：原生 subagents 和 skills，映射 settings。状态：下一步。
 - DSH adapter：原生 subagents 和 skills，映射 profile 和 settings。状态：Codex 之后。
 - Global settings adoption/merge：每个 target 显式 opt-in 并备份。状态：DSH 之后。

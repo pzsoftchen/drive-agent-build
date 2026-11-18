@@ -2,6 +2,13 @@ English | [中文](CHANGELOG.zh.md)
 
 # Changelog
 
+## Unreleased
+
+- Added independent project and global scopes with v2 manifests and per-target generated records.
+- Added the target adapter foundation and symlink-first Claude Code instruction artifacts.
+- Added the bilingual conceptual model for DAB, DAD and the two-loop delivery system.
+- Clarified the boundary between implemented governance and planned evidence work.
+
 ## 0.1.0 — 2026-11-16
 
 - Initial `dab` CLI with `init`, `detect`, `normalize` and `policy explain`.
