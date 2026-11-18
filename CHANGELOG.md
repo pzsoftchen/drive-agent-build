@@ -6,8 +6,9 @@ English | [中文](CHANGELOG.zh.md)
 
 - Added independent project and global scopes with v2 manifests and per-target generated records.
 - Added the target adapter foundation and symlink-first Claude Code instruction artifacts.
-- Added the bilingual conceptual model for DAB, DAD and the two-loop delivery system.
+- Added the bilingual conceptual model for DAB, DAD and their nested delivery levels.
 - Clarified the boundary between implemented governance and planned evidence work.
+- Reordered the roadmap around DAD first, with DAB gated on observed goal-level delivery failures.
 
 ## 0.1.0 — 2026-11-16
 

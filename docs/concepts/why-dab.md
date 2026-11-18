@@ -4,31 +4,31 @@ English | [中文](why-dab.zh.md)
 
 DAB starts from a practical observation: stronger models and better agent runtimes do not automatically produce reliable delivery. They increase what an agent can do, but they do not define what should be built, how the work should converge, or what evidence makes the result acceptable.
 
-> Status: this page describes the target DAB model. The current `main` branch implements its configuration-governance foundation. Run records, delivery-loop evaluation and automatic recovery are planned for v0.2.
+> Status: this page describes the combined DAB/DAD direction. The current `main` branch implements the DAD configuration-governance foundation. v0.2 is limited to evidence for one development task at a time. DAB goal-level delivery remains research.
 
 ```text
                          Builder
              intent / constraints / acceptance
                               |
                               v
-+------------------- DAB driving system -------------------+
-| DAD foundation                                           |
++------------------- DAB direction (research) --------------+
+| Goal loop                                                |
+| Frame goal -> Decompose -> Integrate -> Accept -> Learn  |
+|                              |                           |
+|                              v                           |
+| DAD path (current)                                       |
 | facts / roles / tools / permissions / verification       |
-|                                                          |
-| Builder delivery loop                                    |
-| Frame -> Drive -> Inspect --accepted--> Deliver -> Learn |
-|            ^          |                                  |
-|            |          +--failed--> Recover               |
-|            +-------------------------+                    |
+| Task loop: Frame -> Drive -> Inspect -> Recover          |
+|                           accepted -> Complete Task       |
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness: loop / tools / context
+                 Harness loop: think -> act -> observe
                                |
                                v
                          Model + Project
                                | evidence
-                               +--------------> DAB
+                               +--------------> DAD / DAB
 ```
 
 ## Why I started DAB
@@ -79,31 +79,44 @@ DAB therefore governs both direction and convergence. Its value is not that an a
 
 DAD means Drive Agent Development. It defines how agents should carry out development work and how a person drives them through the project's rules, tools and verification.
 
-DAB means Drive Agent as Builder. It requires DAD's ability to make agents drivable, then adds a delivery-oriented loop that decides whether the work is complete.
+DAB means Drive Agent as Builder. It would retain DAD's single-task closure, then add goal-level decomposition, task coordination, integration and overall acceptance.
 
-> DAD makes an agent drivable. DAB makes the work deliverable.
+> DAD makes an agent drivable and a task completable. DAB would make a multi-task goal deliverable.
 
 Development is DAB's first scope because the first Builder is a developer. It is not the endpoint. The same driving model can later govern research, content, operations or other forms of building without changing the core logic.
 
-## Two loops
+## DAD before DAB
 
-There are two different loops:
+The roadmap deliberately separates two levels of delivery:
 
-- The harness loop coordinates thinking, tool calls and observations.
-- The DAB delivery loop coordinates framing, execution, inspection, recovery and delivery.
+- A DAD task loop drives one development task through execution, evidence and acceptance.
+- A DAB goal loop would decompose a larger goal into tasks, integrate their outputs and verify the combined result.
 
-The harness loop answers "what should the agent do next?" The DAB loop answers "is the work converging toward an acceptable result?"
+Single-task closure belongs to DAD. Passing one task does not prove the overall goal, but a goal cannot be accepted unless its contributing tasks pass and integrate correctly.
 
-The delivery loop branches on evidence:
+DAB should be explored only after DAD practice exposes recurring goal-level failures that a task loop cannot solve. No task graph, GoalRun or TaskRun model is committed yet.
+
+## Delivery levels
+
+The levels are nested:
 
 ```text
-Frame -> Drive -> Inspect --accepted--> Deliver -> Learn
+DAB goal loop (research)
+Goal -> Decompose -> DAD task loops -> Integrate -> Accept -> Learn
+
+DAD task loop (current path)
+Frame -> Drive -> Inspect --accepted--> Complete
            ^          |
            |          +--failed--> Recover
            +-------------------------+
+
+Harness loop
+think -> act -> observe -> continue
 ```
 
-`Recover` means diagnose, revise the plan, adjust context or change the working configuration, then return to `Drive`. `Deliver` is allowed only when the acceptance gates pass or a human explicitly accepts the remaining risk. `Learn` records durable facts or decisions for the next cycle.
+The harness loop answers "what should the agent do next?" The DAD task loop asks whether one development task is complete. The DAB goal loop, once researched, would ask whether all required tasks and integrations form an accepted delivery.
+
+Task completion is recorded as evidence. Cross-task learning is a separate improvement loop and must not block every atomic task with a full retrospective.
 
 ## Delivery convergence
 
@@ -126,9 +139,9 @@ DAB's role is to make those controls part of the project configuration instead o
 - DAB is not an infinite autonomous loop.
 - DAB is not a guarantee that generated work is correct without evidence.
 
-## How to judge DAB
+## How to judge DAD and DAB
 
-The concept is useful only if it improves delivery. A meaningful comparison should hold the model, harness, task and environment constant, then measure:
+The concept is useful only if it improves delivery. First, v0.2 must show that DAD improves one development task while holding the model, harness, task and environment constant. It measures:
 
 - accepted outcomes on the first attempt;
 - human interventions and rework;
@@ -136,6 +149,6 @@ The concept is useful only if it improves delivery. A meaningful comparison shou
 - scope violations and failed gates;
 - reuse of reviewed project knowledge.
 
-DAB succeeds when governed direction and a delivery loop produce more reliable outcomes than an otherwise identical agent setup.
+DAD succeeds when governed configuration and task evidence produce more reliable single-task outcomes than an otherwise identical agent setup.
 
-The planned v0.2 evidence phase is where this claim becomes testable rather than aspirational.
+DAB research begins only if real DAD use reveals recurring failures at goal decomposition, cross-task integration, overall acceptance or cross-task learning.

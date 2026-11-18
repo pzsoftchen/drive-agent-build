@@ -7,10 +7,9 @@ const root = process.cwd();
 describe('DAB narrative', () => {
   it('ships a phased roadmap in both languages', async () => {
     const roadmap = await readFile(join(root, 'docs/roadmap.md'), 'utf8');
-    for (const phase of ['v0.1', 'v0.1.x', 'v0.2', 'v0.3']) {
+    for (const phase of ['v0.1', 'v0.1.x', 'v0.2', 'v0.3', 'v0.4', 'DAB Research Gate']) {
       expect(roadmap).toContain(phase);
     }
-    expect(roadmap).not.toContain('v0.4');
     expect(await readFile(join(root, 'docs/roadmap.zh.md'), 'utf8')).toContain('# 路线图');
     expect(await readFile(join(root, 'docs/roadmap.i18n.yaml'), 'utf8')).toContain('version: 1');
   });
@@ -21,9 +20,11 @@ describe('DAB narrative', () => {
     expect(readme).not.toContain('evaluates the result with evidence');
     expect(readme.toLowerCase()).toContain('not a sandbox');
     expect(readme).toContain(
-      'does not yet run its own delivery loop, compare configurations or promote memory automatically',
+      'does not implement the DAB goal loop, a task graph, cross-task learning or automatic memory promotion',
     );
     expect(readme).toContain('a GUI, a plugin marketplace');
+    expect(readme).toContain('DAB is the long-term direction');
+    expect(readme).toContain('Single-task closure belongs to DAD');
   });
 
   it('states the policy guardrail in architecture and the Claude Code guide', async () => {

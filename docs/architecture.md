@@ -4,6 +4,12 @@ English | [中文](architecture.zh.md)
 
 DAB is conceptually a driving system for Builder-directed agent work. This repository implements its control plane: it compiles authored source facts into harness configuration and keeps the two sides comparable. Claude Code is the only implemented target in this phase.
 
+## Current implementation boundary
+
+- The current `main` branch implements the DAD configuration-governance foundation.
+- v0.2 targets evidence for one development task at a time.
+- A DAB goal loop, task graph, `GoalRun`, `TaskRun` and cross-task learning model are not part of the current architecture.
+
 ## Source of truth
 
 | Fact | Authored home | Projection |

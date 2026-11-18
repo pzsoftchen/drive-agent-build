@@ -4,31 +4,31 @@
 
 DAB 来自一个实践观察：更强的模型和更好的 Agent runtime，不会自动产生可靠交付。它们提高了 Agent 能做什么的上限，却没有定义应该构建什么、工作如何收敛，以及什么证据能证明结果可以接受。
 
-> 状态：本页描述 DAB 的目标模型。当前 `main` 分支实现的是配置治理基础；Run record、交付循环评测和自动恢复计划在 v0.2 提供。
+> 状态：本页描述 DAB/DAD 的组合方向。当前 `main` 分支实现的是 DAD 配置治理基础。v0.2 只验证单个开发任务，DAB 的目标级交付仍是研究阶段。
 
 ```text
                          Builder
              intent / constraints / acceptance
                               |
                               v
-+------------------- DAB driving system -------------------+
-| DAD foundation                                           |
++------------------- DAB direction (research) --------------+
+| Goal loop                                                |
+| Frame goal -> Decompose -> Integrate -> Accept -> Learn  |
+|                              |                           |
+|                              v                           |
+| DAD path (current)                                       |
 | facts / roles / tools / permissions / verification       |
-|                                                          |
-| Builder delivery loop                                    |
-| Frame -> Drive -> Inspect --accepted--> Deliver -> Learn |
-|            ^          |                                  |
-|            |          +--failed--> Recover               |
-|            +-------------------------+                    |
+| Task loop: Frame -> Drive -> Inspect -> Recover          |
+|                           accepted -> Complete Task       |
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness: loop / tools / context
+                 Harness loop: think -> act -> observe
                                |
                                v
                          Model + Project
                                | evidence
-                               +--------------> DAB
+                               +--------------> DAD / DAB
 ```
 
 ## 我为什么开始 DAB
@@ -79,31 +79,44 @@ DAB 同时治理方向和收敛。它的价值不是让 Agent 能行动，而是
 
 DAD 指 Drive Agent Development，也就是驱动 Agent 开发。它定义 Agent 应如何开展开发工作，以及人如何按照项目规则、工具和验证方式驾驶 Agent。
 
-DAB 指 Drive Agent as Builder，也就是驱动 Agent 成为构建者。它首先要有 DAD 让 Agent 可被可靠驾驶的能力，然后增加面向交付的循环，判断工作是否完成。
+DAB 指 Drive Agent as Builder，也就是驱动 Agent 成为构建者。它会保留 DAD 的单任务闭包，再增加目标级拆解、任务协同、集成和整体验收。
 
-> DAD 让 Agent 可被驾驶，DAB 让工作可以被交付。
+> DAD 让 Agent 可被驾驶、任务可以完成；DAB 要让多任务目标可以交付。
 
 开发是 DAB 的第一个范围，因为第一位构建者是开发者。但开发不是终点。同一套驾驶模型未来可以治理研究、内容、运营或其他构建活动，而不需要改变核心逻辑。
 
-## 两层循环
+## DAD 先于 DAB
 
-这里存在两个不同的循环：
+Roadmap 有意把交付拆成两个层级：
 
-- Harness Loop 协调思考、工具调用和观察结果。
-- DAB 交付循环协调定义、执行、检查、恢复和交付。
+- DAD 任务循环负责把单个开发任务驾驶到执行、证据和验收完成。
+- DAB 目标循环未来负责把更大的目标拆成多个任务，集成各自产物，并验证整体结果。
 
-Harness Loop 回答“Agent 下一步做什么”，DAB 交付循环回答“工作是否正在收敛到可接受的结果”。
+单任务闭包属于 DAD。一个任务通过不能证明整体目标完成，但整体目标也不能在没有相关任务通过并正确集成时被接受。
 
-交付循环根据证据分流：
+DAB 只有在 DAD 实践反复暴露任务循环无法解决的目标级问题后才值得探索。目前不承诺任务图、GoalRun 或 TaskRun 模型。
+
+## 交付层级
+
+这些层级是嵌套的：
 
 ```text
-Frame -> Drive -> Inspect --accepted--> Deliver -> Learn
+DAB goal loop (research)
+Goal -> Decompose -> DAD task loops -> Integrate -> Accept -> Learn
+
+DAD task loop (current path)
+Frame -> Drive -> Inspect --accepted--> Complete
            ^          |
            |          +--failed--> Recover
            +-------------------------+
+
+Harness loop
+think -> act -> observe -> continue
 ```
 
-`Recover` 表示诊断问题、修改计划、调整上下文或改变工作配置，然后回到 `Drive`。只有验收门禁通过，或者人明确接受剩余风险时，才允许进入 `Deliver`。`Learn` 记录可供下一轮使用的持久事实或决策。
+Harness Loop 回答“Agent 下一步做什么”，DAD 任务循环判断单个开发任务是否完成。未来研究的 DAB 目标循环，则判断所有必要任务及集成结果是否共同构成可接受的交付。
+
+任务完成要被记录为证据。跨任务学习是独立的改进循环，不能用完整复盘阻塞每个原子任务。
 
 ## 交付收敛
 
@@ -126,9 +139,9 @@ DAB 的作用是让这些控制成为项目配置的一部分，而不是散落�
 - DAB 不是无限自治循环。
 - DAB 不承诺在没有证据的情况下生成结果一定正确。
 
-## 如何判断 DAB
+## 如何判断 DAD 与 DAB
 
-一个概念只有改善交付才有价值。有效的比较应固定模型、Harness、任务和环境，然后测量：
+一个概念只有改善交付才有价值。首先，v0.2 必须在固定模型、Harness、任务和环境的条件下，证明 DAD 能改善单个开发任务。它测量：
 
 - 第一次尝试即被接受的结果；
 - 人工干预和返工次数；
@@ -136,6 +149,6 @@ DAB 的作用是让这些控制成为项目配置的一部分，而不是散落�
 - 范围越界与门禁失败；
 - 已评审项目知识的复用情况。
 
-当受治理的方向和交付循环，能让原本相同的 Agent 配置产生更可靠的结果时，DAB 才真正成立。
+当受治理的配置和任务证据，能让原本相同的 Agent 配置产生更可靠的单任务结果时，DAD 才真正成立。
 
-计划中的 v0.2 证据阶段，就是把这一主张从愿景变成可检验结论的地方。
+只有真实 DAD 使用反复暴露目标拆解、跨任务集成、整体验收或跨任务学习问题时，才启动 DAB 研究。

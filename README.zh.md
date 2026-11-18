@@ -2,7 +2,7 @@
 
 # DAB：驱动 Agent 成为构建者
 
-DAB 是面向使用 Agent 产出持久成果的构建者的、可区分作用域的控制面。Project scope 和 global scope 相互独立地配置。第一版面向开发者，并以 Claude Code 为首个目标。
+DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD（Drive Agent Development）：先让 Agent 通过受治理的项目配置变得可可靠驾驶，再证明单个开发任务能够完成并通过验收。
 
 ## DAB 位于哪里
 
@@ -13,24 +13,24 @@ DAB 是面向使用 Agent 产出持久成果的构建者的、可区分作用域
              intent / constraints / acceptance
                               |
                               v
-+------------------- DAB driving system -------------------+
-| DAD foundation                                           |
++------------------- DAB direction (research) --------------+
+| Goal loop                                                |
+| Frame goal -> Decompose -> Integrate -> Accept -> Learn  |
+|                              |                           |
+|                              v                           |
+| DAD path (current)                                       |
 | facts / roles / tools / permissions / verification       |
-|                                                          |
-| Builder delivery loop                                    |
-| Frame -> Drive -> Inspect --accepted--> Deliver -> Learn |
-|            ^          |                                  |
-|            |          +--failed--> Recover               |
-|            +-------------------------+                    |
+| Task loop: Frame -> Drive -> Inspect -> Recover          |
+|                           accepted -> Complete Task       |
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness: loop / tools / context
+                 Harness loop: think -> act -> observe
                                |
                                v
                          Model + Project
                                | evidence
-                               +--------------> DAB
+                               +--------------> DAD / DAB
 ```
 
 不同角色承担不同责任：
@@ -40,26 +40,28 @@ DAB 是面向使用 Agent 产出持久成果的构建者的、可区分作用域
 - DAB 在产品概念上是驾驶系统；本仓库实现的是它的控制面。
 - Harness 是执行引擎，提供循环、工具、上下文、权限和会话。
 
-### 两层 Loop
+### 嵌套 Loop
 
 - Harness Loop 负责局部执行：`think -> act -> observe -> continue`。
-- DAB 交付循环负责整体结果：`frame -> drive -> inspect -> recover -> deliver -> learn`。
-- Harness 决定下一步做什么，DAB 决定工作是否正在收敛到验收状态。
+- DAD 任务循环负责把一个开发任务驾驶到完成，并产生验收证据。
+- DAB 目标循环是研究方向，负责把多个任务分解、集成并收敛为一个通过验收的整体目标。
+
+单任务闭包属于 DAD。只有当多个任务必须共同收敛到一个更大目标时，DAB 才真正开始。
 
 [阅读完整概念说明](docs/concepts/why-dab.zh.md)。
 
 ## 当前状态
 
-图中的方式是 DAB 的目标模型。当前 `main` 分支实现的是配置治理基础，证据驱动的交付循环尚未完成。
+图中的方式是 DAB/DAD 的组合目标模型。当前 `main` 分支实现的是 DAD 配置治理基础。下一步是单任务证据；DAB 尚未排期。
 
 | 能力 | 状态 |
 |---|---|
-| 项目编写事实与确定性的 Claude Code 投影 | 已实现 |
-| 漂移检测与最终策略解释 | 已实现 |
-| 独立的 project/global scope 与 v2 manifest | 已在 `main` 实现，尚未发布 |
-| Codex 与 DSH adapter | 在 Claude Code target 之后规划 |
-| Run record 与交付循环评测 | 计划在 v0.2 提供 |
-| 共享记忆提升 | 计划在 v0.3 提供 |
+| DAD 编写事实、投影、漂移检测和策略解释 | 已在 `main` 实现 |
+| DAD 独立的 project/global scope 与 v2 manifest | 已在 `main` 实现，尚未发布 |
+| DAD 单开发任务证据 | 计划在 v0.2 提供，这是下一步 |
+| DAD 记忆与运行加固 | 计划在 v0.3 提供 |
+| DAD Codex 与 DSH adapter | 在单任务证据之后 |
+| DAB 目标拆解与跨任务收敛 | 研究阶段，以 DAD 证据为前置条件 |
 
 ## 快速开始
 
@@ -106,7 +108,8 @@ dab detect
 ## DAB 不保证什么
 
 - v0.1 当前是单开发者、macOS 和 Linux、Claude Code 优先的实现。
-- 它尚未运行自己的交付循环、比较配置或自动提升记忆。
+- 它不实现 DAB 目标循环、任务图、跨任务学习或自动记忆提升。
+- v0.2 将验证单个开发任务，不代表 DAB 已被证明。
 - 路径 deny 规则是工具级护栏，不是沙箱。
 - Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。
 - Windows junction、GUI、插件市场和自动 DAD 迁移不在范围内。

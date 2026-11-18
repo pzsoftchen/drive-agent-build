@@ -2,9 +2,9 @@ English | [中文](roadmap.zh.md)
 
 # Roadmap
 
-DAB ships in narrow phases. Each phase must produce working, testable software before the next starts.
+DAB is the long-term direction. The product roadmap follows DAD first: prove reliable single-task development, then use that evidence to decide whether a DAB goal loop is justified.
 
-## v0.1 Config Governance
+## v0.1 DAD Config Governance
 
 - Authored source: `AGENTS.md` and `.agents/`.
 - Generated output: `.claude/`.
@@ -12,34 +12,53 @@ DAB ships in narrow phases. Each phase must produce working, testable software b
 - Bilingual documentation gates.
 - Status: implemented on `main`; pending a tagged release.
 
-## v0.1.x Cross-harness alignment
+## v0.1.x DAD Foundation
 
-This is the first v0.1.x priority. Project and global scopes are configured independently; DAB provides no `dab global` command and never merges scopes.
+- Scope roots, v2 manifests, target adapters, ownership and failure semantics are implemented on `main`; pending release.
+- Symlink-first Claude Code instructions, per-entry projections and project settings are implemented on `main`; pending release.
+- Project and global scopes remain independent; DAB provides no `dab global` command and never merges scopes.
+- Codex and DSH adapters are deferred until the DAD task loop is measured.
 
-- Foundation: location-based scope roots, v2 manifests with `scope` and `targets`, the target adapter contract, ownership and failure semantics. Status: implemented on `main`; pending release.
-- Claude target: symlink-first instructions, per-entry projections, project settings, managed/unmanaged conflicts and `--fix` backups. Status: implemented on `main`; pending release.
-- Codex adapter: native subagents and skills, mapped settings. Status: next.
-- DSH adapter: native subagents and skills, mapped profile and settings. Status: after Codex.
-- Global settings adoption/merge: explicit opt-in with backups for each target. Status: after DSH.
-- Global `$HOME/.gitignore` stays read-only in every plan.
+## v0.2 DAD Task Evidence
 
-## v0.2 Evidence
+This is the next milestone. It validates one development task at a time and does not prove DAB.
 
-- `dab run --record` with a `RunRecord`.
-- `dab eval --suite <id> --compare baseline`.
-- Three existing-repo feature tasks with deterministic tests.
-- Record time, attempts and cost.
+- Add `dab run --record` for a single development task.
+- Add `dab eval --suite <id> --compare baseline`.
+- Use three existing-repository feature tasks with deterministic tests.
+- Record time, attempts, cost, interventions and scope violations.
+- Require stable harness events for attempts, tool activity, evidence, permissions and budgets before implementing this phase.
+- Status: planned; next.
+
+## v0.3 DAD Hardening and Memory
+
+- Add `dab memory promote`.
+- Review shared-memory expiry and supersession.
+- Complete Agent Note archive workflow.
+- Harden the failure modes observed during v0.2: hooks, policy explanation, recovery and handoff.
 - Status: planned.
 
-## v0.3 Memory
+## v0.4 DAD Cross-harness Adapters
 
-- `dab memory promote`.
-- Shared memory review and expiry checks.
-- Agent Note archive workflow.
-- Status: planned.
+- Add the Codex adapter after the DAD task evidence contract is stable.
+- Add the DSH adapter after Codex validates the common capabilities.
+- Add explicit global-settings adoption and merge with backups.
+- Keep `$HOME/.gitignore` read-only.
+- Status: planned after v0.2 evidence.
+
+## DAB Research Gate
+
+DAB is not a scheduled implementation phase yet. Research starts only when DAD practice shows recurring failures at the goal level.
+
+- Run DAD on enough real projects and tasks to establish its failure profile.
+- Identify failures caused by multi-task decomposition, integration or overall acceptance rather than a single task loop.
+- Prototype only the smallest goal-level loop needed to address observed failures.
+- Do not commit to a task graph, `GoalRun`, `TaskRun`, or cross-task learning model before that evidence exists.
+- Status: unscheduled research.
 
 ## Non-goals
 
-- GUI, independent agent loop, plugin marketplace or team permissions.
+- A DAB implementation before the research gate.
+- GUI, independent agent runtime, plugin marketplace or team permissions.
 - Automatic DAD migration or Windows junction support.
 - Cross-scope inheritance or merge.

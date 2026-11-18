@@ -11,20 +11,20 @@ sections:
     translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
   - index: 1
     level: 1
-    source: 019d1d1cbdf00774cf6bceee0463b3dba64cb0173197dac34cf58fa989cd84ea
-    translation: f9928313c074dc5f040a52e86f16825b1d9265b64ffb9f5d3e7e352dc656e4de
+    source: d7f8fe9e8582cc22e7cf0aab17534df3b344f8a3c40debe6a5008cc2141002bb
+    translation: 3cc7fe20c7cc7a2f8c0f6e3c86f353fc796aa5ed12daa71e624846fa153849b3
   - index: 2
     level: 2
-    source: 2a1406c3585946572bd923e4587c6f31325e765fd08121ebe7017718ac099a22
-    translation: ed8a1a1be580be861a6b07b22667c40773a511df5aee4c56af045744d50c80a8
+    source: f3ed1fffec70326edfdfb14bcfb8c2aff0f611c52f6d040ff3b7f833b5379146
+    translation: 6b4daa93e70cde4f4d1a84e92d81b048e47b2136f57bf54ecae858828ea31fb0
   - index: 3
     level: 3
-    source: a5bc8f2efe4305411c3c6853ab961890628956a1fcae123e247db5b0974f5060
-    translation: 93d1e35c9b21361b3e36f5fed2b89ec00ecafedac513f11aa3c0d087ea21ce9c
+    source: f6b8c87b286ebc04dd339346848ee6f83be71b0ee722bf80494f68803fe3a999
+    translation: ddc3986f6439fe4688471825ac95a56e453bc43970b8d73217c2e67c2ad4cc28
   - index: 4
     level: 2
-    source: 10bac9135d1abffd0e7e7779152c6dce7090ad0f65f17c383616afc174bf1862
-    translation: 4f7d31b24890423c16ce5d1b016af1307b0a2aea0da7904c49f3afaf83cf9ec2
+    source: 5f3a4646e9563044322b272d59268f79aaac94a48113ab0f903acc579cb5ba21
+    translation: bee50d33f0f1bb93d0ace29f2beb35ae715a8d220659d313ab2c7ed6d9de57e4
   - index: 5
     level: 2
     source: 933aa217ed06ba62fa8a6d1f59d27f50062ecf7b6fb9c5a41ce820e87ac4a506
@@ -43,8 +43,8 @@ sections:
     translation: 55cf08493684d9fc90c58f85beff38b3a6877689a885068e3e1582a4eb674c32
   - index: 9
     level: 2
-    source: c8e7e276d7019a959b993f291be49da3da34beffa402d7c17aef045b755dcde9
-    translation: 40afe46b94df663c8a3f8dbcd3926b53335a0fa5087e4d285b6bc4a8294f58db
+    source: d0f65bd3ef43259a301d244c07061c3da61f75124a63d442c42b1e351f4ba8eb
+    translation: 33331c29e0532744c866c0169e05989527f3de8352d6dec7bdf1c5492df6bfd3
   - index: 10
     level: 2
     source: 934bb20f5ec0ac32f3d78c5bcc52deb2377c74342d7cbbd233310bcec348c054

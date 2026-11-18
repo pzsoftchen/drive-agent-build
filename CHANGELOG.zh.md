@@ -6,8 +6,9 @@
 
 - 增加相互独立的 project/global scope、v2 manifest 和逐 target 生成记录。
 - 增加 target adapter 基础层和 symlink 优先的 Claude Code 指令产物。
-- 增加 DAB、DAD 与两层交付系统的中英文概念模型。
+- 增加 DAB、DAD 及其嵌套交付层级的中英文概念模型。
 - 明确区分已实现的治理能力与计划中的证据能力。
+- 将 Roadmap 重排为 DAD 优先，并以真实目标级交付失败作为 DAB 的研究门槛。
 
 ## 0.1.0 — 2026-11-16
 

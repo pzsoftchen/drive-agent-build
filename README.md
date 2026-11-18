@@ -2,7 +2,7 @@ English | [中文](README.zh.md)
 
 # DAB — Drive Agent as Builder
 
-DAB is a scope-aware control plane for Builders who use agents to produce durable work. Project and global scopes are configured independently. The first implementation is developer-first and targets Claude Code.
+DAB is the long-term direction: driving agents as Builders. The current implementation path is DAD (Drive Agent Development): making agents reliably drivable through governed project configuration, then proving that a single development task can be completed and accepted.
 
 ## How DAB fits
 
@@ -13,24 +13,24 @@ The working model is `Agent = Model + Harness`. DAB is not a third term in that 
              intent / constraints / acceptance
                               |
                               v
-+------------------- DAB driving system -------------------+
-| DAD foundation                                           |
++------------------- DAB direction (research) --------------+
+| Goal loop                                                |
+| Frame goal -> Decompose -> Integrate -> Accept -> Learn  |
+|                              |                           |
+|                              v                           |
+| DAD path (current)                                       |
 | facts / roles / tools / permissions / verification       |
-|                                                          |
-| Builder delivery loop                                    |
-| Frame -> Drive -> Inspect --accepted--> Deliver -> Learn |
-|            ^          |                                  |
-|            |          +--failed--> Recover               |
-|            +-------------------------+                    |
+| Task loop: Frame -> Drive -> Inspect -> Recover          |
+|                           accepted -> Complete Task       |
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness: loop / tools / context
+                 Harness loop: think -> act -> observe
                                |
                                v
                          Model + Project
                                | evidence
-                               +--------------> DAB
+                               +--------------> DAD / DAB
 ```
 
 The actors have distinct responsibilities:
@@ -40,26 +40,28 @@ The actors have distinct responsibilities:
 - DAB is conceptually a driving system; this repository implements its control plane.
 - The Harness is the execution engine: loop, tools, context, permissions and sessions.
 
-### Two loops
+### Nested loops
 
 - The harness loop handles local execution: `think -> act -> observe -> continue`.
-- The DAB delivery loop governs the outcome: `frame -> drive -> inspect -> recover -> deliver -> learn`.
-- The harness decides what to do next; DAB decides whether the work is converging toward acceptance.
+- The DAD task loop drives one development task to completion and acceptance evidence.
+- The DAB goal loop is a research direction for decomposing and integrating multiple tasks into one accepted goal.
+
+Single-task closure belongs to DAD. DAB begins when multiple tasks must converge into a larger goal.
 
 [Read the full conceptual model](docs/concepts/why-dab.md).
 
 ## Current status
 
-The diagram describes the target DAB model. The current `main` branch implements its configuration-governance foundation; the evidence-driven delivery loop is not complete.
+The diagram describes the combined target model. The current `main` branch implements the DAD configuration-governance foundation. Single-task evidence is next; DAB is not yet scheduled.
 
 | Capability | Status |
 |---|---|
-| Authored project facts and deterministic Claude Code projections | Implemented |
-| Drift detection and effective-policy explanation | Implemented |
-| Independent project and global scopes with v2 manifests | Implemented on `main`; pending release |
-| Codex and DSH adapters | Planned after the Claude Code target |
-| Run records and delivery-loop evaluation | Planned for v0.2 |
-| Shared-memory promotion | Planned for v0.3 |
+| DAD authored facts, projections, drift checks and policy explanation | Implemented on `main` |
+| DAD independent project/global scopes and v2 manifests | Implemented on `main`; pending release |
+| DAD evidence for one development task | Planned for v0.2; next |
+| DAD memory and operational hardening | Planned for v0.3 |
+| DAD Codex and DSH adapters | After single-task evidence |
+| DAB goal decomposition and cross-task convergence | Research; gated by DAD evidence |
 
 ## Quick start
 
@@ -106,7 +108,8 @@ I first explored a narrower practice, DAD (Drive Agent Development): defining ho
 ## What DAB does not guarantee
 
 - v0.1 is currently a single-developer, macOS and Linux, Claude Code-first implementation.
-- It does not yet run its own delivery loop, compare configurations or promote memory automatically.
+- It does not implement the DAB goal loop, a task graph, cross-task learning or automatic memory promotion.
+- v0.2 will validate one development task at a time; it will not by itself prove DAB.
 - Path deny rules are tool-level guardrails, not a sandbox.
 - Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.
 - Windows junctions, a GUI, a plugin marketplace and automatic DAD migration are out of scope.
