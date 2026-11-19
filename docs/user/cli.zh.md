@@ -112,7 +112,7 @@ dab detect [--strict] [--json]
 
 只检查不写入。它验证 scope、启用的 target adapter、Claude Code 版本、祖先指令文件、指令产物、投影、settings、策略、hooks、记忆、敏感信息、AGENTS.md 大小和链接。每个 fact 输出一行 `kind name: target=status`。
 
-- `--strict` 在存在任何 warning 时以退出码 3 结束。CI 中可用它把 unknown frontmatter 等警告变成失败。
+- `--strict` 在存在项目或配置类 warning（如 unknown frontmatter 或漂移）时以退出码 3 结束。环境类 warning（例如未安装 Claude Code）不会导致失败。
 - Global scope 会跳过祖先和个人记忆检查，因为用户级 Claude 数据不是项目产物。
 - Unmanaged target path 和缺失的生成记录会作为漂移报告。
 

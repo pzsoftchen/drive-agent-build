@@ -81,8 +81,13 @@ describe('detectProject', () => {
   it('warns but does not fail when Claude Code is missing', async () => {
     const project = await initialized();
     const result = await detectProject(detectOptions(project, missingRunner));
+    const strict = await detectProject({
+      ...detectOptions(project, missingRunner),
+      strict: true,
+    });
 
     expect(result.exitCode).toBe(0);
+    expect(strict.exitCode).toBe(0);
     expect(
       result.diagnostics.some(
         (item) => item.code === 'backend.missing' && item.severity === 'warning',

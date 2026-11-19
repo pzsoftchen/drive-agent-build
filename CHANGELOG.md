@@ -6,7 +6,7 @@ English | [中文](CHANGELOG.zh.md)
 
 - Added `schemaVersion: 1` to every `--json` result and rejected `--json` with `--help` or `--version`.
 - Agent, skill and rule frontmatter now preserves unknown top-level fields and warns with a did-you-mean hint, including transposed letters; DAB-owned YAML remains strict.
-- Added `dab detect --strict` to fail CI when warnings are present.
+- Added `dab detect --strict` to fail CI on project and configuration warnings.
 - `dab normalize --json` includes an absolute `root`; `dab init --json` includes `root` and `scopeRoot`, with generated and backup paths relative to them.
 - Unified the Windows platform guard across all commands and reduced normalize to one Claude Code version check.
 - Made file and diagnostic ordering locale-independent so hashes and JSON stay stable across machines.

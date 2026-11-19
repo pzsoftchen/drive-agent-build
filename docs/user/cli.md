@@ -112,7 +112,7 @@ dab detect [--strict] [--json]
 
 Runs checks without writing. It verifies scope, enabled target adapters, Claude Code version, ancestor instruction files, the instructions artifact, projections, settings, policy, hooks, memory, secrets, AGENTS.md size and links. It prints one `kind name: target=status` line per fact.
 
-- `--strict` exits with code 3 when any warning is present. Use it in CI to fail on unknown frontmatter or other warnings.
+- `--strict` exits with code 3 on project or configuration warnings such as unknown frontmatter or drift. Environment warnings, such as Claude Code not being installed, do not fail.
 - In global scope, ancestor and personal-memory checks are skipped because user-level Claude data is not a project artifact.
 - Unmanaged target paths and missing generated records are reported as drift.
 

@@ -91,6 +91,8 @@ function dedupe(diagnostics: readonly Diagnostic[]): Diagnostic[] {
   });
 }
 
+const ENVIRONMENT_WARNING_CODES = new Set(['backend.missing']);
+
 function buildResult(
   diagnostics: readonly Diagnostic[],
   targets: TargetDetectOutcome[] = [],
@@ -100,7 +102,10 @@ function buildResult(
   const backendError = sorted.some(
     (item) => item.code === 'backend.version' && item.severity === 'error',
   );
-  const warningFailure = strict && sorted.some((item) => item.severity === 'warning');
+  const warningFailure = strict
+    && sorted.some(
+      (item) => item.severity === 'warning' && !ENVIRONMENT_WARNING_CODES.has(item.code),
+    );
   const exitCode = backendError
     ? ExitCode.Backend
     : hasErrors(sorted) || warningFailure

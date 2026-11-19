@@ -139,7 +139,7 @@ generated:
 - Agent、skill 和 rule 文件会投影到 Claude Code，并可能先于 DAB 获得新的顶层字段。
 - DAB 校验它解释的每个字段，保留未知顶层字段，并以警告形式报告来源文件。
 - 当未知顶层字段看起来像拼写错误时，警告会给出最接近的已知字段。scope 或权限相关 key 的拼写错误会改变实际生效行为，因此 CI 中应把这些警告视为错误。
-- `dab detect --strict` 把 warning 转为退出码 3，供 CI 强制执行该策略。
+- `dab detect --strict` 把项目/配置类 warning 转为退出码 3，供 CI 强制执行该策略；缺少 Claude Code 等环境 warning 不计入。
 - DAB 自有结构（hooks、policies、manifests、memory entries）中的未知字段仍然是错误。
 - 这样 Claude Code 升级不会一次破坏所有 agent，同时保持 DAB 自有配置的 fail-loud 行为。
 

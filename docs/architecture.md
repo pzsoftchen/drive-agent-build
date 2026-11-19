@@ -139,7 +139,7 @@ generated:
 - Agent, skill and rule files are projected into Claude Code and can gain new top-level fields before DAB knows them.
 - DAB validates every field it interprets, keeps unknown top-level fields, and reports them as warnings with the source file.
 - A warning suggests the closest known field when an unknown top-level field looks like a typo. Typos in scope or permission keys can change effective behavior, so treat these warnings as errors in CI.
-- `dab detect --strict` turns warnings into exit code 3 so CI can enforce this policy.
+- `dab detect --strict` turns project and configuration warnings into exit code 3 so CI can enforce this policy; environment warnings such as a missing Claude Code binary are excluded.
 - Unknown fields in DAB-owned structures such as hooks, policies, manifests and memory entries remain errors.
 - This keeps a Claude Code upgrade from breaking every agent while preserving fail-loud behavior for configuration DAB owns.
 

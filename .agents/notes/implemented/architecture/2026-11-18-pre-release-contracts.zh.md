@@ -13,7 +13,7 @@ Status: implemented
 - 每个支持 `--json` 的命令现在都包含 `schemaVersion: 1`；发布可以新增字段，但删除或改变字段必须提升版本。
 - Agent、skill 和 rule frontmatter 容忍未知顶层字段：DAB 保留字段、投影文件，并以警告形式报告 `agent.unknown-frontmatter`、`skill.unknown-frontmatter` 或 `rule.unknown-frontmatter`。当未知名称看起来像拼写错误时，警告会给出最接近的已知字段。
 - DAB 自有结构（hooks、policies、manifests、memory entries）保持严格；其中的未知字段仍然是错误。
-- normalize 结果和嵌套 init 结果中的 JSON 路径相对于 `root`/`scopeRoot`，二者都包含在 payload 中。所有命令共用同一个 Windows 守卫，normalize 只执行一次 runtime 版本检查，`dab detect --strict` 把 warning 转为退出码 3 供 CI 使用。
+- normalize 结果和嵌套 init 结果中的 JSON 路径相对于 `root`/`scopeRoot`，二者都包含在 payload 中。所有命令共用同一个 Windows 守卫，normalize 只执行一次 runtime 版本检查，`dab detect --strict` 把项目/配置类 warning 转为退出码 3 供 CI 使用（缺少 Claude Code 等环境 warning 除外）。
 - Adapter contract spec 和计划记录剩余缺口：adapter-owned gitignore entries、provider-owned init 扫描和 provider 路径位置。完整重构推迟到 Codex adapter 计划。
 
 ## 备选方案

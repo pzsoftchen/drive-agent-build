@@ -13,7 +13,7 @@ The first npm release would freeze three public contracts that were still implic
 - Every command that supports `--json` now includes `schemaVersion: 1`; releases may add fields, but removing or changing a field requires a new version.
 - Agent, skill and rule frontmatter tolerate unknown top-level fields: DAB keeps the fields, projects the file, and reports `agent.unknown-frontmatter`, `skill.unknown-frontmatter` or `rule.unknown-frontmatter` as a warning. The warning names the closest known field when the unknown name looks like a typo.
 - DAB-owned structures (hooks, policies, manifests, memory entries) stay strict; unknown fields there remain errors.
-- JSON paths in normalize results and the nested init result are relative to `root`/`scopeRoot`, which are included in the payload. All commands share one Windows guard, normalize performs one runtime version check, and `dab detect --strict` turns warnings into exit code 3 for CI.
+- JSON paths in normalize results and the nested init result are relative to `root`/`scopeRoot`, which are included in the payload. All commands share one Windows guard, normalize performs one runtime version check, and `dab detect --strict` turns project and configuration warnings into exit code 3 for CI; environment warnings such as a missing Claude Code binary are excluded.
 - The adapter contract spec and plan record the remaining gaps: adapter-owned gitignore entries, provider-owned init scanning and provider path placement. The full refactor stays deferred until the Codex adapter plan.
 
 ## Alternatives considered
