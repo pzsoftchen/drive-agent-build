@@ -43,3 +43,13 @@ jobs:
         run: node dist/cli.js normalize --dry-run --json
       - name: Explain policy
         run: node dist/cli.js policy explain --json
+      - name: Pack and smoke test
+        run: |
+          npm pack
+          tarball=$(ls saydone-dab-*.tgz)
+          work=$(mktemp -d)
+          cd "$work"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE/$tarball"
+          npx --no-install @saydone/dab --version
+          npx --no-install @saydone/dab init --dry-run

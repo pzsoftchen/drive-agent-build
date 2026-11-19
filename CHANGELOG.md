@@ -2,8 +2,9 @@ English | [中文](CHANGELOG.zh.md)
 
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-11-19
 
+- Published the CLI as `@saydone/dab` with a GitHub Actions release workflow, npm provenance and a GitHub Release for each tag.
 - Added `schemaVersion: 1` to every `--json` result and rejected `--json` with `--help` or `--version`.
 - Agent, skill and rule frontmatter now preserves unknown top-level fields and warns with a did-you-mean hint, including transposed letters; DAB-owned YAML remains strict.
 - Added `dab detect --strict` to fail CI on project and configuration warnings.

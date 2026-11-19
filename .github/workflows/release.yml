@@ -1,0 +1,121 @@
+name: release
+
+# First release bootstrap:
+# 1. Run the full verification locally, then publish the current version manually
+#    with npm 2FA.
+# 2. Configure the npm Trusted Publisher for this workflow and the npm-release
+#    environment.
+# 3. Push the release tag. The publish job sees the version is already published,
+#    skips npm publish and creates the GitHub Release. Later tags publish with
+#    OIDC and provenance, with no long-lived npm token.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check release identity
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          test "$name" = "@saydone/dab"
+          test "${GITHUB_REF_NAME#v}" = "$version"
+      - name: Build
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Documentation gates
+        run: pnpm doc-sync
+      - name: Normalize generated config
+        run: node dist/cli.js normalize
+      - name: Check generated manifest is current
+        run: git diff --exit-code
+      - name: Detect drift
+        run: node dist/cli.js detect
+      - name: Normalize dry run
+        run: node dist/cli.js normalize --dry-run
+      - name: Pack
+        run: npm pack
+      - name: Smoke test packed CLI
+        run: |
+          tarball=$(ls saydone-dab-*.tgz)
+          work=$(mktemp -d)
+          cd "$work"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE/$tarball"
+          npx --no-install @saydone/dab --version
+          npx --no-install @saydone/dab init --dry-run
+      - name: Upload npm tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: saydone-dab-*.tgz
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm-release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Publish if this version is new
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@saydone/dab@$version" version >/dev/null 2>&1; then
+            echo "@saydone/dab@$version is already published; skipping npm publish."
+          else
+            npm publish --provenance --access public
+          fi
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists."
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME"
+          fi

@@ -65,16 +65,32 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 
 ## 快速开始
 
-前置条件：Node.js `>=24.9`、pnpm、Claude Code `>=2.1.277`、macOS 或 Linux。
+前置条件：Node.js `>=24.9`、Claude Code `>=2.1.277`、macOS 或 Linux。
+
+无需安装，直接运行 CLI：
+
+```bash
+npx @saydone/dab init /path/to/project
+cd /path/to/project
+npx @saydone/dab normalize --dry-run
+npx @saydone/dab detect
+```
+
+全局安装后可使用更短的 `dab` 命令：
+
+```bash
+npm install -g @saydone/dab
+dab --version
+```
+
+npm 包名是 `@saydone/dab`；`npx dab` 会解析到另一个包。
+
+从源码开发：
 
 ```bash
 pnpm install
 pnpm build
 pnpm link --global
-dab init /path/to/project
-cd /path/to/project
-dab normalize --dry-run
-dab detect
 ```
 
 使用 `dab init ~/.agents` 初始化独立的 global scope。
@@ -115,6 +131,8 @@ dab detect
 - Windows junction、GUI、插件市场和自动 DAD 迁移不在范围内。
 
 ## 文档
+
+完整文档：[docs](https://github.com/pzsoftchen/drive-agent-build/tree/main/docs)
 
 - [DAB 为什么存在](docs/concepts/why-dab.zh.md)
 - [路线图](docs/roadmap.zh.md)

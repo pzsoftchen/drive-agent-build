@@ -2,8 +2,9 @@
 
 # 变更日志
 
-## 未发布
+## 0.1.1 — 2026-11-19
 
+- 以 `@saydone/dab` 发布 CLI，并增加 GitHub Actions release workflow、npm provenance 和逐 tag 的 GitHub Release。
 - `schemaVersion: 1` 已加入每个 `--json` 结果，并拒绝 `--json` 与 `--help` 或 `--version` 组合使用。
 - Agent、skill 和 rule frontmatter 现在保留未知顶层字段，并以 did-you-mean 提示发出警告（包含字母转置）；DAB 自有 YAML 仍然严格。
 - 增加 `dab detect --strict`，在项目/配置类 warning 时让 CI 失败。

@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/process/2026-11-19-github-release-flow.md
+translation: .agents/notes/implemented/process/2026-11-19-github-release-flow.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: 27a46e0702267400e05744006a03c5d474187ef06c06341c60ae58e0444a5046
+    translation: f523f24f2bd7d8197a62c18991609e0fa6021c0afc251e465a3351c7195157d5
+  - index: 2
+    level: 2
+    source: 69941c3d0f5c2f6d9f2b12873bf18029ec59b4e8ded2d3ae691ec3a691923fed
+    translation: cc7ec94ea4a28eea9a4378d098401fd5e6d105ac214a887cb1f1ee24d0b91282
+  - index: 3
+    level: 2
+    source: 848216dda39cd29f1c17f3df99ff132c525e70bb88c57a2a6aa1319e8822339f
+    translation: 23dff484b2dcfe516764dc9172aa1cc410ab67e98c1f3f461b174328d43cb2fe
+  - index: 4
+    level: 2
+    source: db3c69be56a1209e8d1fcfbd6588a0b8242c24d70307ba60f5a2d0a96fc9d989
+    translation: b17845f088e14bec0228d7b9cb7812c6204bd3263a622f2c6655e673e0836ba8
+  - index: 5
+    level: 2
+    source: 01834822575288dff31c5a7046203fe69eec766b089602d8cd5b8d49d211666b
+    translation: a6a2281636985814f365267673060aab3eae2694d200aab9b8568b08d38dc5fd
+  - index: 6
+    level: 2
+    source: eae7a3656a40323eeecf36b3a69fe4d4ba106c349f0fd97cfbf94b9ec9e6818f
+    translation: cb2092d595bf7a5c946542308d0f496186bfca949f4293c76f34ec1b1d90acc4
+  - index: 7
+    level: 2
+    source: ad408f22d953da3fe5859e6c4c9e04087ff045a1c45d191f21ce18c649d050c4
+    translation: d9b2f0b328f88c7ef71ba10f6ce4877b1370dd983123f2f9292189779af3b025

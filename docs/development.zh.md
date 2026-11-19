@@ -46,3 +46,5 @@ pnpm test
 ## 发布
 
 只在 `package.json` 中更新版本；`dab --version` 从那里读取。更新 `CHANGELOG.md` 及其中文配对，运行完整测试和 `pnpm doc-sync`，运行 `npm pack` 并在临时目录安装 tarball 做 CLI 冒烟测试，然后打标签。
+
+Release workflow 由 `v*` tag 触发。它检查 tag 与 `package.json` 一致，运行完整测试和 pack 冒烟测试，以 npm provenance 发布 `@saydone/dab`，并通过 `npm-release` environment 创建 GitHub Release。`npm-release` environment 需要维护者批准。首次发布使用 `npm publish --access public` 手动完成；在使用 OIDC 前，为 `.github/workflows/release.yml` 和 `npm-release` environment 配置 npm Trusted Publisher。

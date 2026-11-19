@@ -46,3 +46,5 @@ Published product docs are paired. Run `pnpm run verify-translation-pairing --wr
 ## Release
 
 Update the version only in `package.json`; `dab --version` reads it from there. Update `CHANGELOG.md` and its Chinese pair, run the full suite and `pnpm doc-sync`, run `npm pack` and install the tarball in a temporary directory for a CLI smoke test, then tag the release.
+
+The release workflow runs on `v*` tags. It checks that the tag matches `package.json`, runs the full suite and pack smoke test, publishes `@saydone/dab` with npm provenance through the `npm-release` environment, and creates the GitHub Release. The `npm-release` environment requires maintainer approval. The first release is published manually with `npm publish --access public`; configure the npm Trusted Publisher for `.github/workflows/release.yml` and the `npm-release` environment before using OIDC.

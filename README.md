@@ -65,16 +65,32 @@ The diagram describes the combined target model. The current `main` branch imple
 
 ## Quick start
 
-Requirements: Node.js `>=24.9`, pnpm, Claude Code `>=2.1.277`, macOS or Linux.
+Requirements: Node.js `>=24.9`, Claude Code `>=2.1.277`, macOS or Linux.
+
+Run the CLI without installing:
+
+```bash
+npx @saydone/dab init /path/to/project
+cd /path/to/project
+npx @saydone/dab normalize --dry-run
+npx @saydone/dab detect
+```
+
+Install globally to use the shorter `dab` command:
+
+```bash
+npm install -g @saydone/dab
+dab --version
+```
+
+The npm package is `@saydone/dab`; `npx dab` resolves to a different package.
+
+For source development:
 
 ```bash
 pnpm install
 pnpm build
 pnpm link --global
-dab init /path/to/project
-cd /path/to/project
-dab normalize --dry-run
-dab detect
 ```
 
 Use `dab init ~/.agents` to initialize the independent global scope.
@@ -115,6 +131,8 @@ I first explored a narrower practice, DAD (Drive Agent Development): defining ho
 - Windows junctions, a GUI, a plugin marketplace and automatic DAD migration are out of scope.
 
 ## Documentation
+
+Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/main/docs)
 
 - [Why DAB exists](docs/concepts/why-dab.md)
 - [Roadmap](docs/roadmap.md)
