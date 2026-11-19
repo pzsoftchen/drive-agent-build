@@ -1,3 +1,5 @@
+import { compareStrings } from './compare.ts';
+
 export type DiagnosticSeverity = 'error' | 'warning' | 'info';
 
 export interface Diagnostic {
@@ -21,7 +23,7 @@ export function sortDiagnostics(items: readonly Diagnostic[]): Diagnostic[] {
     if (severity !== 0) {
       return severity;
     }
-    const file = (left.file ?? '').localeCompare(right.file ?? '');
+    const file = compareStrings(left.file ?? '', right.file ?? '');
     if (file !== 0) {
       return file;
     }
@@ -29,7 +31,7 @@ export function sortDiagnostics(items: readonly Diagnostic[]): Diagnostic[] {
     if (line !== 0) {
       return line;
     }
-    return left.code.localeCompare(right.code);
+    return compareStrings(left.code, right.code);
   });
 }
 

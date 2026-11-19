@@ -2,7 +2,7 @@
 
 ## 状态
 
-提案。本 spec 需要批准后，才能编写实现计划。
+已批准；基础部分已实现（scope、manifest v2、adapter 接缝、Claude Code alignment）。Codex、DSH 和 global settings 仍属后续计划。
 
 ## 摘要
 
@@ -33,7 +33,7 @@ DAB 使用 `AGENTS.md` 和 `.agents/` 作为 Agent 配置的唯一编写源。Cl
 - 不为已经原生支持的事实引入通用中性 schema。
 - 不允许 adapter 拥有 agent、skill 或 rule 定义。
 - symlink 可用时不 copy。
-- 不做 GUI、agent loop、eval、memory promotion、插件市场或 Windows junction。
+- 本 spec 不实现 GUI、agent loop、eval、memory promotion、插件市场或 Windows junction；eval 和 memory 属于 foundation 之后的 evidence 阶段（见 roadmap）。
 
 ## 核心模型
 

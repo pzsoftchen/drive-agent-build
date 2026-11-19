@@ -134,6 +134,23 @@ generated:
 - `dab.yaml` 保存 `scope`、`targets` 以及逐 target 的生成记录，包含 source 哈希、target 哈希和投影清单。
 - `.dab/backups/` 在 `--fix` 采用 unmanaged path 前保存原始文件。
 
+## Frontmatter 兼容性
+
+- Agent、skill 和 rule 文件会投影到 Claude Code，并可能先于 DAB 获得新的顶层字段。
+- DAB 校验它解释的每个字段，保留未知顶层字段，并以警告形式报告来源文件。
+- 当未知顶层字段看起来像拼写错误时，警告会给出最接近的已知字段。scope 或权限相关 key 的拼写错误会改变实际生效行为，因此 CI 中应把这些警告视为错误。
+- DAB 自有结构（hooks、policies、manifests、memory entries）中的未知字段仍然是错误。
+- 这样 Claude Code 升级不会一次破坏所有 agent，同时保持 DAB 自有配置的 fail-loud 行为。
+
+## JSON 输出契约
+
+- 每个支持 `--json` 的命令都在顶层包含 `schemaVersion: 1`。
+- 版本覆盖顶层信封和任意嵌套 provider payload。不同命令使用不同的 payload 形状（`targets`、`target`、`normalize`）；嵌套 payload 不单独携带版本。
+- JSON 中的路径相对于 scope root，`init.root` 除外，它标识被初始化的 scope。
+- `--json` 不能与 `--help` 或 `--version` 组合使用。
+- 发布可以新增字段；删除字段或改变含义必须提升 schema version。
+- CLI JSON 是公开契约。导入的 TypeScript result 类型属于实现细节。
+
 ## 策略编译
 
 共享策略只覆盖路径读写限制、命令执行限制和少量能力集合。Claude Code 专属规则放在 adapter 中。deny 优先，精确的 allow/deny 冲突会让编译失败，而不是扩大权限。
@@ -165,3 +182,4 @@ execute:
 - Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。
 - v0.1 没有 eval 循环；证据工作记录在 `docs/roadmap.md`。
 - v0.1 只接受默认的 `.agents` 和 `.claude` 路径。
+- v0.1 的所有命令都拒绝 Windows；junction 支持推迟到后续版本。

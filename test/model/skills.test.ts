@@ -53,6 +53,24 @@ describe('skill discovery', () => {
     expect(result.diagnostics.map((item) => item.code)).toContain('skill.invalid-frontmatter');
   });
 
+  it('warns about unknown frontmatter fields and keeps the skill', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/skills/future-skill/SKILL.md',
+      '---\nname: future-skill\ndescription: Uses a future field.\nfutureField: true\n---\nBody.\n',
+    );
+
+    const result = await discoverSkills(fixture.root, fixture.agents);
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'skill.unknown-frontmatter',
+      severity: 'warning',
+    }));
+    expect(result.items[0]).toMatchObject({ name: 'future-skill' });
+    expect(result.items[0]?.frontmatter.futureField).toBe(true);
+  });
+
   it('rejects duplicate skill names', async () => {
     const fixture = await project();
     await writeProjectFile(

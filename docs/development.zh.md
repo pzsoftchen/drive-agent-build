@@ -45,4 +45,4 @@ pnpm test
 
 ## 发布
 
-更新 `package.json` 中的版本，更新 `CHANGELOG.md` 及其中文配对，运行完整测试和 `pnpm doc-sync`，然后打标签。
+只在 `package.json` 中更新版本；`dab --version` 从那里读取。更新 `CHANGELOG.md` 及其中文配对，运行完整测试和 `pnpm doc-sync`，运行 `npm pack` 并在临时目录安装 tarball 做 CLI 冒烟测试，然后打标签。

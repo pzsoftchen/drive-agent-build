@@ -298,7 +298,9 @@ describe('normalizeProject', () => {
     expect(result.ok).toBe(true);
     expect(result.settings.changed).toBe(true);
     expect(result.backups).toHaveLength(1);
-    expect(await readFile(result.backups[0] ?? '', 'utf8')).toBe('{"permissions":{}}\n');
+    expect(result.backups[0]).toMatch(/^\.dab\/backups\//);
+    expect(await readFile(join(project.root, result.backups[0] ?? ''), 'utf8'))
+      .toBe('{"permissions":{}}\n');
     expect(await readFile(settingsPath, 'utf8')).not.toBe('{"permissions":{}}\n');
   });
 
@@ -327,13 +329,9 @@ describe('normalizeProject', () => {
 
     expect(fixed.ok).toBe(true);
     expect(await readlink(target)).toContain('.agents/agents/reviewer.md');
-    expect(fixed.backups.some((item) => item.endsWith('.claude/agents/reviewer.md'))).toBe(true);
-    expect(
-      await readFile(
-        fixed.backups.find((item) => item.endsWith('.claude/agents/reviewer.md')) ?? '',
-        'utf8',
-      ),
-    ).toBe('physical copy\n');
+    const backup = fixed.backups.find((item) => item.endsWith('.claude/agents/reviewer.md'));
+    expect(backup).toMatch(/^\.dab\/backups\//);
+    expect(await readFile(join(project.root, backup ?? ''), 'utf8')).toBe('physical copy\n');
   });
 
   it('blocks agent hooks that do not reference a managed project hook', async () => {
@@ -551,6 +549,40 @@ Unsafe.
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
   });
 
+  it('projects a fact with a typo field and suggests the closest known field', async () => {
+    const project = await projectFixture();
+    await writeProjectFile(
+      project.root,
+      '.agents/rules/typo.md',
+      '---\npathz: src/**\n---\nApply only to src.\n',
+    );
+
+    const result = await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'rule.unknown-frontmatter',
+      severity: 'warning',
+      message: expect.stringContaining('did you mean paths?'),
+    }));
+    expect(await readlink(join(project.root, '.claude/rules/typo.md')))
+      .toContain('.agents/rules/typo.md');
+  });
+
+  it('checks the Claude Code version once per normalize', async () => {
+    const project = await projectFixture();
+    let calls = 0;
+    const runner: CommandRunner = async () => {
+      calls += 1;
+      return { stdout: '2.1.325 (Claude Code)\n', stderr: '', exitCode: 0 };
+    };
+
+    const result = await normalizeProject({ cwd: project.root, runner });
+
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(1);
+  });
+
   it('rejects Windows and missing manifests', async () => {
     const project = await projectFixture();
     await expect(
@@ -578,6 +610,25 @@ Unsafe.
     }
   });
 
+  it('emits a versioned JSON error envelope', async () => {
+    const project = await makeProject();
+    projects.push(project);
+    const stdout: string[] = [];
+
+    const code = await runNormalize(
+      { cwd: project.root, json: true },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(2);
+    const payload = JSON.parse(stdout.join('')) as {
+      schemaVersion: number;
+      error: { code: string };
+    };
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.error.code).toBe('config.missing');
+  });
+
   it('emits machine-readable JSON from runNormalize', async () => {
     const project = await projectFixture();
     const stdout: string[] = [];
@@ -594,11 +645,17 @@ Unsafe.
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
     const payload = JSON.parse(stdout.join('')) as {
+      schemaVersion: number;
       ok: boolean;
       settings: { path: string; sha256: string };
+      backups: string[];
+      gitignore: { changed: boolean; path: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
     expect(payload.settings.path).toBe('.claude/settings.json');
     expect(payload.settings.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(payload.backups).toEqual([]);
+    expect(payload.gitignore).toEqual({ changed: true, path: '.gitignore' });
   });
 });

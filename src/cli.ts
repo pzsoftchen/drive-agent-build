@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
 import { ExitCode } from './core/exit-codes.ts';
-import { stableJson } from './core/json.ts';
+import { contractJson } from './core/json.ts';
 import { runDetect } from './commands/detect.ts';
 import { runInit } from './commands/init.ts';
 import { runNormalize } from './commands/normalize.ts';
@@ -14,7 +14,21 @@ import { runPolicyExplain } from './commands/policy-explain.ts';
 import { TARGET_PROVIDERS } from './model/schemas.ts';
 import type { TargetProvider } from './model/types.ts';
 
-export const PROGRAM_VERSION = '0.1.0';
+function readProgramVersion(): string {
+  const parsed: unknown = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  if (
+    typeof parsed !== 'object'
+    || parsed === null
+    || typeof (parsed as { version?: unknown }).version !== 'string'
+  ) {
+    throw new Error('package.json must declare a string version');
+  }
+  return (parsed as { version: string }).version;
+}
+
+export const PROGRAM_VERSION = readProgramVersion();
 
 export interface CliContext {
   cwd: string;
@@ -208,6 +222,7 @@ async function dispatchPolicy(
       ...(agent === undefined ? {} : { agent }),
       ...(target === undefined ? {} : { target }),
       json,
+      platform: process.platform,
       ...(ctx.runner === undefined ? {} : { runner: ctx.runner }),
     },
     { stdout: ctx.stdout, stderr: ctx.stderr },
@@ -248,11 +263,28 @@ export async function runCli(argv: string[], ctx: CliContext): Promise<number> {
   const args = argv.filter((arg) => arg !== '--json');
 
   try {
+    if (json && args.length === 0) {
+      throw new UsageError('--json requires a command', 'usage.json-command');
+    }
+    const command = args[0];
+    if (
+      json
+      && (command === '--help'
+        || command === '-h'
+        || command === 'help'
+        || command === '--version'
+        || command === '-v')
+    ) {
+      throw new UsageError(
+        '--json cannot be combined with --help or --version',
+        'usage.json-help',
+      );
+    }
     return await dispatch(args, ctx, json);
   } catch (error) {
     if (error instanceof DabError) {
       if (json) {
-        ctx.stdout(stableJson({ ok: false, error: error.toJSON() }));
+        ctx.stdout(contractJson({ ok: false, error: error.toJSON() }));
       } else {
         ctx.stderr(`dab: ${error.message}\n`);
         if (error.hint !== undefined) {
@@ -265,7 +297,7 @@ export async function runCli(argv: string[], ctx: CliContext): Promise<number> {
     const message = error instanceof Error ? error.message : String(error);
     if (json) {
       ctx.stdout(
-        stableJson({
+        contractJson({
           ok: false,
           error: { code: 'internal.error', message, exitCode: ExitCode.Internal },
         }),

@@ -276,7 +276,7 @@ export const AgentFrontmatterSchema = z
     initialPrompt: z.string().optional(),
     experimental: z.record(z.string(), z.unknown()).optional(),
   })
-  .strict();
+  .passthrough();
 
 export const SkillFrontmatterSchema = z
   .object({
@@ -301,13 +301,13 @@ export const SkillFrontmatterSchema = z
     license: z.string().optional(),
     compatibility: z.string().optional(),
   })
-  .strict();
+  .passthrough();
 
 export const RuleFrontmatterSchema = z
   .object({
     paths: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
   })
-  .strict();
+  .passthrough();
 
 export const MemoryEntrySchema = z
   .object({

@@ -15,6 +15,13 @@ DAB 面向 Claude Code `>=2.1.277`，只写入公开配置格式。本阶段它�
 
 `AGENTS.md` 仍是唯一编写指令源。Global scope 在 `$HOME` 下使用同样的布局，指令位于 `~/.agents/AGENTS.md`。
 
+## Frontmatter 兼容性
+
+- Agent、skill 和 rule frontmatter 可能随 Claude Code 演进而获得新的顶层字段。
+- DAB 校验它解释的字段，并对未知顶层字段发出警告；fact 仍会被投影。
+- 警告会提示接近的已知字段（例如 `pathz` → `paths`）。scope 或权限 key 的拼写错误会扩大实际生效的规则或工具集，因此 CI 中应把这些警告视为错误。
+- DAB 自有的 hook、policy、manifest 或 memory YAML 中的未知字段仍然是错误。
+
 ## 指令产物
 
 - `.claude/CLAUDE.md` 在 project scope 是指向 `../AGENTS.md` 的符号链接，在 global scope 指向 `../.agents/AGENTS.md`。

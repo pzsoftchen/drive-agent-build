@@ -24,6 +24,22 @@
 - 用户可见文档保持英中配对；`docs/superpowers/**` 默认中文单语，不参与配对。
 - Commit message 使用 `feat:`、`refactor:`、`test:` 或 `docs:` 前缀，并以 `Co-Authored-By: Claude Code <noreply@anthropic.com>` 结尾。
 
+## 发布前缺口更新（2026-11-18）
+
+本计划暂不执行；先发布 Claude-only v0.1.x。发布前已完成：
+
+- `schemaVersion: 1` 已加入；`normalize`/`init` 的 JSON 路径已统一为 scope-relative，adapter 重构只追加字段。
+- `src/core/platform.ts` 的公共平台守卫已覆盖 `normalize`、`init`、`detect` 和 `policy explain`。
+- `normalize` 已通过 memoized runner 只执行一次 `claude --version`。
+
+执行本计划时仍需补充：
+
+- Modify `src/core/gitignore.ts`：由 adapter 提供 target-owned ignore entries，`normalize` 合并而非使用 Claude 专属常量。
+- Modify `src/init/scanner.ts`：provider-owned init scan/inspect，移除公共层的 `hasClaudeSettings` 假设。
+- Modify `src/commands/normalize.ts`、`detect.ts`：把剩余的 Claude-specific layout 与 payload 形状移入 adapter。
+- 确定 provider-specific path 的长期位置，并保持 v2 `paths.claude` 可读。
+- 验收增加：第二个 adapter 的 JSON 输出仍符合 `schemaVersion` 兼容规则。
+
 ## Review Focus
 
 1. **Claude behavior parity**：layout 重构后，Claude 的 settings、instruction symlink、projection、generated records 和错误退出码必须与当前一致。
@@ -52,7 +68,9 @@
 - `src/model/types.ts`：`ProjectPaths` 移除 `claude`；`GeneratedTarget.instructions.path` 改为 string。
 - `src/model/project-manifest.ts`：`resolveProjectPaths` 不再返回 `claude`；adapter 读取 legacy `manifest.paths.claude`。
 - `src/model/schemas.ts`：generated instructions path 改为 string；保留 v2 `paths.claude` 兼容字段。
-- `src/commands/normalize.ts`：layout/source safety/target loop，移除 Claude imports。
+- `src/commands/normalize.ts`：layout/source safety/target loop，移除 Claude imports；只追加 JSON 字段，保留 `schemaVersion` 兼容。
+- `src/core/gitignore.ts`：改为 adapter-owned ignore entries。
+- `src/init/scanner.ts`：provider-owned init scan/inspect。
 - `src/commands/detect.ts`：layout/source safety、adapter label/status，移除 Claude checks。
 - `src/commands/init.ts`：adapter layout/init files/target inspection，移除 Claude imports。
 - `src/commands/policy-explain.ts`：adapter `explainPolicy`，移除 Claude compiler/options/version。

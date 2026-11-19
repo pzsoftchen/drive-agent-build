@@ -359,12 +359,14 @@ describe('runDetect', () => {
     expect(code).toBe(0);
     expect(first.join('')).toBe(second.join(''));
     const payload = JSON.parse(first.join('')) as {
+      schemaVersion: number;
       ok: boolean;
       exitCode: number;
       diagnostics: unknown[];
       targets: Array<{ provider: string; statuses: unknown[] }>;
       summary: { errors: number; warnings: number };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
     expect(payload.exitCode).toBe(0);
     expect(Array.isArray(payload.diagnostics)).toBe(true);
@@ -393,8 +395,28 @@ describe('runDetect', () => {
 
     expect(code).toBe(2);
     const payload = JSON.parse(stdout.join('')) as {
+      schemaVersion: number;
       error: { code: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('config.missing');
+  });
+
+  it('rejects Windows with a versioned JSON error', async () => {
+    const project = await makeProject();
+    projects.push(project);
+    const stdout: string[] = [];
+    const code = await runDetect(
+      { cwd: project.root, json: true, platform: 'win32', runner: goodRunner },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(3);
+    const payload = JSON.parse(stdout.join('')) as {
+      schemaVersion: number;
+      error: { code: string };
+    };
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.error.code).toBe('platform.unsupported');
   });
 });

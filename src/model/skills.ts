@@ -1,12 +1,15 @@
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
-import { parseFrontmatter } from './frontmatter.ts';
+import { describeUnknownTopLevelFields, parseFrontmatter } from './frontmatter.ts';
 import { KEBAB_CASE, SkillFrontmatterSchema } from './schemas.ts';
 import type { DiscoveryResult, SkillDefinition } from './types.ts';
+
+const SKILL_FRONTMATTER_FIELDS = Object.keys(SkillFrontmatterSchema.shape);
 
 function zodMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
   return error.issues
@@ -36,7 +39,7 @@ export async function discoverSkills(
   const diagnostics: Diagnostic[] = [];
   const names = new Map<string, string>();
 
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     if (!entry.isDirectory() || entry.isSymbolicLink()) {
       continue;
     }
@@ -79,6 +82,17 @@ export async function discoverSkills(
     }
 
     const name = validated.data.name ?? entry.name;
+    const unknown = describeUnknownTopLevelFields(SKILL_FRONTMATTER_FIELDS, parsed.data);
+    if (unknown.length > 0) {
+      diagnostics.push({
+        code: DiagnosticCodes.skillUnknownFrontmatter,
+        severity: 'warning',
+        message: `skill ${name} has unknown frontmatter field(s): ${unknown.join(', ')}`,
+        file,
+        line: 1,
+        hint: 'Unknown top-level fields are preserved for Claude Code compatibility; remove them if they are typos.',
+      });
+    }
     if (!KEBAB_CASE.test(name)) {
       diagnostics.push({
         code: DiagnosticCodes.skillInvalidFrontmatter,

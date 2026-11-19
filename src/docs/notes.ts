@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
@@ -37,7 +38,7 @@ async function walkNoteMarkdown(
   }
 
   const files: string[] = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     const child = relativeDir.length === 0 ? entry.name : `${relativeDir}/${entry.name}`;
     if (entry.isDirectory()) {
       if (relativeDir.length === 0 && entry.name === 'archived') {

@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { compareStrings } from '../core/compare.ts';
 import { z } from 'zod';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile, writeFileAtomic } from '../core/fs-atomic.ts';
@@ -130,7 +131,7 @@ async function walkFiles(root: string, dir = '', output: string[] = []): Promise
     }
     throw error;
   }
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     const child = dir.length === 0 ? entry.name : `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
       if (!skipDirectory(child)) {

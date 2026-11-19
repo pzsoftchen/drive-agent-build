@@ -7,6 +7,7 @@ import {
   planProjectionActions,
 } from '../../src/adapter/claude-code/projection.ts';
 import { replaceSymlink } from '../../src/core/fs-atomic.ts';
+import { sha256 } from '../../src/core/hash.ts';
 import { relativeLink } from '../../src/core/paths.ts';
 import type {
   GeneratedTarget,
@@ -95,6 +96,33 @@ describe('projection discovery', () => {
       '.claude/rules/testing.md',
     );
     expect(first.projections.every((item) => /^[a-f0-9]{64}$/.test(item.sourceSha256))).toBe(true);
+  });
+
+  it('hashes skill directories in code-unit order', async () => {
+    const project = await fixture();
+    const skill = [
+      '---',
+      'name: mixed',
+      'description: Mixed files.',
+      '---',
+      'Body.',
+      '',
+    ].join('\n');
+    await writeProjectFile(project.root, '.agents/skills/mixed/SKILL.md', skill);
+    await writeProjectFile(project.root, '.agents/skills/mixed/B.md', 'b');
+    await writeProjectFile(project.root, '.agents/skills/mixed/a.md', 'a');
+
+    const discovered = await discoverProjections(project.root, paths(project.root));
+    const projection = discovered.projections.find(
+      (item) => item.kind === 'skill' && item.name === 'mixed',
+    );
+    const expected = sha256([
+      `B.md\0${sha256('b')}`,
+      `SKILL.md\0${sha256(skill)}`,
+      `a.md\0${sha256('a')}`,
+    ].join('\n'));
+
+    expect(projection?.sourceSha256).toBe(expected);
   });
 });
 

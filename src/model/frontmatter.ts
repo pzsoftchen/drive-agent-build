@@ -7,6 +7,61 @@ export interface ParsedFrontmatter {
   bodyStartLine: number;
 }
 
+export function unknownTopLevelFields(
+  known: readonly string[],
+  data: Record<string, unknown>,
+): string[] {
+  const allowed = new Set(known);
+  return Object.keys(data).filter((key) => !allowed.has(key)).sort();
+}
+
+function editDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = previous[0] ?? 0;
+    previous[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const above = previous[j] ?? 0;
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      previous[j] = Math.min(
+        (previous[j] ?? 0) + 1,
+        (previous[j - 1] ?? 0) + 1,
+        diagonal + cost,
+      );
+      diagonal = above;
+    }
+  }
+  return previous[right.length] ?? 0;
+}
+
+export function nearestKnownField(
+  field: string,
+  known: readonly string[],
+): string | undefined {
+  const normalized = field.toLowerCase();
+  const threshold = normalized.length <= 6 ? 1 : 2;
+  let best: string | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of known) {
+    const distance = editDistance(normalized, candidate.toLowerCase());
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return bestDistance <= threshold ? best : undefined;
+}
+
+export function describeUnknownTopLevelFields(
+  known: readonly string[],
+  data: Record<string, unknown>,
+): string[] {
+  return unknownTopLevelFields(known, data).map((field) => {
+    const suggestion = nearestKnownField(field, known);
+    return suggestion === undefined ? field : `${field} (did you mean ${suggestion}?)`;
+  });
+}
+
 export function parseFrontmatter(text: string, file: string): ParsedFrontmatter {
   const lines = text.split(/\r?\n/);
   if ((lines[0] ?? '').trim() !== '---') {

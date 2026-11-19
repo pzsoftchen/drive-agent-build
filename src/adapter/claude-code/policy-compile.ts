@@ -1,3 +1,4 @@
+import { compareStrings } from '../../core/compare.ts';
 import type { Diagnostic } from '../../core/diagnostics.ts';
 import { assertRelativePath } from '../../core/paths.ts';
 import type {
@@ -238,7 +239,7 @@ function effectiveProjectHooks(
   }
 
   return output.sort((left, right) =>
-    left.order - right.order || left.id.localeCompare(right.id));
+    left.order - right.order || compareStrings(left.id, right.id));
 }
 
 function effectiveAgentHooks(
@@ -360,7 +361,7 @@ export function compilePolicy(
   const managedCommands = buildManagedHookCommands(hooks);
   const agentHooks = effectiveAgentHooks(agent, projectHookIds, managedCommands, diagnostics);
   const effectiveHooks = [...projectHooks, ...agentHooks].sort((left, right) =>
-    left.order - right.order || left.id.localeCompare(right.id));
+    left.order - right.order || compareStrings(left.id, right.id));
 
   const sources = [
     PROJECT_SOURCE,

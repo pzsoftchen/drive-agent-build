@@ -314,10 +314,11 @@ describe('shim and backend safety', () => {
     });
 
     expect(result.ok).toBe(true);
-    const backup = result.backups.find((item) => item.endsWith('.claude/CLAUDE.md'));
-    expect(backup).toBeDefined();
-    expect((await lstatOrNull(backup ?? ''))?.isSymbolicLink()).toBe(true);
-    expect(await readlink(backup ?? '')).toBe('missing.md');
+    const backupPath = result.backups.find((item) => item.endsWith('.claude/CLAUDE.md'));
+    expect(backupPath).toMatch(/^\.dab\/backups\//);
+    const backup = join(project.root, backupPath ?? '');
+    expect((await lstatOrNull(backup))?.isSymbolicLink()).toBe(true);
+    expect(await readlink(backup)).toBe('missing.md');
     expect(await readlink(shim)).toBe('../AGENTS.md');
   });
 

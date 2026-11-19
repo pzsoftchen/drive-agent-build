@@ -15,6 +15,7 @@
 - 从子目录运行时，其他命令向上查找到最近的项目 manifest 或 source tree。
 - 位于 `$HOME/.agents` 内时，命令使用 global scope；global source root 始终是 `$HOME/.agents`。
 - Project 和 global scope 独立检查和 normalize。没有 `dab global` 命令，也没有跨 scope 合并。
+- v0.1 的所有命令都拒绝 Windows。
 
 ## `dab init`
 
@@ -121,33 +122,50 @@ dab normalize [--dry-run] [--fix] [--json]
 
 规划或应用投影修复、`.claude/CLAUDE.md` 指令产物、`.claude/settings.json`、`dab.yaml` 生成记录和 `.gitignore`。它会在写入前预检每个启用的 target；一个 target 失败会阻止所有写入。冲突会在写入前停止。`--fix` 会在替换前把冲突文件备份到 `.dab/backups/`。
 
-JSON 输出包含每个启用 target 的条目：
+JSON 输出包含顶层结果和每个启用 target 的条目：
 
 ```json
 {
-  "ok": true,
+  "actions": [],
+  "backups": [],
+  "diagnostics": [],
   "dryRun": false,
+  "exitCode": 0,
+  "gitignore": {
+    "changed": false,
+    "path": ".gitignore"
+  },
+  "manifestUpdated": false,
+  "ok": true,
+  "schemaVersion": 1,
+  "settings": {
+    "changed": false,
+    "path": ".claude/settings.json",
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "shimAction": "none",
   "targets": [
     {
-      "provider": "claude-code",
       "actions": [],
-      "settings": {
-        "path": ".claude/settings.json",
-        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "changed": false
-      },
+      "backups": [],
       "instructions": {
-        "path": ".claude/CLAUDE.md",
-        "mode": "symlink",
         "action": "none",
+        "mode": "symlink",
+        "path": ".claude/CLAUDE.md",
         "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       },
-      "backups": []
+      "provider": "claude-code",
+      "settings": {
+        "changed": false,
+        "path": ".claude/settings.json",
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
     }
   ]
 }
 ```
 
+- 所有路径都相对于 scope root，包括 `gitignore.path` 和 backup 条目。
 - `--dry-run` 运行同一预检和退出码，但不写入。
 - Global scope 下 `~/.claude/settings.json` 和 `$HOME/.gitignore` 只读，normalize 会警告 global settings 尚未采用。
 
@@ -174,10 +192,11 @@ dab policy explain [--agent <name>] [--target <provider>] [--json]
 
 ## JSON 输出
 
-成功的 JSON 输出已排序且稳定。错误使用相同的信封：
+每个 JSON 结果都在顶层包含 `schemaVersion: 1`；嵌套 payload 继承该版本。成功的输出已排序且稳定，且与进程 locale 无关。发布可以新增字段，但删除字段或改变含义必须提升 schema version。`--json` 不能与 `--help` 或 `--version` 组合使用。错误使用相同的信封：
 
 ```json
 {
+  "schemaVersion": 1,
   "ok": false,
   "error": {
     "code": "usage.unknown-command",

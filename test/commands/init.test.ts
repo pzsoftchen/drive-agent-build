@@ -56,12 +56,14 @@ describe('runInit', () => {
 
     expect(code).toBe(0);
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       ok: boolean;
       scope: string;
       root: string;
       created: string[];
       normalize: { ok: boolean };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
     expect(payload.scope).toBe('project');
     expect(payload.root).toBe(root);
@@ -233,6 +235,8 @@ describe('runInit', () => {
     );
     expect(await lstatOrNull(join(root, '.claude/CLAUDE.md'))).not.toBeNull();
     expect(normalized.backups.some((item) => item.endsWith('.claude/settings.json'))).toBe(true);
+    expect(normalized.backups.every((item) => item.startsWith('.dab/backups/'))).toBe(true);
+    expect(normalized.gitignore.path).toBe('.gitignore');
   });
 
   it('rejects --ai with --dry-run', async () => {
@@ -378,8 +382,10 @@ describe('runInit', () => {
     expect(code).toBe(2);
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       error: { code: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('ai.invalid-proposal');
   });
 
@@ -390,8 +396,10 @@ describe('runInit', () => {
     expect(code).toBe(2);
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       error: { code: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('init.ai-confirmation-required');
   });
 

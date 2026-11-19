@@ -8,12 +8,13 @@ import { formatDiagnostics, type Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
-import { stableJson } from '../core/json.ts';
+import { contractJson } from '../core/json.ts';
 import {
   assertParentInsideRoot,
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
+import { assertSupportedPlatform } from '../core/platform.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
 import {
   inspectInstructionTarget,
@@ -477,14 +478,7 @@ function formatInit(result: InitResult): string {
 }
 
 export async function initializeProject(options: InitOptions): Promise<InitResult> {
-  const platform = options.platform ?? process.platform;
-  if (platform === 'win32') {
-    throw new ValidationError(
-      'Windows is not supported in v0.1',
-      'platform.unsupported',
-      { hint: 'Use macOS or Linux. Windows junction support is planned for a later release.' },
-    );
-  }
+  assertSupportedPlatform(options.platform);
   if (options.profile !== undefined && options.profile !== 'feature') {
     throw new UsageError(
       `unsupported profile: ${options.profile}; v0.1 supports: feature`,
@@ -722,7 +716,7 @@ export async function runInit(options: InitOptions, io: InitIO): Promise<number>
         ?? (options.json === true ? (text: string) => io.stderr(text) : io.stdout),
     });
     if (options.json === true) {
-      io.stdout(stableJson(result));
+      io.stdout(contractJson(result));
     } else if (result.ok) {
       io.stdout(formatInit(result));
     } else {
@@ -732,7 +726,7 @@ export async function runInit(options: InitOptions, io: InitIO): Promise<number>
   } catch (error) {
     if (error instanceof DabError) {
       if (options.json === true) {
-        io.stdout(stableJson({ ok: false, error: error.toJSON() }));
+        io.stdout(contractJson({ ok: false, error: error.toJSON() }));
       } else {
         io.stderr(`dab: ${error.message}\n`);
         if (error.hint !== undefined) {

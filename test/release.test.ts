@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PROGRAM_VERSION } from '../src/cli.ts';
 
 const root = process.cwd();
 
@@ -14,7 +15,8 @@ describe('release metadata', () => {
       repository: { url: string };
     };
 
-    expect(pkg.version).toBe('0.1.0');
+    expect(pkg.version).toBe(PROGRAM_VERSION);
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(pkg.license).toBe('MIT');
     expect(pkg.engines.node).toBe('>=24.9');
     expect(pkg.bin.dab).toBe('dist/cli.js');
