@@ -4,6 +4,22 @@ English | [中文](cli.zh.md)
 
 The public command is `dab`. All commands support `--json`, and exit codes distinguish usage, validation and backend problems.
 
+## Install
+
+```bash
+npx @saydone/dab --version
+npx @saydone/dab init /path/to/project
+```
+
+Or install globally to use `dab`:
+
+```bash
+npm install -g @saydone/dab
+dab --version
+```
+
+The npm package is `@saydone/dab`; `npx dab` resolves to a different package. Requires Node.js `>=24.9`, Claude Code `>=2.1.277`, macOS or Linux.
+
 ## Scope and root discovery
 
 | Command | Root |

@@ -1,6 +1,6 @@
 {
-  "name": "drive-agent-builder",
-  "version": "0.1.0",
+  "name": "@saydone/dab",
+  "version": "0.1.1",
   "description": "DAB turns AGENTS.md and .agents/ into governed Claude Code configuration.",
   "type": "module",
   "bin": {
@@ -11,15 +11,24 @@
     "LICENSE",
     "README.md",
     "README.zh.md",
+    "CHANGELOG.md",
+    "CHANGELOG.zh.md",
     "AGENTS.md"
   ],
   "engines": {
     "node": ">=24.9"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
+  "homepage": "https://github.com/pzsoftchen/drive-agent-build#readme",
   "repository": {
     "type": "git",
     "url": "https://github.com/pzsoftchen/drive-agent-build.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pzsoftchen/drive-agent-build/issues"
   },
   "keywords": [
     "agents",

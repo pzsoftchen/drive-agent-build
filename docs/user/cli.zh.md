@@ -4,6 +4,22 @@
 
 公开命令是 `dab`。所有命令都支持 `--json`，退出码区分配置用法、校验和后端问题。
 
+## 安装
+
+```bash
+npx @saydone/dab --version
+npx @saydone/dab init /path/to/project
+```
+
+或者全局安装后使用 `dab`：
+
+```bash
+npm install -g @saydone/dab
+dab --version
+```
+
+npm 包名是 `@saydone/dab`；`npx dab` 会解析到另一个包。需要 Node.js `>=24.9`、Claude Code `>=2.1.277`、macOS 或 Linux。
+
 ## Scope 与 Root 发现
 
 | 命令 | Root |
