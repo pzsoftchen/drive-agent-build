@@ -67,6 +67,8 @@ describe('release metadata', () => {
       'gh release create',
       'npm view "@saydone/dab@$version"',
       'npx --no-install @saydone/dab --version',
+      'node dist/cli.js detect --strict',
+      'node dist/cli.js policy explain --json',
     ]) {
       expect(workflow).toContain(expected);
     }

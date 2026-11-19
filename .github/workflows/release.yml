@@ -59,7 +59,9 @@ jobs:
       - name: Check generated manifest is current
         run: git diff --exit-code
       - name: Detect drift
-        run: node dist/cli.js detect
+        run: node dist/cli.js detect --strict
+      - name: Explain policy
+        run: node dist/cli.js policy explain --json
       - name: Normalize dry run
         run: node dist/cli.js normalize --dry-run
       - name: Pack
