@@ -1,5 +1,6 @@
 import { lstat, readdir, readFile, readlink, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { compareStrings } from '../../core/compare.ts';
 import type { Diagnostic } from '../../core/diagnostics.ts';
 import {
   backupPath,
@@ -58,7 +59,7 @@ export { renderClaudeMdShim } from './instructions.ts';
 async function hashDirectory(dir: string): Promise<string> {
   const entries = await readdir(dir, { withFileTypes: true });
   const parts: string[] = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     const absolute = join(dir, entry.name);
     if (entry.isSymbolicLink()) {
       parts.push(`${entry.name}\0link:${await readlink(absolute)}`);
@@ -173,7 +174,7 @@ export async function discoverProjections(
 
   const rank = { agent: 0, skill: 1, rule: 2 } as const;
   projections.sort((left, right) =>
-    rank[left.kind] - rank[right.kind] || left.target.localeCompare(right.target));
+    rank[left.kind] - rank[right.kind] || compareStrings(left.target, right.target));
 
   return { projections, diagnostics };
 }

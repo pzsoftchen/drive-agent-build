@@ -1,17 +1,17 @@
 import { homedir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
-import type { CommandRunner } from '../core/command.ts';
+import { runCommand, type CommandRunner } from '../core/command.ts';
 import {
   formatDiagnostics,
   hasErrors,
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
-import { DabError, ValidationError } from '../core/errors.ts';
+import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
 import { DAB_GITIGNORE_ENTRIES, ensureGitignoreBlock } from '../core/gitignore.ts';
-import { stableJson } from '../core/json.ts';
+import { contractJson, stableJson } from '../core/json.ts';
 import {
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
@@ -19,6 +19,7 @@ import {
   realPathNearest,
   toPosix,
 } from '../core/paths.ts';
+import { assertSupportedPlatform } from '../core/platform.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
 import type {
   TargetInstructionsPlan,
@@ -70,8 +71,13 @@ export interface TargetNormalizeResult {
   backups: string[];
 }
 
+/**
+ * Paths in this result are relative to `root`. `root` is absolute so consumers
+ * can resolve them without guessing which directory the command walked up from.
+ */
 export interface NormalizeResult {
   ok: boolean;
+  root: string;
   dryRun: boolean;
   exitCode: ExitCode;
   actions: string[];
@@ -124,13 +130,16 @@ function emptySettings(): NormalizeResult['settings'] {
 function targetResult(
   plan: TargetNormalizePlan,
   backups: readonly string[] = [],
+  root?: string,
 ): TargetNormalizeResult {
   return {
     provider: plan.provider,
     actions: plan.actions,
     ...(plan.settings === undefined ? {} : { settings: plan.settings }),
     ...(plan.instructions === undefined ? {} : { instructions: plan.instructions }),
-    backups: [...backups],
+    backups: root === undefined
+      ? [...backups]
+      : backups.map((backup) => toPosix(relative(root, resolve(root, backup)))),
   };
 }
 
@@ -156,6 +165,7 @@ function compatShimAction(targets: readonly TargetNormalizeResult[]): string {
 }
 
 function blockedResult(
+  root: string,
   options: NormalizeOptions,
   diagnostics: Diagnostic[],
   extras: {
@@ -168,6 +178,7 @@ function blockedResult(
   const compat = extras.compatTargets ?? targets;
   return {
     ok: false,
+    root,
     dryRun: options.dryRun === true,
     exitCode: extras.exitCode ?? ExitCode.Validation,
     actions: targets.flatMap((item) => item.actions),
@@ -184,6 +195,23 @@ function blockedResult(
 function backupRootFor(root: string, now: Date): string {
   const stamp = now.toISOString().replaceAll(':', '-').replaceAll('.', '-');
   return join(root, '.dab', 'backups', stamp);
+}
+
+/**
+ * The command layer checks the runtime before source validation and the target
+ * adapter checks again for direct callers. Cache the version command so both
+ * checks observe one `claude --version` invocation.
+ */
+function memoizeClaudeVersion(runner: CommandRunner = runCommand): CommandRunner {
+  let cached: ReturnType<CommandRunner> | undefined;
+  return (cmd, args, opts) => {
+    if (cmd === 'claude' && args.length === 1 && args[0] === '--version') {
+      // Resolve inside a promise so a synchronous throw is cached too.
+      cached ??= Promise.resolve().then(() => runner(cmd, args, opts));
+      return cached;
+    }
+    return runner(cmd, args, opts);
+  };
 }
 
 async function assertSourceTreesSafe(root: string): Promise<void> {
@@ -251,15 +279,9 @@ async function projectionOverlapDiagnostics(
 }
 
 export async function normalizeProject(options: NormalizeOptions): Promise<NormalizeResult> {
-  const platform = options.platform ?? process.platform;
-  if (platform === 'win32') {
-    throw new ValidationError(
-      'Windows is not supported in v0.1',
-      'platform.unsupported',
-      { hint: 'Use macOS or Linux. Windows junction support is planned for a later release.' },
-    );
-  }
+  assertSupportedPlatform(options.platform);
 
+  const runner = memoizeClaudeVersion(options.runner);
   const home = options.home ?? homedir();
   const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
   const root = sourceRoot.root;
@@ -278,7 +300,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     await assertSourceTreesSafe(root);
   } catch (error) {
     if (error instanceof DabError) {
-      return blockedResult(options, [errorDiagnostic(error)]);
+      return blockedResult(root, options, [errorDiagnostic(error)]);
     }
     throw error;
   }
@@ -286,11 +308,11 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   // Runtime incompatibility takes precedence over authored-source validation, as
   // it did before the adapter seam. The adapter still checks for direct callers.
   if (claudeOptions !== undefined) {
-    const runtime = await checkClaudeCode(claudeOptions.minVersion, options.runner);
+    const runtime = await checkClaudeCode(claudeOptions.minVersion, runner);
     if (runtime.diagnostics.some(
       (item) => item.code === 'backend.version' && item.severity === 'error',
     )) {
-      return blockedResult(options, runtime.diagnostics, { exitCode: ExitCode.Backend });
+      return blockedResult(root, options, runtime.diagnostics, { exitCode: ExitCode.Backend });
     }
   }
 
@@ -330,7 +352,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       message: 'manifest has no enabled targets',
       hint: 'Enable at least one target or omit it from the manifest.',
     });
-    return blockedResult(options, diagnostics);
+    return blockedResult(root, options, diagnostics);
   }
 
   const plans: TargetNormalizePlan[] = [];
@@ -353,7 +375,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       facts,
       fix: options.fix === true,
       dryRun: options.dryRun === true,
-      ...(options.runner === undefined ? {} : { runner: options.runner }),
+      runner,
       ...(options.now === undefined ? {} : { now: options.now }),
     });
     diagnostics.push(...plan.diagnostics);
@@ -364,7 +386,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     const backendError = diagnostics.some(
       (item) => item.code === 'backend.version' && item.severity === 'error',
     );
-    return blockedResult(options, diagnostics, {
+    return blockedResult(root, options, diagnostics, {
       compatTargets: plans.map((plan) => targetResult(plan)),
       ...(backendError ? { exitCode: ExitCode.Backend } : {}),
     });
@@ -374,6 +396,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     const targets = plans.map((plan) => targetResult(plan));
     return {
       ok: true,
+      root,
       dryRun: true,
       exitCode: ExitCode.Ok,
       actions: targets.flatMap((item) => item.actions),
@@ -384,7 +407,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       backups: [],
       gitignore: {
         changed: false,
-        path: paths.scope === 'global' ? '' : join(root, '.gitignore'),
+        path: paths.scope === 'global' ? '' : '.gitignore',
       },
       manifestUpdated: false,
     };
@@ -394,7 +417,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const targets: TargetNormalizeResult[] = [];
   for (const plan of plans) {
     const applied = await plan.apply({ backupRoot });
-    targets.push(targetResult(plan, applied.backups));
+    targets.push(targetResult(plan, applied.backups, root));
   }
 
   const generated: GeneratedManifest = {
@@ -413,6 +436,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
 
   return {
     ok: true,
+    root,
     dryRun: false,
     exitCode: ExitCode.Ok,
     actions: targets.flatMap((item) => item.actions),
@@ -421,7 +445,10 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     settings: topLevelSettings(targets),
     shimAction: compatShimAction(targets),
     backups: claudeTargetResult(targets)?.backups ?? [],
-    gitignore,
+    gitignore: {
+      changed: gitignore.changed,
+      path: gitignore.path === '' ? '' : toPosix(relative(root, gitignore.path)),
+    },
     manifestUpdated,
   };
 }
@@ -439,7 +466,7 @@ function formatHuman(result: NormalizeResult): string {
   if (result.backups.length > 0) {
     lines.push(`  backups: ${result.backups.length}`);
     for (const backup of result.backups) {
-      lines.push(`    ${toPosix(relative(process.cwd(), backup))}`);
+      lines.push(`    ${toPosix(relative(process.cwd(), resolve(result.root, backup)))}`);
     }
   }
   const diagnostics = formatDiagnostics(result.diagnostics);
@@ -457,7 +484,7 @@ export async function runNormalize(
   try {
     const result = await normalizeProject(options);
     if (options.json === true) {
-      io.stdout(stableJson(result));
+      io.stdout(contractJson(result));
     } else if (result.ok) {
       io.stdout(formatHuman(result));
     } else {
@@ -467,7 +494,7 @@ export async function runNormalize(
   } catch (error) {
     if (error instanceof DabError) {
       if (options.json === true) {
-        io.stdout(stableJson({ ok: false, error: error.toJSON() }));
+        io.stdout(contractJson({ ok: false, error: error.toJSON() }));
       } else {
         io.stderr(`dab: ${error.message}\n`);
         if (error.hint !== undefined) {

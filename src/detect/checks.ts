@@ -1,5 +1,6 @@
 import { readdir, readlink } from 'node:fs/promises';
 import { dirname, extname, join, relative, resolve } from 'node:path';
+import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { sha256 } from '../core/hash.ts';
@@ -467,7 +468,7 @@ async function walkFiles(dir: string, depth = 0): Promise<string[]> {
     throw error;
   }
   const files: string[] = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     if (entry.isSymbolicLink()) {
       continue;
     }

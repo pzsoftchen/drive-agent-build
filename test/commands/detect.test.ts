@@ -59,11 +59,35 @@ describe('detectProject', () => {
     expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
   });
 
+  it('fails on warnings only when strict mode is enabled', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/rules/typo.md',
+      '---\npathz: src/**\n---\nBody.\n',
+    );
+    await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    const normal = await detectProject(detectOptions(project));
+    expect(normal.summary.warnings).toBeGreaterThan(0);
+    expect(normal.exitCode).toBe(0);
+    expect(normal.ok).toBe(true);
+
+    const strict = await detectProject({ ...detectOptions(project), strict: true });
+    expect(strict.exitCode).toBe(3);
+    expect(strict.ok).toBe(false);
+  });
+
   it('warns but does not fail when Claude Code is missing', async () => {
     const project = await initialized();
     const result = await detectProject(detectOptions(project, missingRunner));
+    const strict = await detectProject({
+      ...detectOptions(project, missingRunner),
+      strict: true,
+    });
 
     expect(result.exitCode).toBe(0);
+    expect(strict.exitCode).toBe(0);
     expect(
       result.diagnostics.some(
         (item) => item.code === 'backend.missing' && item.severity === 'warning',
@@ -359,12 +383,14 @@ describe('runDetect', () => {
     expect(code).toBe(0);
     expect(first.join('')).toBe(second.join(''));
     const payload = JSON.parse(first.join('')) as {
+      schemaVersion: number;
       ok: boolean;
       exitCode: number;
       diagnostics: unknown[];
       targets: Array<{ provider: string; statuses: unknown[] }>;
       summary: { errors: number; warnings: number };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
     expect(payload.exitCode).toBe(0);
     expect(Array.isArray(payload.diagnostics)).toBe(true);
@@ -393,8 +419,28 @@ describe('runDetect', () => {
 
     expect(code).toBe(2);
     const payload = JSON.parse(stdout.join('')) as {
+      schemaVersion: number;
       error: { code: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('config.missing');
+  });
+
+  it('rejects Windows with a versioned JSON error', async () => {
+    const project = await makeProject();
+    projects.push(project);
+    const stdout: string[] = [];
+    const code = await runDetect(
+      { cwd: project.root, json: true, platform: 'win32', runner: goodRunner },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(3);
+    const payload = JSON.parse(stdout.join('')) as {
+      schemaVersion: number;
+      error: { code: string };
+    };
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.error.code).toBe('platform.unsupported');
   });
 });

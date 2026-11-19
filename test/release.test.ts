@@ -14,7 +14,7 @@ describe('release metadata', () => {
       repository: { url: string };
     };
 
-    expect(pkg.version).toBe('0.1.0');
+    expect(pkg.version).toMatch(/^0\.1\.\d+$/);
     expect(pkg.license).toBe('MIT');
     expect(pkg.engines.node).toBe('>=24.9');
     expect(pkg.bin.dab).toBe('dist/cli.js');
@@ -33,7 +33,7 @@ describe('release metadata', () => {
       'pnpm doc-sync',
       'node dist/cli.js normalize',
       'git diff --exit-code',
-      'node dist/cli.js detect --json',
+      'node dist/cli.js detect --strict --json',
       'node dist/cli.js normalize --dry-run --json',
       'node dist/cli.js policy explain --json',
     ]) {

@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-18-pre-release-contracts.md
+translation: .agents/notes/implemented/architecture/2026-11-18-pre-release-contracts.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: 852dd272147408533cc8d8a30c26974a9727feed46d8414a93bcb56524cc4a09
+    translation: c9de18afa141ad568fe9a44ed244ecd5e6d64526456c33e01fd0736df0a2db32
+  - index: 2
+    level: 2
+    source: 0359dafc78a618465d74c0e1c980a7af69e8d4608230ec760af560834c315fb0
+    translation: 20535726f8be94f23d3fdf7b0bcd979bf61b9bdc5c74573f44cdc86c82b1a822
+  - index: 3
+    level: 2
+    source: 0e3d944555964a83c9399a92791e9018651e177bbe7d90d61159b92b5705d4e9
+    translation: 2f069cd6c72adb6b82ec7f012e4f8f082bf1e915c4df4848a0b0f37c2dbb57da
+  - index: 4
+    level: 2
+    source: 14fb49db28e05bc2ac49a05279d50708ad69a1197ba14c8bcf6a50ee8e1cda31
+    translation: c20b16c2ce7a62b39ce86341cbc7be66c7fcc937dbe1700ea22357ceaa2bceb0
+  - index: 5
+    level: 2
+    source: 6b655266196d838862a8ef9daee0e1d68b182ec07a97d40fe2bc1c3ff955557f
+    translation: 397499ce9d703a7d1163d56332960588677df2cab2799e864a8f26fba266e87b
+  - index: 6
+    level: 2
+    source: 7f910d6f21e4302790c54207b38602658f4ca429c9da368d2c0b384db8d459a1
+    translation: 72f411b249529eb53c701408d34a8ee5d34b656ffc8e1ab480de830bbe570bda
+  - index: 7
+    level: 2
+    source: aa64352605ed5afa0093fe4d32f3a46b47633a95ca9f25e365bc7a4b247742bd
+    translation: c65ebc3c908a0cba2baac27772d8f1da82df0245eace9ce94ffc081d99ab77aa

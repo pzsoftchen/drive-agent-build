@@ -8,12 +8,13 @@ import { formatDiagnostics, type Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
-import { stableJson } from '../core/json.ts';
+import { contractJson } from '../core/json.ts';
 import {
   assertParentInsideRoot,
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
+import { assertSupportedPlatform } from '../core/platform.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
 import {
   inspectInstructionTarget,
@@ -70,7 +71,10 @@ export interface InitResult {
   ok: boolean;
   exitCode: ExitCode;
   scope: Scope;
+  /** Source root created or inspected by init, for example `~/.agents` in global scope. */
   root: string;
+  /** Absolute base for created, skipped and nested normalize paths. */
+  scopeRoot: string;
   dryRun: boolean;
   created: string[];
   skipped: string[];
@@ -92,6 +96,7 @@ export interface InitIO {
 function blocked(
   scope: Scope,
   root: string,
+  scopeRoot: string,
   diagnostics: Diagnostic[],
   conflicts: Diagnostic[],
   dryRun = false,
@@ -101,6 +106,7 @@ function blocked(
     exitCode: ExitCode.Validation,
     scope,
     root,
+    scopeRoot,
     dryRun,
     created: [],
     skipped: [],
@@ -290,13 +296,13 @@ async function validateExistingAuthored(
 
   const agents = await discoverAgents(root, paths.agents);
   const hooks = await discoverHooks(root, paths.agents);
-  diagnostics.push(...agents.diagnostics.filter((item) => item.severity === 'error'));
-  diagnostics.push(...hooks.diagnostics.filter((item) => item.severity === 'error'));
+  diagnostics.push(...agents.diagnostics);
+  diagnostics.push(...hooks.diagnostics);
   diagnostics.push(...checkAgentHooks(agents.items, hooks.items));
   diagnostics.push(...await checkHookSafety(hooks.items));
 
   const memory = await discoverMemory(root, paths.agents);
-  diagnostics.push(...memory.diagnostics.filter((item) => item.severity === 'error'));
+  diagnostics.push(...memory.diagnostics);
   diagnostics.push(...await checkSecrets(root, paths));
   return diagnostics;
 }
@@ -477,14 +483,7 @@ function formatInit(result: InitResult): string {
 }
 
 export async function initializeProject(options: InitOptions): Promise<InitResult> {
-  const platform = options.platform ?? process.platform;
-  if (platform === 'win32') {
-    throw new ValidationError(
-      'Windows is not supported in v0.1',
-      'platform.unsupported',
-      { hint: 'Use macOS or Linux. Windows junction support is planned for a later release.' },
-    );
-  }
+  assertSupportedPlatform(options.platform);
   if (options.profile !== undefined && options.profile !== 'feature') {
     throw new UsageError(
       `unsupported profile: ${options.profile}; v0.1 supports: feature`,
@@ -556,7 +555,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         message: error.message,
         file: scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml',
       });
-      return blocked(scope, root, [...scan.diagnostics, ...safety], safety, dryRun);
+      return blocked(scope, root, layout.scopeRoot, [...scan.diagnostics, ...safety], safety, dryRun);
     }
     throw error;
   }
@@ -568,15 +567,33 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     ...authored.filter((item) => item.severity === 'error'),
   ];
   if (authoredErrors.length > 0) {
-    return blocked(scope, root, [...scan.diagnostics, ...authoredErrors], authoredErrors, dryRun);
+    return blocked(
+      scope,
+      root,
+      layout.scopeRoot,
+      [...scan.diagnostics, ...authored, ...authoredConflicts],
+      authoredErrors,
+      dryRun,
+    );
   }
+  const preflightDiagnostics = [
+    ...scan.diagnostics,
+    ...authored.filter((item) => item.severity !== 'error'),
+  ];
 
   let existingProjections: Projection[] = [];
   if ((await lstatOrNull(paths.agents)) !== null) {
     const existing = await discoverProjections(layout.scopeRoot, paths);
     const errors = existing.diagnostics.filter((item) => item.severity === 'error');
     if (errors.length > 0) {
-      return blocked(scope, root, [...scan.diagnostics, ...existing.diagnostics], errors, dryRun);
+      return blocked(
+        scope,
+        root,
+        layout.scopeRoot,
+        [...scan.diagnostics, ...existing.diagnostics],
+        errors,
+        dryRun,
+      );
     }
     existingProjections = existing.projections;
   }
@@ -617,12 +634,13 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         exitCode: ExitCode.Ok,
         scope,
         root,
+        scopeRoot: layout.scopeRoot,
         dryRun: false,
         created: [],
         skipped: [],
         conflicts: [],
         pending: [],
-        diagnostics: scan.diagnostics,
+        diagnostics: preflightDiagnostics,
         normalize: null,
         ai: { applied: false, proposal },
       };
@@ -646,7 +664,14 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     targets,
   );
   if (generated.fatal.length > 0) {
-    return blocked(scope, root, [...scan.diagnostics, ...generated.fatal], generated.fatal, dryRun);
+    return blocked(
+      scope,
+      root,
+      layout.scopeRoot,
+      [...preflightDiagnostics, ...generated.fatal],
+      generated.fatal,
+      dryRun,
+    );
   }
   const pending = generated.pending.map(pendingDiagnostic);
 
@@ -657,12 +682,13 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       exitCode: ExitCode.Ok,
       scope,
       root,
+      scopeRoot: layout.scopeRoot,
       dryRun: true,
       created: preview.created,
       skipped: preview.skipped,
       conflicts: [],
       pending,
-      diagnostics: [...scan.diagnostics, ...pending],
+      diagnostics: [...preflightDiagnostics, ...pending],
       normalize: null,
       ...(proposal === undefined ? {} : { ai: { applied: false, proposal } }),
     };
@@ -681,12 +707,13 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       exitCode: ExitCode.Ok,
       scope,
       root,
+      scopeRoot: layout.scopeRoot,
       dryRun: false,
       created,
       skipped,
       conflicts: [],
       pending,
-      diagnostics: [...scan.diagnostics, ...pending],
+      diagnostics: [...preflightDiagnostics, ...pending],
       normalize: null,
       ...(proposal === undefined ? {} : { ai: { applied: aiApplied, proposal } }),
     };
@@ -695,6 +722,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   const normalize = await normalizeProject({
     cwd: root,
     home,
+    platform: options.platform,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
   const diagnostics = [...scan.diagnostics, ...normalize.diagnostics];
@@ -703,6 +731,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     exitCode: normalize.exitCode,
     scope,
     root,
+    scopeRoot: layout.scopeRoot,
     dryRun: false,
     created,
     skipped,
@@ -722,7 +751,7 @@ export async function runInit(options: InitOptions, io: InitIO): Promise<number>
         ?? (options.json === true ? (text: string) => io.stderr(text) : io.stdout),
     });
     if (options.json === true) {
-      io.stdout(stableJson(result));
+      io.stdout(contractJson(result));
     } else if (result.ok) {
       io.stdout(formatInit(result));
     } else {
@@ -732,7 +761,7 @@ export async function runInit(options: InitOptions, io: InitIO): Promise<number>
   } catch (error) {
     if (error instanceof DabError) {
       if (options.json === true) {
-        io.stdout(stableJson({ ok: false, error: error.toJSON() }));
+        io.stdout(contractJson({ ok: false, error: error.toJSON() }));
       } else {
         io.stderr(`dab: ${error.message}\n`);
         if (error.hint !== undefined) {

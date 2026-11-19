@@ -1,10 +1,11 @@
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
-import { parseFrontmatter } from './frontmatter.ts';
+import { parseFrontmatter, unknownFrontmatterDiagnostic } from './frontmatter.ts';
 import { AgentFrontmatterSchema, CLAUDE_HOOK_EVENTS, KEBAB_CASE } from './schemas.ts';
 import type {
   AgentDefinition,
@@ -12,6 +13,8 @@ import type {
   AgentToolsSpec,
   DiscoveryResult,
 } from './types.ts';
+
+const AGENT_FRONTMATTER_FIELDS = Object.keys(AgentFrontmatterSchema.shape);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -234,7 +237,7 @@ export async function discoverAgents(
   const diagnostics: Diagnostic[] = [];
   const names = new Map<string, string>();
 
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     if (!entry.name.endsWith('.md')) {
       continue;
     }
@@ -291,6 +294,16 @@ export async function discoverAgents(
     }
 
     const data = validated.data;
+    const unknown = unknownFrontmatterDiagnostic(
+      'agent',
+      data.name,
+      AGENT_FRONTMATTER_FIELDS,
+      parsed.data,
+      file,
+    );
+    if (unknown !== undefined) {
+      diagnostics.push(unknown);
+    }
     if (data.memory === 'project') {
       diagnostics.push({
         code: DiagnosticCodes.agentMemoryProject,

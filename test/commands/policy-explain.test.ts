@@ -113,6 +113,7 @@ describe('runPolicyExplain', () => {
 
     expect(code).toBe(0);
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       ok: boolean;
       effective: {
         permissions: { deny: string[]; ask: string[] };
@@ -122,6 +123,7 @@ describe('runPolicyExplain', () => {
       agent: { name: string; tools: string[]; disallowedTools: string[] };
       runtime: { installed: boolean; version: string; compatible: boolean; minimum: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
     expect(payload.effective.permissions.deny).toContain('Read(./.env)');
     expect(payload.effective.permissions.ask).toContain('Bash(git push:*)');
@@ -395,9 +397,34 @@ Duplicate.
 
     expect(code).toBe(2);
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       error: { code: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('usage.unknown-agent');
+  });
+
+  it('rejects Windows with a versioned JSON error', async () => {
+    const project = await initialized();
+    const captureResult = capture();
+
+    const code = await runPolicyExplain(
+      {
+        cwd: project.root,
+        platform: 'win32',
+        json: true,
+        runner: goodRunner,
+      },
+      captureResult.io,
+    );
+
+    expect(code).toBe(3);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
+      error: { code: string };
+    };
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.error.code).toBe('platform.unsupported');
   });
 
   it('explains policies when Claude Code is missing', async () => {

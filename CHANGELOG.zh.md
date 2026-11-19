@@ -4,6 +4,13 @@
 
 ## 未发布
 
+- `schemaVersion: 1` 已加入每个 `--json` 结果，并拒绝 `--json` 与 `--help` 或 `--version` 组合使用。
+- Agent、skill 和 rule frontmatter 现在保留未知顶层字段，并以 did-you-mean 提示发出警告（包含字母转置）；DAB 自有 YAML 仍然严格。
+- 增加 `dab detect --strict`，在项目/配置类 warning 时让 CI 失败。
+- `dab normalize --json` 包含绝对 `root`；`dab init --json` 包含 `root` 和 `scopeRoot`，生成与 backup 路径相对于它们。
+- 统一所有命令的 Windows 平台守卫，并将 normalize 的 Claude Code 版本检查减少为一次。
+- 文件与诊断排序不再依赖 locale，使哈希和 JSON 在不同机器上保持稳定。
+- `dab --version` 现在从 `package.json` 读取版本。
 - 增加相互独立的 project/global scope、v2 manifest 和逐 target 生成记录。
 - 增加 target adapter 基础层和 symlink 优先的 Claude Code 指令产物。
 - 增加 DAB、DAD 及其嵌套交付层级的中英文概念模型。

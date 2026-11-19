@@ -18,7 +18,7 @@ pnpm test
 - `pnpm test` runs the unit and integration suite.
 - `pnpm typecheck` checks TypeScript.
 - `pnpm doc-sync` runs translation pairing, links, wrap, budgets and Agent Note format.
-- `node dist/cli.js detect` checks this repository's generated configuration.
+- `node dist/cli.js detect --strict` checks this repository's generated configuration and fails on warnings.
 - `node dist/cli.js normalize --dry-run` shows pending projection changes.
 
 ## Development loop
@@ -45,4 +45,4 @@ Published product docs are paired. Run `pnpm run verify-translation-pairing --wr
 
 ## Release
 
-Update the version in `package.json`, update `CHANGELOG.md` and its Chinese pair, run the full suite and `pnpm doc-sync`, then tag the release.
+Update the version only in `package.json`; `dab --version` reads it from there. Update `CHANGELOG.md` and its Chinese pair, run the full suite and `pnpm doc-sync`, run `npm pack` and install the tarball in a temporary directory for a CLI smoke test, then tag the release.

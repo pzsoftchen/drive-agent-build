@@ -15,6 +15,7 @@ The public command is `dab`. All commands support `--json`, and exit codes disti
 - From a subdirectory, other commands walk upward to the nearest project manifest or source tree.
 - Inside `$HOME/.agents`, commands use global scope; the global source root is always `$HOME/.agents`.
 - Project and global scopes are checked and normalized independently. There is no `dab global` command and no cross-scope merge.
+- All commands reject Windows in v0.1.
 
 ## `dab init`
 
@@ -44,6 +45,7 @@ Global layout:
 - `dab init path` uses `path` as the exact source root and creates it when missing. It refuses to create a source root inside an existing one.
 - Scans the repository and writes missing authored files. Authored conflicts stop before writes. Unmanaged `.claude` conflicts are reported as pending and left to `dab normalize --fix`.
 - The generated manifest is v2 and includes `scope`, `targets` and `instructions: symlink`.
+- JSON output reports `root` (source root) and `scopeRoot` (path base); `created`, `skipped` and nested normalize paths are relative to `scopeRoot`.
 - `--dry-run` previews authored writes and pending conflicts without writing. `--ai` asks Claude Code for a proposal and writes only after confirmation; it cannot be combined with `--dry-run`.
 
 ## Manifest v2
@@ -105,11 +107,12 @@ paths:
 ## `dab detect`
 
 ```bash
-dab detect [--json]
+dab detect [--strict] [--json]
 ```
 
 Runs checks without writing. It verifies scope, enabled target adapters, Claude Code version, ancestor instruction files, the instructions artifact, projections, settings, policy, hooks, memory, secrets, AGENTS.md size and links. It prints one `kind name: target=status` line per fact.
 
+- `--strict` exits with code 3 on project or configuration warnings such as unknown frontmatter or drift. Environment warnings, such as Claude Code not being installed, do not fail.
 - In global scope, ancestor and personal-memory checks are skipped because user-level Claude data is not a project artifact.
 - Unmanaged target paths and missing generated records are reported as drift.
 
@@ -121,33 +124,51 @@ dab normalize [--dry-run] [--fix] [--json]
 
 Plans or applies projection repairs, the `.claude/CLAUDE.md` instruction artifact, `.claude/settings.json`, `dab.yaml` generated records and `.gitignore`. It prechecks every enabled target before writing; one failing target blocks all writes. Conflicts stop before writes. `--fix` backs up conflicting files under `.dab/backups/` before replacing them.
 
-JSON output includes one entry per enabled target:
+JSON output includes the top-level result and one entry per enabled target:
 
 ```json
 {
-  "ok": true,
+  "actions": [],
+  "backups": [],
+  "diagnostics": [],
   "dryRun": false,
+  "exitCode": 0,
+  "gitignore": {
+    "changed": false,
+    "path": ".gitignore"
+  },
+  "manifestUpdated": false,
+  "ok": true,
+  "root": "/path/to/project",
+  "schemaVersion": 1,
+  "settings": {
+    "changed": false,
+    "path": ".claude/settings.json",
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "shimAction": "none",
   "targets": [
     {
-      "provider": "claude-code",
       "actions": [],
-      "settings": {
-        "path": ".claude/settings.json",
-        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "changed": false
-      },
+      "backups": [],
       "instructions": {
-        "path": ".claude/CLAUDE.md",
-        "mode": "symlink",
         "action": "none",
+        "mode": "symlink",
+        "path": ".claude/CLAUDE.md",
         "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       },
-      "backups": []
+      "provider": "claude-code",
+      "settings": {
+        "changed": false,
+        "path": ".claude/settings.json",
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
     }
   ]
 }
 ```
 
+- The payload includes the absolute `root`; all other paths in this result are relative to it, including `gitignore.path` and backup entries.
 - `--dry-run` runs the same precheck and exit codes without writing.
 - In global scope, `~/.claude/settings.json` and `$HOME/.gitignore` are read-only and normalize warns that global settings are not adopted.
 
@@ -174,10 +195,11 @@ Shows target and provider, runtime version, default mode, allow/ask/deny rules, 
 
 ## JSON output
 
-Successful JSON output is sorted and stable. Errors use the same envelope:
+Every JSON result includes `schemaVersion: 1` at the top level; nested payloads inherit it. Successful output is sorted and stable, independent of the process locale. Releases may add fields, but removing a field or changing its meaning requires a new schema version. `--json` cannot be combined with `--help` or `--version`. Errors use the same envelope:
 
 ```json
 {
+  "schemaVersion": 1,
   "ok": false,
   "error": {
     "code": "usage.unknown-command",

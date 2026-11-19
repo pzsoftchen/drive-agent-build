@@ -56,15 +56,19 @@ describe('runInit', () => {
 
     expect(code).toBe(0);
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       ok: boolean;
       scope: string;
       root: string;
+      scopeRoot: string;
       created: string[];
       normalize: { ok: boolean };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
     expect(payload.scope).toBe('project');
     expect(payload.root).toBe(root);
+    expect(payload.scopeRoot).toBe(root);
     expect(payload.created).toEqual(expect.arrayContaining(['AGENTS.md', 'dab.yaml']));
     expect(payload.normalize.ok).toBe(true);
 
@@ -233,6 +237,30 @@ describe('runInit', () => {
     );
     expect(await lstatOrNull(join(root, '.claude/CLAUDE.md'))).not.toBeNull();
     expect(normalized.backups.some((item) => item.endsWith('.claude/settings.json'))).toBe(true);
+    expect(normalized.backups.every((item) => item.startsWith('.dab/backups/'))).toBe(true);
+    expect(normalized.gitignore.path).toBe('.gitignore');
+  });
+
+  it('keeps unknown-frontmatter warnings in dry-run output', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    await mkdir(join(root, '.agents/agents'), { recursive: true });
+    await writeFile(
+      join(root, '.agents/agents/typo.md'),
+      '---\nname: typo\ndescription: Typo.\ntoolz: Read\n---\nBody.\n',
+    );
+    const captureResult = capture();
+
+    const code = await runInit({ cwd: root, dryRun: true, json: true }, captureResult.io);
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      scopeRoot: string;
+      diagnostics: Array<{ code: string }>;
+    };
+    expect(payload.scopeRoot).toBe(root);
+    expect(payload.diagnostics.map((item) => item.code))
+      .toContain('agent.unknown-frontmatter');
   });
 
   it('rejects --ai with --dry-run', async () => {
@@ -378,8 +406,10 @@ describe('runInit', () => {
     expect(code).toBe(2);
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       error: { code: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('ai.invalid-proposal');
   });
 
@@ -390,8 +420,10 @@ describe('runInit', () => {
     expect(code).toBe(2);
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     const payload = JSON.parse(captureResult.stdout.join('')) as {
+      schemaVersion: number;
       error: { code: string };
     };
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('init.ai-confirmation-required');
   });
 

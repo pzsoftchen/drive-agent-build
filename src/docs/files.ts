@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { compareStrings } from '../core/compare.ts';
 import { toPosix } from '../core/paths.ts';
 
 const SKIP_DIRECTORIES = new Set([
@@ -25,7 +26,7 @@ export async function listMarkdownFiles(root: string, dir = ''): Promise<string[
   }
 
   const files: string[] = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     const child = dir.length === 0 ? entry.name : `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
       const frozenNotes = child === '.agents/notes/archived'

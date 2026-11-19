@@ -15,6 +15,13 @@ DAB targets Claude Code `>=2.1.277` and writes only public configuration formats
 
 `AGENTS.md` remains the only authored instruction source. Global scope uses the same layout under `$HOME`, with instructions in `~/.agents/AGENTS.md`.
 
+## Frontmatter compatibility
+
+- Agent, skill and rule frontmatter may gain new top-level fields as Claude Code evolves.
+- DAB validates the fields it interprets and emits a warning for unknown top-level fields; the fact is still projected.
+- A warning suggests a close known field (for example `pathz` → `paths`). A typo in a scope or permission key can widen the effective rule or tool set, so treat these warnings as errors in CI.
+- Unknown fields in DAB-owned hook, policy, manifest or memory YAML remain errors.
+
 ## Instruction artifact
 
 - `.claude/CLAUDE.md` is a symlink to `../AGENTS.md` in project scope and `../.agents/AGENTS.md` in global scope.

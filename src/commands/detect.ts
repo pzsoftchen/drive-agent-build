@@ -9,11 +9,12 @@ import {
 } from '../core/diagnostics.ts';
 import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
-import { stableJson } from '../core/json.ts';
+import { contractJson } from '../core/json.ts';
 import {
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
+import { assertSupportedPlatform } from '../core/platform.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
 import type {
   TargetDetectOutcome,
@@ -40,6 +41,7 @@ import type { TargetProvider } from '../model/types.ts';
 export interface DetectOptions {
   cwd: string;
   json?: boolean;
+  strict?: boolean;
   runner?: CommandRunner;
   platform?: NodeJS.Platform;
   home?: string;
@@ -89,17 +91,24 @@ function dedupe(diagnostics: readonly Diagnostic[]): Diagnostic[] {
   });
 }
 
+const ENVIRONMENT_WARNING_CODES = new Set(['backend.missing']);
+
 function buildResult(
   diagnostics: readonly Diagnostic[],
   targets: TargetDetectOutcome[] = [],
+  strict = false,
 ): DetectResult {
   const sorted = sortDiagnostics(dedupe(diagnostics));
   const backendError = sorted.some(
     (item) => item.code === 'backend.version' && item.severity === 'error',
   );
+  const warningFailure = strict
+    && sorted.some(
+      (item) => item.severity === 'warning' && !ENVIRONMENT_WARNING_CODES.has(item.code),
+    );
   const exitCode = backendError
     ? ExitCode.Backend
-    : hasErrors(sorted)
+    : hasErrors(sorted) || warningFailure
       ? ExitCode.Validation
       : ExitCode.Ok;
   return {
@@ -112,6 +121,7 @@ function buildResult(
 }
 
 export async function detectProject(options: DetectOptions): Promise<DetectResult> {
+  assertSupportedPlatform(options.platform);
   const home = options.home ?? homedir();
   const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
   const root = sourceRoot.root;
@@ -147,7 +157,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
         message: error.message,
         file: 'dab.yaml',
       });
-      return buildResult(diagnostics);
+      return buildResult(diagnostics, [], options.strict === true);
     }
     throw error;
   }
@@ -212,7 +222,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     }
   }
 
-  return buildResult(diagnostics, targets);
+  return buildResult(diagnostics, targets, options.strict === true);
 }
 
 const TARGET_LABELS: Record<TargetProvider, string> = {
@@ -265,7 +275,7 @@ export async function runDetect(options: DetectOptions, io: DetectIO): Promise<n
   try {
     const result = await detectProject(options);
     if (options.json === true) {
-      io.stdout(stableJson(result));
+      io.stdout(contractJson(result));
     } else {
       io.stdout(formatHuman(result));
     }
@@ -273,7 +283,7 @@ export async function runDetect(options: DetectOptions, io: DetectIO): Promise<n
   } catch (error) {
     if (error instanceof DabError) {
       if (options.json === true) {
-        io.stdout(stableJson({ ok: false, error: error.toJSON() }));
+        io.stdout(contractJson({ ok: false, error: error.toJSON() }));
       } else {
         io.stderr(`dab: ${error.message}\n`);
         if (error.hint !== undefined) {

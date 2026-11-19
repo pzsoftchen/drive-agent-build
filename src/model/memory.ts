@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
+import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { isPathInside, toPosix } from '../core/paths.ts';
@@ -31,7 +32,7 @@ async function listMarkdown(dir: string, depth = 0): Promise<string[]> {
     throw error;
   }
   const files: string[] = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     const absolute = join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...(await listMarkdown(absolute, depth + 1)));

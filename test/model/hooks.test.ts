@@ -90,6 +90,21 @@ describe('hook discovery', () => {
     expect(result.diagnostics.map((item) => item.code)).toContain('hook.missing-entry');
   });
 
+  it('rejects an unknown hook field even when the rest is valid', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/hooks/protect-generated/hook.yaml',
+      `${hook('protect-generated')}futureField: true\n`,
+    );
+    await writeProjectFile(fixture.root, '.agents/hooks/protect-generated/run.mjs', 'x\n');
+
+    const result = await discoverHooks(fixture.root, fixture.agents);
+
+    expect(result.items).toHaveLength(0);
+    expect(result.diagnostics.map((item) => item.code)).toContain('hook.invalid');
+  });
+
   it('rejects an invalid event and unknown field', async () => {
     const fixture = await project();
     await writeProjectFile(

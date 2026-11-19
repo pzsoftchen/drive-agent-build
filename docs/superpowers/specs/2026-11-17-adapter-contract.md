@@ -2,7 +2,7 @@
 
 ## 状态
 
-已批准。实现计划：[2026-11-17-adapter-contract.md](../plans/2026-11-17-adapter-contract.md)。
+已批准。实现计划：[2026-11-17-adapter-contract.md](../plans/2026-11-17-adapter-contract.md)。2026-11-18：计划补充发布前缺口；完整执行推迟到 Codex adapter 计划，当前发布保持 Claude-only。
 
 ## 背景
 
@@ -141,6 +141,17 @@ interface TargetPolicyExplanation {
 - 只调用选定 target 的 `adapter.explainPolicy(...)`。
 - 公共 result 包含 target、runtime、sections、sources、limitations、diagnostics；Claude-specific details 由 adapter 扩展。
 - `--agent` 的 discovery 和 source facts 保持公共；agent policy 的解释由 adapter 完成。
+
+## 发布前缺口更新（2026-11-18）
+
+以下缺口在 npm 首发前记录。本阶段不执行完整重构；执行 Codex adapter 计划时必须覆盖。
+
+- `.gitignore`：`DAB_GITIGNORE_ENTRIES` 仍是 Claude 专属常量（`src/core/gitignore.ts`）。Adapter 契约必须提供 target-owned ignore entries，并由 `normalize` 合并；否则第二个 adapter 会写错忽略规则。
+- JSON 输出：已修复基础部分。CLI JSON 已增加 `schemaVersion: 1`；`normalize --json` 包含绝对 `root`，`init --json` 包含 `root`/`scopeRoot`，其余路径相对这些基准。adapter 重构只能追加字段，移除或改变含义必须提升 schema version。
+- 平台守卫：已修复。`src/core/platform.ts` 的 `assertSupportedPlatform` 覆盖 `normalize`、`init`、`detect` 和 `policy explain`。
+- Runtime check：已修复。`normalize` 使用 memoized runner，只执行一次 `claude --version`；由 adapter 提供 runtime result 仍是后续重构方向。
+- Init 扫描：`src/init/scanner.ts` 的 `hasClaudeSettings` 是 provider 专属启发式；adapter init contract 需要 provider-owned scan/inspect。
+- Provider 路径：`paths.claude` 是 v2 legacy 字段；在第二个 adapter 前确定 provider-specific path 的长期位置，并保持 v2 可读。
 
 ## 验收
 

@@ -9,11 +9,12 @@ import {
 } from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
-import { stableJson } from '../core/json.ts';
+import { contractJson } from '../core/json.ts';
 import {
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
+import { assertSupportedPlatform } from '../core/platform.ts';
 import { readClaudeVersion } from '../core/version-check.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
@@ -43,6 +44,7 @@ export interface PolicyExplainOptions {
   target?: TargetProvider;
   json?: boolean;
   runner?: CommandRunner;
+  platform?: NodeJS.Platform;
 }
 
 export interface PolicyExplainIO {
@@ -170,6 +172,7 @@ function selectTarget(
 }
 
 export async function explainPolicy(options: PolicyExplainOptions): Promise<PolicyExplainResult> {
+  assertSupportedPlatform(options.platform);
   const home = options.home ?? homedir();
   const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
   const root = sourceRoot.root;
@@ -350,7 +353,7 @@ export async function runPolicyExplain(
   try {
     const result = await explainPolicy(options);
     if (options.json === true) {
-      io.stdout(stableJson(result));
+      io.stdout(contractJson(result));
     } else {
       io.stdout(formatHuman(result));
     }
@@ -358,7 +361,7 @@ export async function runPolicyExplain(
   } catch (error) {
     if (error instanceof DabError) {
       if (options.json === true) {
-        io.stdout(stableJson({ ok: false, error: error.toJSON() }));
+        io.stdout(contractJson({ ok: false, error: error.toJSON() }));
       } else {
         io.stderr(`dab: ${error.message}\n`);
         if (error.hint !== undefined) {

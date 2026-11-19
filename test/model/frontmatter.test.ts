@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '../../src/core/errors.ts';
-import { parseFrontmatter } from '../../src/model/frontmatter.ts';
+import {
+  describeUnknownTopLevelFields,
+  nearestKnownField,
+  parseFrontmatter,
+} from '../../src/model/frontmatter.ts';
 
 describe('frontmatter', () => {
   it('parses YAML frontmatter and preserves the body', () => {
@@ -30,5 +34,29 @@ describe('frontmatter', () => {
     expect(() => parseFrontmatter('---\n- one\n- two\n---\nbody\n', 'list.md')).toThrow(
       ConfigError,
     );
+  });
+});
+
+describe('unknown frontmatter fields', () => {
+  const known = ['name', 'description', 'tools', 'disallowedTools', 'permissionMode'];
+
+  it('suggests the closest known field for likely typos', () => {
+    expect(nearestKnownField('toolz', known)).toBe('tools');
+    expect(nearestKnownField('disallowedTool', known)).toBe('disallowedTools');
+    expect(nearestKnownField('permissionmode', known)).toBe('permissionMode');
+    expect(nearestKnownField('futureField', known)).toBeUndefined();
+  });
+
+  it('handles transposed letters and deterministic ties', () => {
+    expect(nearestKnownField('nmae', known)).toBe('name');
+    expect(nearestKnownField('modle', ['model', 'tools'])).toBe('model');
+    expect(nearestKnownField('tooks', ['tools', 'hooks'])).toBe('hooks');
+    expect(nearestKnownField('tooks', ['hooks', 'tools'])).toBe('hooks');
+  });
+
+  it('formats unknown fields with a did-you-mean hint', () => {
+    expect(
+      describeUnknownTopLevelFields(known, { name: 'demo', toolz: 'Read', futureField: true }),
+    ).toEqual(['futureField', 'toolz (did you mean tools?)']);
   });
 });

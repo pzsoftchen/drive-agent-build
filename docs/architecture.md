@@ -134,6 +134,24 @@ generated:
 - `dab.yaml` stores `scope`, `targets` and per-target generated records with source hashes, target hashes and projection lists.
 - `.dab/backups/` stores originals before `--fix` adopts an unmanaged path.
 
+## Frontmatter compatibility
+
+- Agent, skill and rule files are projected into Claude Code and can gain new top-level fields before DAB knows them.
+- DAB validates every field it interprets, keeps unknown top-level fields, and reports them as warnings with the source file.
+- A warning suggests the closest known field when an unknown top-level field looks like a typo. Typos in scope or permission keys can change effective behavior, so treat these warnings as errors in CI.
+- `dab detect --strict` turns project and configuration warnings into exit code 3 so CI can enforce this policy; environment warnings such as a missing Claude Code binary are excluded.
+- Unknown fields in DAB-owned structures such as hooks, policies, manifests and memory entries remain errors.
+- This keeps a Claude Code upgrade from breaking every agent while preserving fail-loud behavior for configuration DAB owns.
+
+## JSON output contract
+
+- Every command that supports `--json` includes `schemaVersion: 1` at the top level.
+- The version covers the top-level envelope and any nested provider payloads. Commands use different payload shapes (`targets`, `target`, `normalize`); nested payloads do not carry their own version.
+- `normalize --json` includes an absolute `root`; `init --json` includes `root` (source root) and `scopeRoot` (base for created, skipped and nested normalize paths). All other JSON paths are relative to that base.
+- `--json` cannot be combined with `--help` or `--version`.
+- Releases may add fields; removing a field or changing its meaning requires a new schema version.
+- The CLI JSON is the public contract. Imported TypeScript result types are implementation details.
+
 ## Policy compilation
 
 Shared policy is limited to path read and write restrictions, command execution restrictions and a small capability set. Claude Code-specific rules live in the adapter. Deny wins, and an exact allow/deny conflict fails compilation rather than widening access.
@@ -165,3 +183,4 @@ Every published product document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`.
 - Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.
 - v0.1 has no eval loop; `docs/roadmap.md` carries evidence work.
 - v0.1 accepts only the default `.agents` and `.claude` paths.
+- All commands reject Windows in v0.1; junction support is deferred.

@@ -15,24 +15,24 @@ sections:
     translation: eaa0df93577e13d2ef7166343e7c82d67216f79ad18b8a149748ec3cfa4202c9
   - index: 2
     level: 2
-    source: 5f3eaa5b95df701b774e282663a96adea26cd9d59aa94e216c03deadb8bf437e
-    translation: 621fec46d4afe2270eefc8283bbb190be47425f989058b11e8bb3e099c3f5a9f
+    source: 4f24d84a50e5bde3615731175113cb0e4e88957d37f52f87a4d96fb11100616f
+    translation: aadfb8bb28ecd2bff12f949a894feb4707791743f1fed3f4d16eb39658ce62ca
   - index: 3
     level: 2
-    source: 199695f51667916f2493a253e4e94728e1f5693ba4b7fe81fed829cd299b1db5
-    translation: ab4d2046b606efb10951e018c73f6e7a8a63bf4ecad6e3f525f00baa94d25323
+    source: 65333fd60721c4e303c29e6093e2871877fb42ddf140c0b70cfb224de106bffe
+    translation: 22a76e0d1f16e1a049421666cdf2c71da76256623c9a188ddfa309e47a5f50c4
   - index: 4
     level: 2
     source: b649875aa887f3d67b46b36b243c38c4c16ab0173c5671fc4b65720e306a0a79
     translation: b2d843750da6a9b2068f52ed05cc6805558b0e8e5e176bb058e3d2222c513f9f
   - index: 5
     level: 2
-    source: c4e8c9766cc11bbecfb0ef070b3948a1f4c3addbf5d31eb4499baa8b05d715bd
-    translation: 766ce3b8fa5c837bc878c377ce034f9c697e0ce1db9ff6824ffb63971cff7c6c
+    source: b553f63799b39cc599776770f34217e23bff0d8e0bad66f56b008a77a0ce723e
+    translation: 367d4bf6d0ab8259c04bcb730f07b2cd863ab715a072b361b4a7a88af3858c20
   - index: 6
     level: 2
-    source: e7e861313fde0c77071f7d9c6e92552af07459477a736dd8ffc23279430a1e03
-    translation: dca32bffd8d1ec294a944d842c663caa3b1efc4b1351fcfb4ec638d24ec53558
+    source: c25feb924636aeb90bf5f96addf694a8027b9cf62950f9302fbaca85be2d6f14
+    translation: a8326b44c15909df94ec7f39a9da8a282e661bfc559a229e858538a12bec6320
   - index: 7
     level: 2
     source: 0dfab5cd3f021fdd98d80aafd236cda8df9f1c1aec45a2e5131cb789af307aa5
@@ -43,8 +43,8 @@ sections:
     translation: 8554f2173716554fefea0dcc1dc41fc563f5b8ea506076b5f21e1dd8b8715610
   - index: 9
     level: 2
-    source: d2aab00fbbe279ca8dcd0d7a46114643b07528b56181c8e03e12adb4099e0cfc
-    translation: 750e2d1f6eb69f75bac9d609dc03b65971b4a3a3d6f4914a5def77b9d6f880e0
+    source: 59e3f0b8ea7eb71ddc2d5e7a34539e6e34e894bc05975e01fe324b76ba1a79ee
+    translation: 7fe3cbb25d158be368243455c18ef59a6b9b802be6406efa431a81a67c7e4c9d
   - index: 10
     level: 2
     source: 783e717f2425b434f3c5932b576b1b56e8c0c3c13d04c97117734db37079f7f2

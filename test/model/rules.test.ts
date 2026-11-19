@@ -52,7 +52,7 @@ describe('rule discovery', () => {
     ]);
   });
 
-  it('rejects unknown frontmatter fields and unsafe paths', async () => {
+  it('warns about unknown frontmatter fields and rejects unsafe paths', async () => {
     const fixture = await project();
     await writeProjectFile(
       fixture.root,
@@ -67,6 +67,11 @@ describe('rule discovery', () => {
 
     const result = await discoverRules(fixture.root, fixture.agents);
 
-    expect(result.diagnostics.filter((item) => item.code === 'rule.invalid-frontmatter')).toHaveLength(2);
+    expect(result.diagnostics.filter((item) => item.code === 'rule.unknown-frontmatter')).toHaveLength(1);
+    expect(result.diagnostics.find((item) => item.code === 'rule.unknown-frontmatter')?.message)
+      .toContain('did you mean paths?');
+    expect(result.diagnostics.filter((item) => item.code === 'rule.invalid-frontmatter')).toHaveLength(1);
+    expect(result.items.map((item) => item.name)).toContain('typo');
+    expect(result.items.find((item) => item.name === 'typo')?.paths).toEqual([]);
   });
 });

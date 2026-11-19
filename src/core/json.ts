@@ -1,3 +1,5 @@
+export const JSON_SCHEMA_VERSION = 1;
+
 function sortValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sortValue);
@@ -14,4 +16,8 @@ function sortValue(value: unknown): unknown {
 
 export function stableJson(value: unknown): string {
   return `${JSON.stringify(sortValue(value), null, 2)}\n`;
+}
+
+export function contractJson(value: object): string {
+  return stableJson({ ...value, schemaVersion: JSON_SCHEMA_VERSION });
 }

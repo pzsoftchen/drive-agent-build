@@ -1,5 +1,6 @@
 import { extname, join, relative } from 'node:path';
 import { readdir, realpath } from 'node:fs/promises';
+import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
 import {
@@ -42,7 +43,7 @@ export async function discoverHooks(
   const diagnostics: Diagnostic[] = [];
   const ids = new Set<string>();
 
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     if (!entry.isDirectory() || entry.isSymbolicLink()) {
       continue;
     }

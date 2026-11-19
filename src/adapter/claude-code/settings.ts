@@ -1,3 +1,4 @@
+import { compareStrings } from '../../core/compare.ts';
 import { stableJson } from '../../core/json.ts';
 import type { EffectiveHook, EffectivePolicy } from './policy-compile.ts';
 
@@ -47,7 +48,7 @@ function groupProjectHooks(hooks: readonly EffectiveHook[]): ClaudeSettingsObjec
       .sort()
       .map((matcher) => {
         const group = [...(byMatcher.get(matcher) ?? [])].sort((left, right) =>
-          left.order - right.order || left.id.localeCompare(right.id));
+          left.order - right.order || compareStrings(left.id, right.id));
         return {
           ...(matcher.length === 0 ? {} : { matcher }),
           hooks: group.map((hook) => ({

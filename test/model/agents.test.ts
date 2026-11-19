@@ -167,7 +167,7 @@ describe('agent discovery', () => {
     expect(result.diagnostics.map((item) => item.code)).toContain('agent.duplicate-name');
   });
 
-  it('rejects malformed frontmatter and unknown fields', async () => {
+  it('warns about unknown frontmatter fields while keeping malformed agents invalid', async () => {
     const fixture = await project();
     await writeProjectFile(
       fixture.root,
@@ -182,7 +182,14 @@ describe('agent discovery', () => {
 
     const result = await discoverAgents(fixture.root, fixture.agents);
 
-    expect(result.diagnostics.filter((item) => item.code === 'agent.invalid-frontmatter')).toHaveLength(2);
+    expect(result.diagnostics.filter((item) => item.code === 'agent.invalid-frontmatter')).toHaveLength(1);
+    expect(result.diagnostics.filter((item) => item.code === 'agent.unknown-frontmatter')).toHaveLength(1);
+    expect(result.diagnostics.find((item) => item.code === 'agent.unknown-frontmatter')?.message)
+      .toContain('toolz');
+    expect(result.diagnostics.find((item) => item.code === 'agent.unknown-frontmatter')?.message)
+      .toContain('did you mean tools?');
+    expect(result.items.map((item) => item.name)).toContain('typo');
+    expect(result.items.find((item) => item.name === 'typo')?.frontmatter.toolz).toBe('Read');
   });
 
   it('rejects an agent hook with a non-command handler', async () => {

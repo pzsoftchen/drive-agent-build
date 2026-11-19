@@ -1,12 +1,15 @@
 import { readdir } from 'node:fs/promises';
 import { basename, join, relative } from 'node:path';
+import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { assertRelativePath, toPosix } from '../core/paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
-import { parseFrontmatter } from './frontmatter.ts';
+import { parseFrontmatter, unknownFrontmatterDiagnostic } from './frontmatter.ts';
 import { RuleFrontmatterSchema } from './schemas.ts';
 import type { DiscoveryResult, RuleDefinition } from './types.ts';
+
+const RULE_FRONTMATTER_FIELDS = Object.keys(RuleFrontmatterSchema.shape);
 
 function zodMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
   return error.issues
@@ -43,7 +46,7 @@ export async function discoverRules(
   const items: RuleDefinition[] = [];
   const diagnostics: Diagnostic[] = [];
 
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareStrings(left.name, right.name))) {
     if (!entry.isFile() || !entry.name.endsWith('.md')) {
       continue;
     }
@@ -75,6 +78,18 @@ export async function discoverRules(
       continue;
     }
 
+    const name = basename(entry.name, '.md');
+    const unknown = unknownFrontmatterDiagnostic(
+      'rule',
+      name,
+      RULE_FRONTMATTER_FIELDS,
+      parsed.data,
+      file,
+    );
+    if (unknown !== undefined) {
+      diagnostics.push(unknown);
+    }
+
     let paths: string[];
     try {
       paths = normalizePaths(validated.data.paths).map((value) => assertRelativePath(value, 'rule path'));
@@ -91,7 +106,7 @@ export async function discoverRules(
 
     items.push({
       file,
-      name: basename(entry.name, '.md'),
+      name,
       paths,
       body: parsed.body,
     });
