@@ -147,7 +147,7 @@ interface TargetPolicyExplanation {
 以下缺口在 npm 首发前记录。本阶段不执行完整重构；执行 Codex adapter 计划时必须覆盖。
 
 - `.gitignore`：`DAB_GITIGNORE_ENTRIES` 仍是 Claude 专属常量（`src/core/gitignore.ts`）。Adapter 契约必须提供 target-owned ignore entries，并由 `normalize` 合并；否则第二个 adapter 会写错忽略规则。
-- JSON 输出：已修复基础部分。CLI JSON 已增加 `schemaVersion: 1`，`normalize --json` 与嵌套 `init --json` 的路径已统一为 scope-relative；adapter 重构只能追加字段，移除或改变含义必须提升 schema version。
+- JSON 输出：已修复基础部分。CLI JSON 已增加 `schemaVersion: 1`；`normalize --json` 包含绝对 `root`，`init --json` 包含 `root`/`scopeRoot`，其余路径相对这些基准。adapter 重构只能追加字段，移除或改变含义必须提升 schema version。
 - 平台守卫：已修复。`src/core/platform.ts` 的 `assertSupportedPlatform` 覆盖 `normalize`、`init`、`detect` 和 `policy explain`。
 - Runtime check：已修复。`normalize` 使用 memoized runner，只执行一次 `claude --version`；由 adapter 提供 runtime result 仍是后续重构方向。
 - Init 扫描：`src/init/scanner.ts` 的 `hasClaudeSettings` 是 provider 专属启发式；adapter init contract 需要 provider-owned scan/inspect。

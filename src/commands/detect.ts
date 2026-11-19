@@ -41,6 +41,7 @@ import type { TargetProvider } from '../model/types.ts';
 export interface DetectOptions {
   cwd: string;
   json?: boolean;
+  strict?: boolean;
   runner?: CommandRunner;
   platform?: NodeJS.Platform;
   home?: string;
@@ -93,14 +94,16 @@ function dedupe(diagnostics: readonly Diagnostic[]): Diagnostic[] {
 function buildResult(
   diagnostics: readonly Diagnostic[],
   targets: TargetDetectOutcome[] = [],
+  strict = false,
 ): DetectResult {
   const sorted = sortDiagnostics(dedupe(diagnostics));
   const backendError = sorted.some(
     (item) => item.code === 'backend.version' && item.severity === 'error',
   );
+  const warningFailure = strict && sorted.some((item) => item.severity === 'warning');
   const exitCode = backendError
     ? ExitCode.Backend
-    : hasErrors(sorted)
+    : hasErrors(sorted) || warningFailure
       ? ExitCode.Validation
       : ExitCode.Ok;
   return {
@@ -149,7 +152,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
         message: error.message,
         file: 'dab.yaml',
       });
-      return buildResult(diagnostics);
+      return buildResult(diagnostics, [], options.strict === true);
     }
     throw error;
   }
@@ -214,7 +217,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     }
   }
 
-  return buildResult(diagnostics, targets);
+  return buildResult(diagnostics, targets, options.strict === true);
 }
 
 const TARGET_LABELS: Record<TargetProvider, string> = {

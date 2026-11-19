@@ -5,7 +5,7 @@ import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { assertRelativePath, toPosix } from '../core/paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
-import { describeUnknownTopLevelFields, parseFrontmatter } from './frontmatter.ts';
+import { parseFrontmatter, unknownFrontmatterDiagnostic } from './frontmatter.ts';
 import { RuleFrontmatterSchema } from './schemas.ts';
 import type { DiscoveryResult, RuleDefinition } from './types.ts';
 
@@ -79,16 +79,15 @@ export async function discoverRules(
     }
 
     const name = basename(entry.name, '.md');
-    const unknown = describeUnknownTopLevelFields(RULE_FRONTMATTER_FIELDS, parsed.data);
-    if (unknown.length > 0) {
-      diagnostics.push({
-        code: DiagnosticCodes.ruleUnknownFrontmatter,
-        severity: 'warning',
-        message: `rule ${name} has unknown frontmatter field(s): ${unknown.join(', ')}`,
-        file,
-        line: 1,
-        hint: 'Unknown top-level fields are preserved for Claude Code compatibility; remove them if they are typos.',
-      });
+    const unknown = unknownFrontmatterDiagnostic(
+      'rule',
+      name,
+      RULE_FRONTMATTER_FIELDS,
+      parsed.data,
+      file,
+    );
+    if (unknown !== undefined) {
+      diagnostics.push(unknown);
     }
 
     let paths: string[];

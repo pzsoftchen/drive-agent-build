@@ -43,6 +43,10 @@ export interface TargetNormalizePlan {
   generated: GeneratedTarget;
   settings?: TargetSettingsPlan;
   instructions?: TargetInstructionsPlan;
+  /**
+   * `backups` may be absolute or relative to the scope root; the command layer
+   * resolves and reports them relative to the scope root.
+   */
   apply(options: { backupRoot: string }): Promise<{ applied: number; backups: string[] }>;
 }
 

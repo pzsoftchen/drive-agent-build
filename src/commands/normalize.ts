@@ -72,11 +72,12 @@ export interface TargetNormalizeResult {
 }
 
 /**
- * Paths in this result are relative to the scope root so JSON consumers do not
- * depend on the machine that produced them.
+ * Paths in this result are relative to `root`. `root` is absolute so consumers
+ * can resolve them without guessing which directory the command walked up from.
  */
 export interface NormalizeResult {
   ok: boolean;
+  root: string;
   dryRun: boolean;
   exitCode: ExitCode;
   actions: string[];
@@ -138,7 +139,7 @@ function targetResult(
     ...(plan.instructions === undefined ? {} : { instructions: plan.instructions }),
     backups: root === undefined
       ? [...backups]
-      : backups.map((backup) => toPosix(relative(root, backup))),
+      : backups.map((backup) => toPosix(relative(root, resolve(root, backup)))),
   };
 }
 
@@ -164,6 +165,7 @@ function compatShimAction(targets: readonly TargetNormalizeResult[]): string {
 }
 
 function blockedResult(
+  root: string,
   options: NormalizeOptions,
   diagnostics: Diagnostic[],
   extras: {
@@ -176,6 +178,7 @@ function blockedResult(
   const compat = extras.compatTargets ?? targets;
   return {
     ok: false,
+    root,
     dryRun: options.dryRun === true,
     exitCode: extras.exitCode ?? ExitCode.Validation,
     actions: targets.flatMap((item) => item.actions),
@@ -203,7 +206,8 @@ function memoizeClaudeVersion(runner: CommandRunner = runCommand): CommandRunner
   let cached: ReturnType<CommandRunner> | undefined;
   return (cmd, args, opts) => {
     if (cmd === 'claude' && args.length === 1 && args[0] === '--version') {
-      cached ??= runner(cmd, args, opts);
+      // Resolve inside a promise so a synchronous throw is cached too.
+      cached ??= Promise.resolve().then(() => runner(cmd, args, opts));
       return cached;
     }
     return runner(cmd, args, opts);
@@ -296,7 +300,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     await assertSourceTreesSafe(root);
   } catch (error) {
     if (error instanceof DabError) {
-      return blockedResult(options, [errorDiagnostic(error)]);
+      return blockedResult(root, options, [errorDiagnostic(error)]);
     }
     throw error;
   }
@@ -308,7 +312,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     if (runtime.diagnostics.some(
       (item) => item.code === 'backend.version' && item.severity === 'error',
     )) {
-      return blockedResult(options, runtime.diagnostics, { exitCode: ExitCode.Backend });
+      return blockedResult(root, options, runtime.diagnostics, { exitCode: ExitCode.Backend });
     }
   }
 
@@ -348,7 +352,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       message: 'manifest has no enabled targets',
       hint: 'Enable at least one target or omit it from the manifest.',
     });
-    return blockedResult(options, diagnostics);
+    return blockedResult(root, options, diagnostics);
   }
 
   const plans: TargetNormalizePlan[] = [];
@@ -382,7 +386,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     const backendError = diagnostics.some(
       (item) => item.code === 'backend.version' && item.severity === 'error',
     );
-    return blockedResult(options, diagnostics, {
+    return blockedResult(root, options, diagnostics, {
       compatTargets: plans.map((plan) => targetResult(plan)),
       ...(backendError ? { exitCode: ExitCode.Backend } : {}),
     });
@@ -392,6 +396,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     const targets = plans.map((plan) => targetResult(plan));
     return {
       ok: true,
+      root,
       dryRun: true,
       exitCode: ExitCode.Ok,
       actions: targets.flatMap((item) => item.actions),
@@ -431,6 +436,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
 
   return {
     ok: true,
+    root,
     dryRun: false,
     exitCode: ExitCode.Ok,
     actions: targets.flatMap((item) => item.actions),
@@ -460,7 +466,7 @@ function formatHuman(result: NormalizeResult): string {
   if (result.backups.length > 0) {
     lines.push(`  backups: ${result.backups.length}`);
     for (const backup of result.backups) {
-      lines.push(`    ${toPosix(backup)}`);
+      lines.push(`    ${toPosix(relative(process.cwd(), resolve(result.root, backup)))}`);
     }
   }
   const diagnostics = formatDiagnostics(result.diagnostics);

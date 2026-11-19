@@ -47,6 +47,13 @@ describe('unknown frontmatter fields', () => {
     expect(nearestKnownField('futureField', known)).toBeUndefined();
   });
 
+  it('handles transposed letters and deterministic ties', () => {
+    expect(nearestKnownField('nmae', known)).toBe('name');
+    expect(nearestKnownField('modle', ['model', 'tools'])).toBe('model');
+    expect(nearestKnownField('tooks', ['tools', 'hooks'])).toBe('hooks');
+    expect(nearestKnownField('tooks', ['hooks', 'tools'])).toBe('hooks');
+  });
+
   it('formats unknown fields with a did-you-mean hint', () => {
     expect(
       describeUnknownTopLevelFields(known, { name: 'demo', toolz: 'Read', futureField: true }),

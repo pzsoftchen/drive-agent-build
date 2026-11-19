@@ -5,8 +5,9 @@
 ## 未发布
 
 - `schemaVersion: 1` 已加入每个 `--json` 结果，并拒绝 `--json` 与 `--help` 或 `--version` 组合使用。
-- Agent、skill 和 rule frontmatter 现在保留未知顶层字段，并以 did-you-mean 提示发出警告；DAB 自有 YAML 仍然严格。
-- `dab normalize --json` 和 `dab init --json` 中的嵌套结果改为相对 scope root 报告 `.gitignore` 与 backup 路径。
+- Agent、skill 和 rule frontmatter 现在保留未知顶层字段，并以 did-you-mean 提示发出警告（包含字母转置）；DAB 自有 YAML 仍然严格。
+- 增加 `dab detect --strict`，存在 warning 时让 CI 失败。
+- `dab normalize --json` 包含绝对 `root`；`dab init --json` 包含 `root` 和 `scopeRoot`，生成与 backup 路径相对于它们。
 - 统一所有命令的 Windows 平台守卫，并将 normalize 的 Claude Code 版本检查减少为一次。
 - 文件与诊断排序不再依赖 locale，使哈希和 JSON 在不同机器上保持稳定。
 - `dab --version` 现在从 `package.json` 读取版本。

@@ -38,7 +38,7 @@ jobs:
       - name: Documentation gates
         run: pnpm doc-sync
       - name: Detect drift
-        run: node dist/cli.js detect --json
+        run: node dist/cli.js detect --strict --json
       - name: Normalize dry run
         run: node dist/cli.js normalize --dry-run --json
       - name: Explain policy

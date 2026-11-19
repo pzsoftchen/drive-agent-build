@@ -139,6 +139,7 @@ generated:
 - Agent, skill and rule files are projected into Claude Code and can gain new top-level fields before DAB knows them.
 - DAB validates every field it interprets, keeps unknown top-level fields, and reports them as warnings with the source file.
 - A warning suggests the closest known field when an unknown top-level field looks like a typo. Typos in scope or permission keys can change effective behavior, so treat these warnings as errors in CI.
+- `dab detect --strict` turns warnings into exit code 3 so CI can enforce this policy.
 - Unknown fields in DAB-owned structures such as hooks, policies, manifests and memory entries remain errors.
 - This keeps a Claude Code upgrade from breaking every agent while preserving fail-loud behavior for configuration DAB owns.
 
@@ -146,7 +147,7 @@ generated:
 
 - Every command that supports `--json` includes `schemaVersion: 1` at the top level.
 - The version covers the top-level envelope and any nested provider payloads. Commands use different payload shapes (`targets`, `target`, `normalize`); nested payloads do not carry their own version.
-- JSON paths are relative to the scope root, except `init.root`, which identifies the initialized scope.
+- `normalize --json` includes an absolute `root`; `init --json` includes `root` (source root) and `scopeRoot` (base for created, skipped and nested normalize paths). All other JSON paths are relative to that base.
 - `--json` cannot be combined with `--help` or `--version`.
 - Releases may add fields; removing a field or changing its meaning requires a new schema version.
 - The CLI JSON is the public contract. Imported TypeScript result types are implementation details.

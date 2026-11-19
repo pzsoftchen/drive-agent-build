@@ -5,7 +5,7 @@ import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
-import { describeUnknownTopLevelFields, parseFrontmatter } from './frontmatter.ts';
+import { parseFrontmatter, unknownFrontmatterDiagnostic } from './frontmatter.ts';
 import { KEBAB_CASE, SkillFrontmatterSchema } from './schemas.ts';
 import type { DiscoveryResult, SkillDefinition } from './types.ts';
 
@@ -82,16 +82,15 @@ export async function discoverSkills(
     }
 
     const name = validated.data.name ?? entry.name;
-    const unknown = describeUnknownTopLevelFields(SKILL_FRONTMATTER_FIELDS, parsed.data);
-    if (unknown.length > 0) {
-      diagnostics.push({
-        code: DiagnosticCodes.skillUnknownFrontmatter,
-        severity: 'warning',
-        message: `skill ${name} has unknown frontmatter field(s): ${unknown.join(', ')}`,
-        file,
-        line: 1,
-        hint: 'Unknown top-level fields are preserved for Claude Code compatibility; remove them if they are typos.',
-      });
+    const unknown = unknownFrontmatterDiagnostic(
+      'skill',
+      name,
+      SKILL_FRONTMATTER_FIELDS,
+      parsed.data,
+      file,
+    );
+    if (unknown !== undefined) {
+      diagnostics.push(unknown);
     }
     if (!KEBAB_CASE.test(name)) {
       diagnostics.push({

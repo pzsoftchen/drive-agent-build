@@ -59,6 +59,25 @@ describe('detectProject', () => {
     expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
   });
 
+  it('fails on warnings only when strict mode is enabled', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/rules/typo.md',
+      '---\npathz: src/**\n---\nBody.\n',
+    );
+    await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    const normal = await detectProject(detectOptions(project));
+    expect(normal.summary.warnings).toBeGreaterThan(0);
+    expect(normal.exitCode).toBe(0);
+    expect(normal.ok).toBe(true);
+
+    const strict = await detectProject({ ...detectOptions(project), strict: true });
+    expect(strict.exitCode).toBe(3);
+    expect(strict.ok).toBe(false);
+  });
+
   it('warns but does not fail when Claude Code is missing', async () => {
     const project = await initialized();
     const result = await detectProject(detectOptions(project, missingRunner));

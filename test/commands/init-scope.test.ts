@@ -85,10 +85,14 @@ describe('scope-aware init', () => {
       ok: boolean;
       scope: string;
       root: string;
+      scopeRoot: string;
+      created: string[];
     };
     expect(payload.ok).toBe(true);
     expect(payload.scope).toBe('global');
     expect(payload.root).toBe(join(home, '.agents'));
+    expect(payload.scopeRoot).toBe(home);
+    expect(await lstatOrNull(join(payload.scopeRoot, payload.created[0] ?? ''))).not.toBeNull();
   });
 
   it('bootstraps a symlinked global source root under HOME', async () => {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
@@ -299,7 +300,7 @@ describe('normalizeProject', () => {
     expect(result.settings.changed).toBe(true);
     expect(result.backups).toHaveLength(1);
     expect(result.backups[0]).toMatch(/^\.dab\/backups\//);
-    expect(await readFile(join(project.root, result.backups[0] ?? ''), 'utf8'))
+    expect(await readFile(join(result.root, result.backups[0] ?? ''), 'utf8'))
       .toBe('{"permissions":{}}\n');
     expect(await readFile(settingsPath, 'utf8')).not.toBe('{"permissions":{}}\n');
   });
@@ -583,6 +584,56 @@ Unsafe.
     expect(calls).toBe(1);
   });
 
+  it('caches a synchronous version check failure', async () => {
+    const project = await projectFixture();
+    let calls = 0;
+    const runner = (() => {
+      calls += 1;
+      if (calls === 1) {
+        throw new Error('synchronous failure');
+      }
+      return Promise.resolve({
+        stdout: '2.1.325 (Claude Code)\n',
+        stderr: '',
+        exitCode: 0,
+      });
+    }) as CommandRunner;
+
+    const result = await normalizeProject({ cwd: project.root, runner });
+
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(1);
+    expect(result.diagnostics.map((item) => item.code)).toContain('backend.missing');
+  });
+
+  it('prints human backup paths relative to the invocation directory', async () => {
+    const project = await projectFixture();
+    await normalizeProject({ cwd: project.root, runner: goodRunner });
+    await writeFile(join(project.root, '.claude/settings.json'), '{"permissions":{}}\n');
+    const sub = join(project.root, 'sub');
+    await mkdir(sub, { recursive: true });
+    const previous = process.cwd();
+    process.chdir(sub);
+    try {
+      const stdout: string[] = [];
+      const code = await runNormalize(
+        {
+          cwd: sub,
+          runner: goodRunner,
+          now: new Date('2026-11-16T12:00:00Z'),
+        },
+        { stdout: (value) => stdout.push(value), stderr: () => undefined },
+      );
+
+      expect(code).toBe(0);
+      const line = stdout.join('').split('\n').find((item) => item.includes('.dab/backups/'));
+      expect(line).toBeDefined();
+      expect(existsSync(resolve(process.cwd(), line?.trim() ?? ''))).toBe(true);
+    } finally {
+      process.chdir(previous);
+    }
+  });
+
   it('rejects Windows and missing manifests', async () => {
     const project = await projectFixture();
     await expect(
@@ -647,12 +698,14 @@ Unsafe.
     const payload = JSON.parse(stdout.join('')) as {
       schemaVersion: number;
       ok: boolean;
+      root: string;
       settings: { path: string; sha256: string };
       backups: string[];
       gitignore: { changed: boolean; path: string };
     };
     expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
+    expect(payload.root).toBe(project.root);
     expect(payload.settings.path).toBe('.claude/settings.json');
     expect(payload.settings.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(payload.backups).toEqual([]);

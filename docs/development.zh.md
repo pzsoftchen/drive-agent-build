@@ -18,7 +18,7 @@ pnpm test
 - `pnpm test` 运行单元和集成测试。
 - `pnpm typecheck` 检查 TypeScript。
 - `pnpm doc-sync` 运行翻译配对、链接、排版、预算和 Agent 决策记录格式检查。
-- `node dist/cli.js detect` 检查本仓库的生成配置。
+- `node dist/cli.js detect --strict` 检查本仓库的生成配置，并在存在 warning 时失败。
 - `node dist/cli.js normalize --dry-run` 展示待执行的投影变更。
 
 ## 开发循环

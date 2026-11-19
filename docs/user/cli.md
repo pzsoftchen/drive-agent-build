@@ -45,6 +45,7 @@ Global layout:
 - `dab init path` uses `path` as the exact source root and creates it when missing. It refuses to create a source root inside an existing one.
 - Scans the repository and writes missing authored files. Authored conflicts stop before writes. Unmanaged `.claude` conflicts are reported as pending and left to `dab normalize --fix`.
 - The generated manifest is v2 and includes `scope`, `targets` and `instructions: symlink`.
+- JSON output reports `root` (source root) and `scopeRoot` (path base); `created`, `skipped` and nested normalize paths are relative to `scopeRoot`.
 - `--dry-run` previews authored writes and pending conflicts without writing. `--ai` asks Claude Code for a proposal and writes only after confirmation; it cannot be combined with `--dry-run`.
 
 ## Manifest v2
@@ -106,11 +107,12 @@ paths:
 ## `dab detect`
 
 ```bash
-dab detect [--json]
+dab detect [--strict] [--json]
 ```
 
 Runs checks without writing. It verifies scope, enabled target adapters, Claude Code version, ancestor instruction files, the instructions artifact, projections, settings, policy, hooks, memory, secrets, AGENTS.md size and links. It prints one `kind name: target=status` line per fact.
 
+- `--strict` exits with code 3 when any warning is present. Use it in CI to fail on unknown frontmatter or other warnings.
 - In global scope, ancestor and personal-memory checks are skipped because user-level Claude data is not a project artifact.
 - Unmanaged target paths and missing generated records are reported as drift.
 
@@ -137,6 +139,7 @@ JSON output includes the top-level result and one entry per enabled target:
   },
   "manifestUpdated": false,
   "ok": true,
+  "root": "/path/to/project",
   "schemaVersion": 1,
   "settings": {
     "changed": false,
@@ -165,7 +168,7 @@ JSON output includes the top-level result and one entry per enabled target:
 }
 ```
 
-- All paths are relative to the scope root, including `gitignore.path` and backup entries.
+- The payload includes the absolute `root`; all other paths in this result are relative to it, including `gitignore.path` and backup entries.
 - `--dry-run` runs the same precheck and exit codes without writing.
 - In global scope, `~/.claude/settings.json` and `$HOME/.gitignore` are read-only and normalize warns that global settings are not adopted.
 

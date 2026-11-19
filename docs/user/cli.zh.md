@@ -45,6 +45,7 @@ Global 布局：
 - `dab init path` 把 `path` 作为确切的 source root，并在缺失时创建它。它拒绝在已有 source root 内部创建 source root。
 - 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。未受管的 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
 - 生成的 manifest 是 v2，包含 `scope`、`targets` 和 `instructions: symlink`。
+- JSON 输出包含 `root`（source root）和 `scopeRoot`（路径基准）；`created`、`skipped` 以及嵌套 normalize 路径都相对于 `scopeRoot`。
 - `--dry-run` 预览编写文件写入和 pending 冲突，不写入任何内容。`--ai` 让 Claude Code 生成提案，确认后才写入；不能与 `--dry-run` 同时使用。
 
 ## Manifest v2
@@ -106,11 +107,12 @@ paths:
 ## `dab detect`
 
 ```bash
-dab detect [--json]
+dab detect [--strict] [--json]
 ```
 
 只检查不写入。它验证 scope、启用的 target adapter、Claude Code 版本、祖先指令文件、指令产物、投影、settings、策略、hooks、记忆、敏感信息、AGENTS.md 大小和链接。每个 fact 输出一行 `kind name: target=status`。
 
+- `--strict` 在存在任何 warning 时以退出码 3 结束。CI 中可用它把 unknown frontmatter 等警告变成失败。
 - Global scope 会跳过祖先和个人记忆检查，因为用户级 Claude 数据不是项目产物。
 - Unmanaged target path 和缺失的生成记录会作为漂移报告。
 
@@ -137,6 +139,7 @@ JSON 输出包含顶层结果和每个启用 target 的条目：
   },
   "manifestUpdated": false,
   "ok": true,
+  "root": "/path/to/project",
   "schemaVersion": 1,
   "settings": {
     "changed": false,
@@ -165,7 +168,7 @@ JSON 输出包含顶层结果和每个启用 target 的条目：
 }
 ```
 
-- 所有路径都相对于 scope root，包括 `gitignore.path` 和 backup 条目。
+- 结果包含绝对 `root`；其他路径相对于该基准，包括 `gitignore.path` 和 backup 条目。
 - `--dry-run` 运行同一预检和退出码，但不写入。
 - Global scope 下 `~/.claude/settings.json` 和 `$HOME/.gitignore` 只读，normalize 会警告 global settings 尚未采用。
 

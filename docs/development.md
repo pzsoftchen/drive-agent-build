@@ -18,7 +18,7 @@ pnpm test
 - `pnpm test` runs the unit and integration suite.
 - `pnpm typecheck` checks TypeScript.
 - `pnpm doc-sync` runs translation pairing, links, wrap, budgets and Agent Note format.
-- `node dist/cli.js detect` checks this repository's generated configuration.
+- `node dist/cli.js detect --strict` checks this repository's generated configuration and fails on warnings.
 - `node dist/cli.js normalize --dry-run` shows pending projection changes.
 
 ## Development loop

@@ -5,7 +5,7 @@ import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
-import { describeUnknownTopLevelFields, parseFrontmatter } from './frontmatter.ts';
+import { parseFrontmatter, unknownFrontmatterDiagnostic } from './frontmatter.ts';
 import { AgentFrontmatterSchema, CLAUDE_HOOK_EVENTS, KEBAB_CASE } from './schemas.ts';
 import type {
   AgentDefinition,
@@ -294,16 +294,15 @@ export async function discoverAgents(
     }
 
     const data = validated.data;
-    const unknown = describeUnknownTopLevelFields(AGENT_FRONTMATTER_FIELDS, parsed.data);
-    if (unknown.length > 0) {
-      diagnostics.push({
-        code: DiagnosticCodes.agentUnknownFrontmatter,
-        severity: 'warning',
-        message: `agent ${data.name} has unknown frontmatter field(s): ${unknown.join(', ')}`,
-        file,
-        line: 1,
-        hint: 'Unknown top-level fields are preserved for Claude Code compatibility; remove them if they are typos.',
-      });
+    const unknown = unknownFrontmatterDiagnostic(
+      'agent',
+      data.name,
+      AGENT_FRONTMATTER_FIELDS,
+      parsed.data,
+      file,
+    );
+    if (unknown !== undefined) {
+      diagnostics.push(unknown);
     }
     if (data.memory === 'project') {
       diagnostics.push({

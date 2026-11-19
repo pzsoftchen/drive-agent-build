@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { compareStrings } from '../../src/core/compare.ts';
 
 async function listTypeScriptFiles(directory: string): Promise<string[]> {
@@ -27,12 +28,16 @@ describe('compareStrings', () => {
 });
 
 describe('deterministic source ordering', () => {
-  it('does not use localeCompare anywhere in src', async () => {
-    const root = process.cwd();
+  it('does not use locale-dependent comparison anywhere in src', async () => {
+    const srcRoot = fileURLToPath(new URL('../../src', import.meta.url));
+    const patterns = ['localeCompare', 'Intl.Collator'];
     const offenders: string[] = [];
-    for (const file of await listTypeScriptFiles(join(root, 'src'))) {
-      if ((await readFile(file, 'utf8')).includes('localeCompare')) {
-        offenders.push(relative(root, file));
+    for (const file of await listTypeScriptFiles(srcRoot)) {
+      const text = await readFile(file, 'utf8');
+      for (const pattern of patterns) {
+        if (text.includes(pattern)) {
+          offenders.push(`${relative(srcRoot, file)}:${pattern}`);
+        }
       }
     }
     expect(offenders).toEqual([]);

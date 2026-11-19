@@ -1,5 +1,8 @@
+import { compareStrings } from '../core/compare.ts';
+import type { Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError } from '../core/errors.ts';
 import { parseYamlDocument } from '../core/yaml.ts';
+import { DiagnosticCodes } from './diagnostics-codes.ts';
 
 export interface ParsedFrontmatter {
   data: Record<string, unknown>;
@@ -16,22 +19,32 @@ export function unknownTopLevelFields(
 }
 
 function editDistance(left: string, right: string): number {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const matrix: number[][] = Array.from({ length: left.length + 1 }, (_, row) =>
+    Array.from({ length: right.length + 1 }, (_, column) =>
+      row === 0 ? column : column === 0 ? row : 0));
   for (let i = 1; i <= left.length; i += 1) {
-    let diagonal = previous[0] ?? 0;
-    previous[0] = i;
     for (let j = 1; j <= right.length; j += 1) {
-      const above = previous[j] ?? 0;
       const cost = left[i - 1] === right[j - 1] ? 0 : 1;
-      previous[j] = Math.min(
-        (previous[j] ?? 0) + 1,
-        (previous[j - 1] ?? 0) + 1,
-        diagonal + cost,
+      let value = Math.min(
+        (matrix[i - 1]?.[j] ?? 0) + 1,
+        (matrix[i]?.[j - 1] ?? 0) + 1,
+        (matrix[i - 1]?.[j - 1] ?? 0) + cost,
       );
-      diagonal = above;
+      if (
+        i > 1
+        && j > 1
+        && left[i - 1] === right[j - 2]
+        && left[i - 2] === right[j - 1]
+      ) {
+        value = Math.min(value, (matrix[i - 2]?.[j - 2] ?? 0) + 1);
+      }
+      const current = matrix[i];
+      if (current !== undefined) {
+        current[j] = value;
+      }
     }
   }
-  return previous[right.length] ?? 0;
+  return matrix[left.length]?.[right.length] ?? 0;
 }
 
 export function nearestKnownField(
@@ -44,7 +57,10 @@ export function nearestKnownField(
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const candidate of known) {
     const distance = editDistance(normalized, candidate.toLowerCase());
-    if (distance < bestDistance) {
+    if (
+      distance < bestDistance
+      || (distance === bestDistance && best !== undefined && compareStrings(candidate, best) < 0)
+    ) {
       best = candidate;
       bestDistance = distance;
     }
@@ -60,6 +76,33 @@ export function describeUnknownTopLevelFields(
     const suggestion = nearestKnownField(field, known);
     return suggestion === undefined ? field : `${field} (did you mean ${suggestion}?)`;
   });
+}
+
+const UNKNOWN_FRONTMATTER_CODES = {
+  agent: DiagnosticCodes.agentUnknownFrontmatter,
+  skill: DiagnosticCodes.skillUnknownFrontmatter,
+  rule: DiagnosticCodes.ruleUnknownFrontmatter,
+} as const;
+
+export function unknownFrontmatterDiagnostic(
+  kind: keyof typeof UNKNOWN_FRONTMATTER_CODES,
+  name: string,
+  known: readonly string[],
+  data: Record<string, unknown>,
+  file: string,
+): Diagnostic | undefined {
+  const unknown = describeUnknownTopLevelFields(known, data);
+  if (unknown.length === 0) {
+    return undefined;
+  }
+  return {
+    code: UNKNOWN_FRONTMATTER_CODES[kind],
+    severity: 'warning',
+    message: `${kind} ${name} has unknown frontmatter field(s): ${unknown.join(', ')}`,
+    file,
+    line: 1,
+    hint: 'Unknown top-level fields are preserved for Claude Code compatibility; remove them if they are typos.',
+  };
 }
 
 export function parseFrontmatter(text: string, file: string): ParsedFrontmatter {

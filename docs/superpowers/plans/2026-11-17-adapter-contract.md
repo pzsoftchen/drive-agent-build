@@ -28,7 +28,7 @@
 
 本计划暂不执行；先发布 Claude-only v0.1.x。发布前已完成：
 
-- `schemaVersion: 1` 已加入；`normalize`/`init` 的 JSON 路径已统一为 scope-relative，adapter 重构只追加字段。
+- `schemaVersion: 1` 已加入；`normalize` 包含 `root`，`init` 包含 `root`/`scopeRoot`，其余 JSON 路径相对它们；adapter 重构只追加字段。
 - `src/core/platform.ts` 的公共平台守卫已覆盖 `normalize`、`init`、`detect` 和 `policy explain`。
 - `normalize` 已通过 memoized runner 只执行一次 `claude --version`。
 
