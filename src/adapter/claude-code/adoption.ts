@@ -176,7 +176,9 @@ function symlinkDiagnostic(
   hasAuthoredSource: boolean,
   managed: ReadonlySet<string>,
 ): Diagnostic | undefined {
-  if (managed.has(target) || hasAuthoredSource) {
+  // Recorded projection targets are root-relative `.claude` paths, which is
+  // exactly the `source` path here; `target` is the `.agents` destination.
+  if (managed.has(source) || hasAuthoredSource) {
     return undefined;
   }
   return unmanagedSymlink(source, target);

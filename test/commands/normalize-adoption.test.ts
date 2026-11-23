@@ -801,6 +801,68 @@ describe('normalize managed projection drift', () => {
       .toBe(false);
   });
 
+  it('removes a recorded agent projection when its source was removed and the link drifted', async () => {
+    const project = await initializedProject();
+    const target = join(project.root, '.claude/agents/reviewer.md');
+    await rm(join(project.root, '.agents/agents/reviewer.md'));
+    await rm(target);
+    await symlink('../../elsewhere.md', target);
+
+    const blocked = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(blocked.ok).toBe(false);
+    const blockedCodes = blocked.diagnostics.map((item) => item.code);
+    expect(blockedCodes).toContain('projection.unmanaged');
+    expect(blockedCodes).not.toContain('adoption.unmanaged-symlink');
+
+    const fixed = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(fixed.ok).toBe(true);
+    expect(await lstatOrNull(target)).toBeNull();
+    const backup = fixed.backups.find((item) => item.endsWith('.claude/agents/reviewer.md'));
+    expect(backup).toMatch(/^\.dab\/backups\//);
+  });
+
+  it('removes a recorded skill projection when its source was removed and the link drifted', async () => {
+    const project = await initializedProject();
+    const target = join(project.root, '.claude/skills/doc-sync');
+    await rm(join(project.root, '.agents/skills/doc-sync'), { recursive: true });
+    await rm(target, { recursive: true });
+    await symlink('../../elsewhere', target);
+
+    const blocked = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(blocked.ok).toBe(false);
+    const blockedCodes = blocked.diagnostics.map((item) => item.code);
+    expect(blockedCodes).toContain('projection.unmanaged');
+    expect(blockedCodes).not.toContain('adoption.unmanaged-symlink');
+
+    const fixed = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(fixed.ok).toBe(true);
+    expect(await lstatOrNull(target)).toBeNull();
+    const backup = fixed.backups.find((item) => item.endsWith('.claude/skills/doc-sync'));
+    expect(backup).toMatch(/^\.dab\/backups\//);
+  });
+
   it('repairs an unmanaged agent symlink with --fix when an authored source exists', async () => {
     const project = await initializedProject();
     await writeProjectFile(
