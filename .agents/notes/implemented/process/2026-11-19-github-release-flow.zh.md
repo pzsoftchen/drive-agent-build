@@ -37,7 +37,8 @@ Status: implemented
 
 - `test/release.test.ts` 检查包身份、发布配置、release workflow 内容和 README 安装路径。
 - CI 运行 `npm pack` 和 scoped `npx @saydone/dab` 冒烟测试。
-- `pnpm test`、`pnpm typecheck` 和 `pnpm doc-sync` 通过。第一次真实 workflow 运行发生在第一个 `v*` tag。
+- `pnpm test`、`pnpm typecheck` 和 `pnpm doc-sync` 通过。
+- `v0.1.1` tag run（`45116029166`）通过。publish job 跳过了 `npm publish`，因为 `@saydone/dab@0.1.1` 已存在，并创建了 [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)。
 
 ## 相关
 

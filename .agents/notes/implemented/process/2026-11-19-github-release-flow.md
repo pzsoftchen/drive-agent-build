@@ -37,7 +37,8 @@ The first npm release needed a repeatable, auditable path from a tagged commit t
 
 - `test/release.test.ts` checks the package identity, publish configuration, release workflow contents and README install paths.
 - CI runs `npm pack` and a scoped `npx @saydone/dab` smoke test.
-- `pnpm test`, `pnpm typecheck` and `pnpm doc-sync` pass. The first real workflow run happens on the first `v*` tag.
+- `pnpm test`, `pnpm typecheck` and `pnpm doc-sync` pass.
+- The `v0.1.1` tag run (`45116029166`) passed. The publish job skipped `npm publish` because `@saydone/dab@0.1.1` already existed and created the [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1).
 
 ## Related
 

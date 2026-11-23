@@ -52,16 +52,18 @@ Single-task closure belongs to DAD. DAB begins when multiple tasks must converge
 
 ## Current status
 
-The diagram describes the combined target model. The current `main` branch implements the DAD configuration-governance foundation. Single-task evidence is next; DAB is not yet scheduled.
+The diagram describes the combined target model. The DAD configuration-governance foundation is released as `@saydone/dab@0.1.1`. Single-task evidence is next; DAB is not yet scheduled.
 
 | Capability | Status |
 |---|---|
-| DAD authored facts, projections, drift checks and policy explanation | Implemented on `main` |
-| DAD independent project/global scopes and v2 manifests | Implemented on `main`; pending release |
+| DAD authored facts, projections, drift checks and policy explanation | Released in 0.1.1 |
+| DAD independent project/global scopes and v2 manifests | Released in 0.1.1 |
 | DAD evidence for one development task | Planned for v0.2; next |
 | DAD memory and operational hardening | Planned for v0.3 |
 | DAD Codex and DSH adapters | After single-task evidence |
 | DAB goal decomposition and cross-task convergence | Research; gated by DAD evidence |
+
+Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release v0.1.1](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)
 
 ## Quick start
 

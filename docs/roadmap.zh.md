@@ -10,12 +10,13 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 - 生成输出：`.claude/`。
 - 命令：`dab init`、`dab detect`、`dab normalize`、`dab policy explain`。
 - 双语文档门禁。
-- 状态：已在 `main` 实现，等待带标签的正式发布。
+- 状态：已于 2026-11-23 发布 `v0.1.1`。
+- 发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)
 
 ## v0.1.x DAD 基础层
 
-- scope root、v2 manifest、target adapter、所有权和失败语义已在 `main` 实现，等待发布。
-- symlink 优先的 Claude Code 指令、逐项投影和 project settings 已在 `main` 实现，等待发布。
+- scope root、v2 manifest、target adapter、所有权和失败语义已在 `v0.1.1` 发布。
+- symlink 优先的 Claude Code 指令、逐项投影和 project settings 已在 `v0.1.1` 发布。
 - Project 和 global scope 保持独立；DAB 不提供 `dab global` 命令，也从不合并 scope。
 - Codex 和 DSH adapter 推迟到 DAD 任务循环完成评测之后。
 
