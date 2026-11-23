@@ -116,6 +116,21 @@ describe('runInit', () => {
     expect(generated?.projections.length ?? 0).toBeGreaterThan(0);
   });
 
+  it('generates single-language core documentation templates', async () => {
+    const root = await tempDir();
+    await initializeProject({ cwd: root });
+
+    const agentsMd = await readFile(join(root, 'AGENTS.md'), 'utf8');
+    const docSync = await readFile(join(root, '.agents/skills/doc-sync/SKILL.md'), 'utf8');
+
+    expect(agentsMd).not.toContain('English and Chinese');
+    expect(agentsMd).toContain('Update project documentation when a user-facing behavior changes.');
+    expect(docSync).not.toContain('English and Chinese');
+    expect(docSync).toContain(
+      'description: Updates project documentation and runs the documentation gates.',
+    );
+  });
+
   it('preserves an existing AGENTS.md', async () => {
     const root = await tempDir();
     await packageJson(root);

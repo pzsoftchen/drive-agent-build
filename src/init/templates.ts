@@ -43,7 +43,7 @@ export function renderAgentsMd(scan: ScanResult, added?: string): string {
 2. Write a failing test before implementation.
 3. Run the test command above and report the exact result.
 4. Run \`dab detect\` before handing off configuration changes.
-5. Update paired English and Chinese docs when a user-facing behavior changes.
+5. Update project documentation when a user-facing behavior changes.
 ${addition}`;
 }
 
@@ -59,7 +59,7 @@ You implement one scoped task at a time.
 - Write a failing test before production code, then make it pass.
 - Keep changes inside the requested scope.
 - Run the project test command and report the exact result.
-- Update paired documentation when behavior changes.
+- Update project documentation when behavior changes.
 `;
 }
 
@@ -94,7 +94,7 @@ description: Delivers one scoped feature with failing tests, implementation, doc
 4. Run \`${commandOrTodo(scan.commands.test)}\` and confirm the new test fails for the expected reason.
 5. Implement the smallest change that makes the test pass.
 6. Run \`${commandOrTodo(scan.commands.test)}\` again and report the exact result.
-7. Update paired documentation when the behavior is user-facing.
+7. Update documentation when the behavior is user-facing.
 8. Summarize changed files, tests and any remaining risk.
 `;
 }
@@ -102,15 +102,14 @@ description: Delivers one scoped feature with failing tests, implementation, doc
 export function renderDocSyncSkill(): string {
   return `---
 name: doc-sync
-description: Updates paired English and Chinese documentation and runs the documentation gates.
+description: Updates project documentation and runs the documentation gates.
 ---
 # Documentation sync
 
-1. Identify the English source document and its \`.zh.md\` translation.
-2. Update both sides in the same change.
+1. Identify the documentation affected by the change.
+2. Update the affected documentation in the same change.
 3. Keep headings, lists, tables, code blocks and inline code structurally identical.
-4. Run the repository's translation-pairing check (for example \`pnpm run verify-translation-pairing --write\` when that script exists).
-5. Run the repository's documentation gate and fix every failure.
+4. Run the repository's documentation gate and fix every failure.
 `;
 }
 
