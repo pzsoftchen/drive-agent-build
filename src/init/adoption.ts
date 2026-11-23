@@ -10,6 +10,7 @@ import {
   isPathInside,
   toPosix,
 } from '../core/paths.ts';
+import { DAB_VERSION } from '../core/version.ts';
 import { MIN_CLAUDE_CODE_VERSION } from '../core/version-check.ts';
 import {
   applyClaudeAdoption,
@@ -21,6 +22,12 @@ import { loadProjectManifest, resolveProjectPaths } from '../model/project-manif
 import { ProjectManifestSchema } from '../model/schemas.ts';
 import { resolveScopeMarker, type Scope, type SourceRoot } from '../model/scope.ts';
 import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
+import {
+  PRACTICE_PACKS,
+  planAuthoredScaffold,
+  type AuthoredScaffoldPlan,
+  type ResolvedProfile,
+} from './practice.ts';
 import { scanProject, type ScanResult } from './scanner.ts';
 import {
   renderAgentsMd,
@@ -215,6 +222,8 @@ export interface NormalizeAdoptionPreparation {
   manifest: ProjectManifest;
   paths: ProjectPaths;
   sourcePlan?: MinimalSourcePlan;
+  /** Practice docs/skills plan. In adoption mode its files are the source plan. */
+  practicePlan?: AuthoredScaffoldPlan;
   claudePlan?: ClaudeAdoptionPlan;
   diagnostics: Diagnostic[];
 }
@@ -308,6 +317,111 @@ export interface PrepareAdoptionInput {
   suppressImports?: boolean;
 }
 
+/**
+ * Plan authored practice artifacts through the shared planner. Normalize uses
+ * adoption mode before a manifest exists and converge mode afterwards; the
+ * production pack registry is always explicit.
+ */
+async function planPractices(input: {
+  root: string;
+  scope: Scope;
+  scan: ScanResult;
+  profile: ResolvedProfile;
+  mode: 'adoption' | 'converge';
+  manifest?: ProjectManifest;
+}): Promise<AuthoredScaffoldPlan> {
+  return planAuthoredScaffold({
+    root: input.root,
+    scope: input.scope,
+    scan: input.scan,
+    profile: input.profile,
+    mode: input.mode,
+    version: DAB_VERSION,
+    env: process.env,
+    ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
+  }, PRACTICE_PACKS);
+}
+
+/**
+ * The practice planner resolves real parent paths, which cannot resolve a
+ * dangling `.agents` symlink. Normalize still needs to reach its source-write
+ * safety gate to report the alias/escape, so detect this layout before planning
+ * and use the minimal plan instead of throwing a raw filesystem error.
+ */
+async function danglingSourceDiagnostic(root: string): Promise<Diagnostic | undefined> {
+  const agents = join(root, '.agents');
+  const info = await lstatOrNull(agents);
+  if (info?.isSymbolicLink() !== true) {
+    return undefined;
+  }
+  try {
+    await realpath(agents);
+    return undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  if (await lexicalAlias(root, '.agents', '.claude')) {
+    return {
+      code: 'path.overlap',
+      severity: 'error',
+      message: 'authored and generated trees overlap: .agents and .claude',
+      file: '.agents',
+    };
+  }
+  return {
+    code: 'path.symlink-escape',
+    severity: 'error',
+    message: 'authored source parent is a dangling symlink: .agents',
+    file: '.agents',
+  };
+}
+
+/**
+ * A physical `.claude/skills/dab-*` entry is an import fact. When its `.agents`
+ * source is still missing, the import plan owns that skill, so DAB must not
+ * also plan its authoring template: two writers would race for one directory.
+ * Existing `.agents` skill directories are already skipped by the planner and
+ * keep the normal import rules (source wins, `.claude` is backed up).
+ */
+function suppressImportedAuthoringSkillTemplates(
+  plan: AuthoredScaffoldPlan,
+  claudePlan: ClaudeAdoptionPlan | undefined,
+): AuthoredScaffoldPlan {
+  if (claudePlan === undefined) {
+    return plan;
+  }
+  const imported = new Set<string>();
+  for (const entry of claudePlan.entries) {
+    if (
+      entry.kind === 'skill'
+      && entry.writeSource
+      && entry.target.startsWith('.agents/skills/dab-')
+    ) {
+      imported.add(entry.target);
+    }
+  }
+  if (imported.size === 0) {
+    return plan;
+  }
+  const suppressed = (path: string): boolean => {
+    for (const target of imported) {
+      if (path === target || path.startsWith(`${target}/`)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return {
+    ...plan,
+    files: Object.fromEntries(
+      Object.entries(plan.files).filter(([path]) => !suppressed(path)),
+    ),
+    directories: plan.directories.filter((path) => !suppressed(path)),
+  };
+}
+
 export async function prepareNormalizeAdoption(
   input: PrepareAdoptionInput,
 ): Promise<NormalizeAdoptionPreparation> {
@@ -326,49 +440,130 @@ export async function prepareNormalizeAdoption(
     await loadProjectManifest(adoption.root, { scope: adoption.scope });
     throw new ConfigError(`invalid ${manifestKey}`, 'config.invalid');
   }
+  const sourceProblem = await danglingSourceDiagnostic(adoption.root);
 
   if (hasManifest) {
     const loaded = await loadProjectManifest(adoption.root, { scope: adoption.scope });
     const paths = resolveProjectPaths(adoption.root, loaded.manifest);
     if (adoption.phase === 'initialized') {
+      if (sourceProblem !== undefined) {
+        return {
+          sourceRoot,
+          phase: adoption.phase,
+          manifest: loaded.manifest,
+          paths,
+          claudePlan: await importPlan(loaded.manifest, paths),
+          diagnostics: [sourceProblem],
+        };
+      }
+      const scan = await scanProject(adoption.root);
+      const claudePlan = await importPlan(loaded.manifest, paths);
+      const practicePlan = suppressImportedAuthoringSkillTemplates(
+        await planPractices({
+          root: adoption.root,
+          scope: adoption.scope,
+          scan,
+          profile: loaded.manifest.profile,
+          mode: 'converge',
+          manifest: loaded.manifest,
+        }),
+        claudePlan,
+      );
       return {
         sourceRoot,
         phase: adoption.phase,
         manifest: loaded.manifest,
         paths,
-        claudePlan: await importPlan(loaded.manifest, paths),
-        diagnostics: [],
+        practicePlan,
+        claudePlan,
+        diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics],
       };
     }
     await assertProjectHomeNotGlobal(adoption, input.home);
     const scan = await scanProject(adoption.root);
-    const plan = minimalSourcePlan(scan, adoption.scope);
+    if (sourceProblem !== undefined) {
+      const plan = minimalSourcePlan(scan, adoption.scope);
+      const { [manifestKey]: _authored, ...files } = plan.files;
+      return {
+        sourceRoot,
+        phase: adoption.phase,
+        manifest: loaded.manifest,
+        paths,
+        sourcePlan: { ...plan, files, manifest: loaded.manifest },
+        claudePlan: await importPlan(loaded.manifest, paths),
+        diagnostics: [sourceProblem, ...scan.diagnostics],
+      };
+    }
+    const claudePlan = await importPlan(loaded.manifest, paths);
+    const practicePlan = suppressImportedAuthoringSkillTemplates(
+      await planPractices({
+        root: adoption.root,
+        scope: adoption.scope,
+        scan,
+        profile: loaded.manifest.profile,
+        mode: 'adoption',
+        manifest: loaded.manifest,
+      }),
+      claudePlan,
+    );
     // The authored manifest is authoritative: it is never part of the write
-    // plan and `plan.manifest` stays equal to what normalize loads afterwards.
-    const { [manifestKey]: _authored, ...files } = plan.files;
+    // plan and `practicePlan.manifest` stays equal to what normalize loads.
+    const { [manifestKey]: _authored, ...files } = practicePlan.files;
     return {
       sourceRoot,
       phase: adoption.phase,
       manifest: loaded.manifest,
       paths,
-      sourcePlan: { ...plan, files, manifest: loaded.manifest },
-      claudePlan: await importPlan(loaded.manifest, paths),
-      diagnostics: scan.diagnostics,
+      sourcePlan: {
+        files,
+        directories: practicePlan.directories,
+        manifest: loaded.manifest,
+      },
+      practicePlan,
+      claudePlan,
+      diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics],
     };
   }
 
   await assertProjectHomeNotGlobal(adoption, input.home);
   const scan = await scanProject(adoption.root);
-  const sourcePlan = minimalSourcePlan(scan, adoption.scope);
-  const paths = resolveProjectPaths(adoption.root, sourcePlan.manifest);
+  if (sourceProblem !== undefined) {
+    const plan = minimalSourcePlan(scan, adoption.scope);
+    const paths = resolveProjectPaths(adoption.root, plan.manifest);
+    return {
+      sourceRoot,
+      phase: adoption.phase,
+      manifest: plan.manifest,
+      paths,
+      sourcePlan: plan,
+      claudePlan: await importPlan(plan.manifest, paths),
+      diagnostics: [sourceProblem, ...scan.diagnostics],
+    };
+  }
+  const rawPracticePlan = await planPractices({
+    root: adoption.root,
+    scope: adoption.scope,
+    scan,
+    profile: 'generic',
+    mode: 'adoption',
+  });
+  const manifest = rawPracticePlan.manifest ?? minimalSourcePlan(scan, adoption.scope).manifest;
+  const paths = resolveProjectPaths(adoption.root, manifest);
+  const claudePlan = await importPlan(manifest, paths);
+  const practicePlan = suppressImportedAuthoringSkillTemplates(rawPracticePlan, claudePlan);
   return {
     sourceRoot,
     phase: adoption.phase,
-    manifest: sourcePlan.manifest,
+    manifest,
     paths,
-    sourcePlan,
-    claudePlan: await importPlan(sourcePlan.manifest, paths),
-    diagnostics: scan.diagnostics,
+    sourcePlan: {
+      files: practicePlan.files,
+      directories: practicePlan.directories,
+      manifest,
+    },
+    practicePlan,
+    claudePlan,
+    diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics],
   };
 }
 
@@ -471,28 +666,40 @@ async function sourceWriteDiagnostics(
 export async function applyNormalizeAdoption(
   prep: NormalizeAdoptionPreparation,
   options: { dryRun: boolean; backupRoot: string },
-): Promise<{ actions: string[]; backups: string[]; diagnostics: Diagnostic[] }> {
+): Promise<{
+  actions: string[];
+  backups: string[];
+  diagnostics: Diagnostic[];
+  created: string[];
+  skipped: string[];
+}> {
   const root = prep.sourceRoot.root;
   const actions: string[] = [];
   const backups: string[] = [];
   const diagnostics: Diagnostic[] = [];
+  const created: string[] = [];
+  const skipped: string[] = [];
 
   if (prep.sourcePlan !== undefined) {
     const agents = toPosix(relative(root, prep.paths.agents));
     const sourceDiagnostics = await sourceWriteDiagnostics(root, prep.sourcePlan, agents);
     if (sourceDiagnostics.length > 0) {
-      return { actions: [], backups: [], diagnostics: sourceDiagnostics };
+      return {
+        actions: [],
+        backups: [],
+        diagnostics: sourceDiagnostics,
+        created: [],
+        skipped: [],
+      };
     }
-    let created: string[];
-    let skipped: string[];
     if (options.dryRun) {
       const planned = await planSourceWrites(root, prep.sourcePlan);
-      created = planned.create;
-      skipped = planned.skip;
+      created.push(...planned.create);
+      skipped.push(...planned.skip);
     } else {
       const written = await writeSourceFiles(root, prep.sourcePlan);
-      created = written.created;
-      skipped = written.skipped;
+      created.push(...written.created);
+      skipped.push(...written.skipped);
     }
     actions.push(
       ...created.map((file) => `create ${file}`),
@@ -513,5 +720,5 @@ export async function applyNormalizeAdoption(
     diagnostics.push(...applied.diagnostics);
   }
 
-  return { actions, backups, diagnostics };
+  return { actions, backups, diagnostics, created, skipped };
 }

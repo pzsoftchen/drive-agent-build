@@ -33,9 +33,14 @@ import { checkClaudeCode } from '../adapter/claude-code/version.ts';
 import { checkAgentHooks, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import {
   applyNormalizeAdoption,
+  planSourceWrites,
   prepareNormalizeAdoption,
+  writeSourceFiles,
+  type MinimalSourcePlan,
   type NormalizeAdoptionResult,
 } from '../init/adoption.ts';
+import type { DocsLanguageResolution } from '../init/docs-language.ts';
+import type { AuthoredScaffoldPlan } from '../init/practice.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
 import {
@@ -82,6 +87,24 @@ export interface TargetNormalizeResult {
   backups: string[];
 }
 
+/** Practice artifacts (docs and authoring skills) handled by this normalization. */
+export interface NormalizePracticesResult {
+  profile: 'generic' | 'feature';
+  mode: 'adoption' | 'converge';
+  language: DocsLanguageResolution;
+  /** Documentation files, never authoring skill files. */
+  created: string[];
+  skipped: string[];
+  policySkipped: string[];
+  /** Practice-owned directories, never core `.agents` directories. */
+  directories: string[];
+  skills: {
+    created: string[];
+    skipped: string[];
+  };
+  diagnostics: Diagnostic[];
+}
+
 /**
  * Paths in this result are relative to `root`. `root` is absolute so consumers
  * can resolve them without guessing which directory the command walked up from.
@@ -108,6 +131,79 @@ export interface NormalizeResult {
   };
   manifestUpdated: boolean;
   adoption?: NormalizeAdoptionResult;
+  /** Absent for global scope, which never owns project docs or authoring skills. */
+  practices?: NormalizePracticesResult;
+}
+
+const PRACTICE_SKILL_PREFIX = '.agents/skills/';
+
+function isDocsPracticePath(path: string): boolean {
+  return path === 'docs' || path.startsWith('docs/');
+}
+
+function isAuthoringSkillPath(path: string): boolean {
+  return path.startsWith(PRACTICE_SKILL_PREFIX)
+    && path.slice(PRACTICE_SKILL_PREFIX.length).startsWith('dab-');
+}
+
+function isPracticeDirectory(path: string): boolean {
+  return isDocsPracticePath(path) || isAuthoringSkillPath(path);
+}
+
+function policySkipDiagnostic(path: string): Diagnostic {
+  return {
+    code: 'practice.docs-bilingual-policy',
+    severity: 'warning',
+    message: `project bilingual rule skips single-language documentation: ${path}`,
+    file: path,
+    hint: 'Remove .agents/rules/docs-bilingual.md to let DAB scaffold single-language docs.',
+  };
+}
+
+function policySkipWarnings(plan: AuthoredScaffoldPlan | undefined): Diagnostic[] {
+  return (plan?.policySkipped ?? []).filter(isDocsPracticePath).map(policySkipDiagnostic);
+}
+
+function buildPractices(
+  plan: AuthoredScaffoldPlan,
+  created: readonly string[],
+  skipped: readonly string[],
+  diagnostics: readonly Diagnostic[],
+): NormalizePracticesResult {
+  const practiceCreated = created.filter(
+    (path) => isDocsPracticePath(path) || isAuthoringSkillPath(path),
+  );
+  // `plan.skipped` is the planner's existing-path report; write-time skips add
+  // only the files the planner planned but another writer created first.
+  const practiceSkipped = [...new Set([
+    ...plan.skipped.filter(
+      (path) => isDocsPracticePath(path) || isAuthoringSkillPath(path),
+    ),
+    ...skipped.filter(
+      (path) => isDocsPracticePath(path) || isAuthoringSkillPath(path),
+    ),
+  ])];
+  return {
+    profile: plan.profile,
+    mode: plan.mode === 'converge' ? 'converge' : 'adoption',
+    language: plan.docsLanguage,
+    created: practiceCreated.filter((path) => !isAuthoringSkillPath(path)),
+    skipped: practiceSkipped.filter((path) => !isAuthoringSkillPath(path)),
+    policySkipped: plan.policySkipped.filter(isDocsPracticePath),
+    directories: plan.directories.filter(isPracticeDirectory),
+    skills: {
+      created: practiceCreated.filter(isAuthoringSkillPath),
+      skipped: practiceSkipped.filter(isAuthoringSkillPath),
+    },
+    diagnostics: [...diagnostics],
+  };
+}
+
+function practiceExtras(
+  scope: Scope,
+  practices: NormalizePracticesResult | undefined,
+): { practices?: NormalizePracticesResult } {
+  return scope === 'project' && practices !== undefined ? { practices } : {};
 }
 
 function dedupeDiagnostics(items: readonly Diagnostic[]): Diagnostic[] {
@@ -187,6 +283,7 @@ function blockedResult(
     compatTargets?: readonly TargetNormalizeResult[];
     exitCode?: ExitCode;
     adoption?: NormalizeAdoptionResult;
+    practices?: NormalizePracticesResult;
   } = {},
 ): NormalizeResult {
   const targets = extras.targets ?? [];
@@ -209,6 +306,7 @@ function blockedResult(
     gitignore: { changed: false, path: '' },
     manifestUpdated: false,
     ...(extras.adoption === undefined ? {} : { adoption: extras.adoption }),
+    ...(extras.practices === undefined ? {} : { practices: extras.practices }),
   };
 }
 
@@ -321,12 +419,22 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const root = preparation.sourceRoot.root;
   const scope = preparation.sourceRoot.scope;
   const backupRoot = backupRootFor(root, options.now ?? new Date());
+  const practicePlan = preparation.practicePlan;
+  const practiceWarnings = scope === 'project' ? policySkipWarnings(practicePlan) : [];
+  const practiceDiagnostics = practicePlan === undefined
+    ? [...practiceWarnings]
+    : [...practicePlan.diagnostics, ...practiceWarnings];
   const imports = preparation.claudePlan?.entries ?? [];
   const importDiagnostics = preparation.claudePlan?.diagnostics ?? [];
-  const preparationDiagnostics = [...preparation.diagnostics, ...importDiagnostics];
+  const preparationDiagnostics = [
+    ...preparation.diagnostics,
+    ...importDiagnostics,
+    ...practiceWarnings,
+  ];
   const importPreview = preparation.claudePlan === undefined
     ? { actions: [], backups: [] }
     : previewClaudeAdoption(root, preparation.claudePlan, backupRoot);
+  let practices: NormalizePracticesResult | undefined;
   let adoption: NormalizeAdoptionResult = {
     phase: preparation.phase,
     ...(preparation.sourcePlan === undefined ? {} : { sourcePlan: preparation.sourcePlan }),
@@ -338,10 +446,24 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   };
 
   if (preparation.phase !== 'initialized' && preparation.sourcePlan !== undefined) {
+    const sourcePlan = preparation.sourcePlan;
+    const practicesFor = (
+      created: readonly string[],
+      skipped: readonly string[],
+    ): NormalizePracticesResult | undefined => practicePlan === undefined
+      ? undefined
+      : buildPractices(practicePlan, created, skipped, practiceDiagnostics);
+
     // Any invalid import candidate gates the minimal source copy as well, so a
-    // rejected plan writes neither `.agents` nor `.claude`.
+    // rejected plan writes neither `.agents` nor `.claude`. Planned practice
+    // paths stay in the result even though nothing is written.
     if (hasErrors(preparationDiagnostics)) {
-      return blockedResult(root, scope, options, preparationDiagnostics, { adoption });
+      const planned = await planSourceWrites(root, sourcePlan);
+      practices = practicesFor(planned.create, planned.skip);
+      return blockedResult(root, scope, options, preparationDiagnostics, {
+        adoption,
+        ...practiceExtras(scope, practices),
+      });
     }
     const applied = await applyNormalizeAdoption(
       { ...preparation, claudePlan: undefined },
@@ -352,13 +474,16 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       sourceActions: applied.actions,
       diagnostics: [...adoption.diagnostics, ...applied.diagnostics],
     };
+    practices = practicesFor(applied.created, applied.skipped);
     if (hasErrors(applied.diagnostics)) {
+      const planned = await planSourceWrites(root, sourcePlan);
+      practices = practicesFor(planned.create, planned.skip);
       return blockedResult(
         root,
         scope,
         options,
         [...preparationDiagnostics, ...applied.diagnostics],
-        { adoption },
+        { adoption, ...practiceExtras(scope, practices) },
       );
     }
     if (options.dryRun === true) {
@@ -384,8 +509,35 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
           backups: importPreview.backups,
           imports,
         },
+        ...practiceExtras(scope, practices),
       };
     }
+  }
+
+  // Converge plans practice writes before target planning so newly scaffolded
+  // docs and skills are discovered and projected in the same run. A blocking
+  // practice error returns before anything is written.
+  let practiceSourcePlan: MinimalSourcePlan | undefined;
+  if (preparation.phase === 'initialized' && practicePlan !== undefined) {
+    if (hasErrors(practicePlan.diagnostics)) {
+      practices = buildPractices(practicePlan, [], [], practiceDiagnostics);
+      return blockedResult(root, scope, options, preparationDiagnostics, {
+        ...adoptionExtras(adoption),
+        ...practiceExtras(scope, practices),
+      });
+    }
+    practiceSourcePlan = {
+      files: practicePlan.files,
+      directories: practicePlan.directories,
+      manifest: practicePlan.manifest ?? preparation.manifest,
+    };
+    const planned = await planSourceWrites(root, practiceSourcePlan);
+    practices = buildPractices(
+      practicePlan,
+      planned.create,
+      planned.skip,
+      practiceDiagnostics,
+    );
   }
 
   const loaded = await loadProjectManifest(root, { scope });
@@ -403,7 +555,10 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     await assertSourceTreesSafe(root);
   } catch (error) {
     if (error instanceof DabError) {
-      return blockedResult(root, scope, options, [errorDiagnostic(error)], adoptionExtras(adoption));
+      return blockedResult(root, scope, options, [errorDiagnostic(error)], {
+        ...adoptionExtras(adoption),
+        ...practiceExtras(scope, practices),
+      });
     }
     throw error;
   }
@@ -418,8 +573,22 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       return blockedResult(root, scope, options, runtime.diagnostics, {
         exitCode: ExitCode.Backend,
         ...adoptionExtras(adoption),
+        ...practiceExtras(scope, practices),
       });
     }
+  }
+
+  // Practice writes run after the source-tree safety gate but before target
+  // planning, so the new files become projections of this same normalization.
+  if (practiceSourcePlan !== undefined && practicePlan !== undefined
+    && options.dryRun !== true) {
+    const written = await writeSourceFiles(root, practiceSourcePlan);
+    practices = buildPractices(
+      practicePlan,
+      written.created,
+      written.skipped,
+      practiceDiagnostics,
+    );
   }
 
   const facts = await discoverSourceFacts(root, paths);
@@ -458,7 +627,10 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       message: 'manifest has no enabled targets',
       hint: 'Enable at least one target or omit it from the manifest.',
     });
-    return blockedResult(root, scope, options, diagnostics, adoptionExtras(adoption));
+    return blockedResult(root, scope, options, diagnostics, {
+      ...adoptionExtras(adoption),
+      ...practiceExtras(scope, practices),
+    });
   }
 
   const plans: TargetNormalizePlan[] = [];
@@ -499,6 +671,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       compatTargets: plans.map((plan) => targetResult(plan)),
       ...(backendError ? { exitCode: ExitCode.Backend } : {}),
       ...adoptionExtras(adoption),
+      ...practiceExtras(scope, practices),
     });
   }
 
@@ -531,6 +704,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         backups: importPreview.backups,
         imports,
       }),
+      ...practiceExtras(scope, practices),
     };
   }
 
@@ -560,7 +734,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         scope,
         options,
         [...diagnostics, ...imported.diagnostics],
-        { adoption },
+        { adoption, ...practiceExtras(scope, practices) },
       );
     }
     adoption = {
@@ -614,14 +788,35 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     },
     manifestUpdated,
     ...adoptionExtras(adoption),
+    ...practiceExtras(scope, practices),
   };
 }
 
 function formatHuman(result: NormalizeResult): string {
   const lines: string[] = [];
   lines.push(`dab normalize${result.dryRun ? ' (dry run)' : ''}`);
+  if (result.practices !== undefined) {
+    lines.push(
+      `Language: ${result.practices.language.value} (source: ${result.practices.language.source})`,
+    );
+  }
   for (const action of result.actions) {
     lines.push(`  ${action}`);
+  }
+  if (result.practices?.mode === 'converge') {
+    // Adoption already reports these paths through its source actions.
+    for (const file of [
+      ...result.practices.created,
+      ...result.practices.skills.created,
+    ]) {
+      lines.push(`  create ${file}`);
+    }
+    for (const file of [
+      ...result.practices.skipped,
+      ...result.practices.skills.skipped,
+    ]) {
+      lines.push(`  skip ${file}`);
+    }
   }
   lines.push(`  settings ${result.settings.changed ? 'changed' : 'unchanged'}: ${result.settings.path}`);
   lines.push(`  shim ${result.shimAction}`);
