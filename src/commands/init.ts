@@ -723,6 +723,9 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     cwd: root,
     home,
     platform: options.platform,
+    // Init keeps its existing behavior on an existing `.claude` tree: imports
+    // are normalize's job, so init never migrates or backs up entries.
+    suppressImports: true,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
   const diagnostics = [...scan.diagnostics, ...normalize.diagnostics];

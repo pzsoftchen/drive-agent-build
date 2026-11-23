@@ -62,9 +62,11 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 
 - `dab detect` groups entries as Instructions, Agents, Skills, Rules, Policy, Hooks, Memory, Notes, Generated target and Safety.
 - Statuses are `[OK]`, `[MISSING]`, `[WARN]`, `[ERROR]` and `[IMPORTABLE]`. `[IMPORTABLE]` means a physical `.claude/agents` or `.claude/skills` entry can be imported into `.agents`.
+- Detect runs the read-only import plan in every phase, including `initialized`; an importable entry is not also reported as unmanaged or physical-copy projection drift.
 - `score` counts `[OK]` entries over all entries. It is informational and never decides the exit code.
 - `nextActions` are the distinct `next` hints of non-OK entries; a blocked preflight, such as an invalid manifest or a `$HOME` collision, does not suggest `dab normalize`.
 - The JSON payload adds `scope`, `root`, `phase`, `profile`, `checklist`, `score` and `nextActions` while retaining `targets`, `diagnostics` and `summary`; `schemaVersion` stays `1`.
+- Uninitialized and partial scopes return this full result object with `ok: false` and `exitCode: 2` instead of the `{ ok: false, error }` envelope used for usage, validation and backend errors.
 
 ## Core loop
 
@@ -118,7 +120,8 @@ generated:
 - The manifest's `generated` record is the ownership authority for a target path.
 - A recorded instruction artifact or projection symlink that drifts is repaired in place (`repair`/`repair-link`) without `--fix` or a backup. A recorded settings file that differs from the expected content is backed up and rewritten, even when it is a symlink or directory.
 - An unrecorded path that does not already match the expected artifact is unmanaged. `normalize` and `detect` report it, and `normalize` writes nothing without `--fix`.
-- A physical file or directory at a projection target is a conflict even when recorded. `dab normalize --fix` moves it into a timestamped `.dab/backups/` directory before replacing it; unmanaged symlinks and settings files require the same `--fix`.
+- A physical `.claude/agents/*.md` file or `.claude/skills/<dir>` directory is an import candidate, not an unmanaged conflict. Other physical projection targets, settings files and unparseable entries remain conflicts; `dab normalize --fix` moves them into a timestamped `.dab/backups/` directory before replacing or removing them.
+- An unrecorded entry symlink with an authored `.agents` source is repaired by `--fix`, which backs the link up first. A link with no authored source is a conflict that requires manual removal; DAB never imports or deletes an unmanaged link.
 - `normalize` adopts and records an unrecorded symlink that already points at the expected source, or an instruction artifact that already matches the configured mode, without a rewrite.
 - A configured target with no safe mapping fails with `target.unsupported`. One failing target blocks writes for every target, and `--dry-run` runs the same precheck and exit codes without writing.
 - A root `CLAUDE.md` is user-owned and is always a fatal conflict.
@@ -131,6 +134,8 @@ generated:
 - Import preserves the `.claude` basename or directory name. The frontmatter `name` is the fact id; a mismatch warns but does not rename.
 - All-or-nothing gating covers adoption and import: any invalid candidate or unsafe path blocks every source and `.claude` write. After a later target preflight failure, `.claude` stays untouched; an idempotent source copy may already exist.
 - Imports run for initialized and uninitialized/partial scopes, in project and global scope. In global scope `.claude` entries link into `~/.agents`; `~/.claude/settings.json` and `$HOME/.gitignore` are never read or written.
+- `dab init` never imports or backs up existing `.claude` entries; adoption and import remain normalize's job.
+- `dab normalize --dry-run` previews source writes, import, backup and symlink actions with planned backup paths; human output lists adoption source actions, import actions and adoption backups on real runs too.
 - Only agents and skills are imported in this phase. Rules, settings, hooks and instructions remain unmanaged or conflicting `.claude` content and need separate adoption.
 - Imports are idempotent. A run that imports new entries records their projections on the next run; rerunning `dab normalize` makes the generated record and `dab detect` converge.
 

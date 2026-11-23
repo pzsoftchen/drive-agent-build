@@ -15,18 +15,19 @@ export interface TargetContext {
   target: TargetConfig;
   facts: SourceFacts;
   runner?: CommandRunner;
+  /**
+   * Root-relative `.claude` targets that the adoption import step owns. Detect
+   * must not report them as unmanaged or physical copies, and normalize
+   * adapters must not plan competing backup/replace or removal actions; the
+   * import step replaces them after planning.
+   */
+  importedTargets?: readonly string[];
 }
 
 export interface TargetNormalizeInput extends TargetContext {
   fix: boolean;
   dryRun: boolean;
   now?: Date;
-  /**
-   * Root-relative generated targets that the adoption import step replaces with
-   * per-entry symlinks after planning. Adapters must not plan backup/replace or
-   * removal actions for these paths; the import step owns them.
-   */
-  importedTargets?: readonly string[];
 }
 
 export interface TargetSettingsPlan {

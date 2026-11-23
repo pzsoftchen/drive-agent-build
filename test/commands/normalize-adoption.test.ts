@@ -11,7 +11,7 @@ import {
 } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parse } from 'yaml';
-import { normalizeProject } from '../../src/commands/normalize.ts';
+import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
 import { prepareNormalizeAdoption } from '../../src/init/adoption.ts';
@@ -61,6 +61,23 @@ function agentSource(name: string, description: string): string {
 
 function skillSource(name: string, description: string): string {
   return `---\nname: ${name}\ndescription: ${description}\n---\n${name}.\n`;
+}
+
+function capture(): {
+  stdout: string[];
+  stderr: string[];
+  io: { stdout: (value: string) => void; stderr: (value: string) => void };
+} {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  return {
+    stdout,
+    stderr,
+    io: {
+      stdout: (value) => stdout.push(value),
+      stderr: (value) => stderr.push(value),
+    },
+  };
 }
 
 afterEach(async () => {
@@ -353,7 +370,11 @@ describe('normalize import adoption', () => {
     expect(result.adoption?.sourceActions.length).toBeGreaterThan(0);
     expect(result.adoption?.imports?.map((entry) => entry.target))
       .toEqual(['.agents/agents/extra.md']);
-    expect(result.adoption?.backups).toEqual([]);
+    // Dry runs report the planned backup path without creating it.
+    expect(result.adoption?.backups).toHaveLength(1);
+    expect(result.adoption?.backups[0])
+      .toMatch(/^\.dab\/backups\/.*\/\.claude\/agents\/extra\.md$/);
+    expect(await lstatOrNull(join(root, '.dab'))).toBeNull();
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, '.agents/agents/extra.md'))).toBeNull();
     expect((await lstat(join(root, '.claude/agents/extra.md'))).isFile()).toBe(true);
@@ -458,7 +479,11 @@ describe('normalize import adoption', () => {
     expect(result.ok).toBe(true);
     expect(result.adoption?.imports?.map((entry) => entry.target))
       .toEqual(['.agents/agents/extra.md']);
-    expect(result.adoption?.backups).toEqual([]);
+    // Dry runs report the planned backup path without creating it.
+    expect(result.adoption?.backups).toHaveLength(1);
+    expect(result.adoption?.backups[0])
+      .toMatch(/^\.dab\/backups\/.*\/\.claude\/agents\/extra\.md$/);
+    expect(await lstatOrNull(join(project.root, '.dab'))).toBeNull();
     expect(await lstatOrNull(join(project.root, '.agents/agents/extra.md'))).toBeNull();
     expect((await lstat(join(project.root, '.claude/agents/extra.md'))).isFile()).toBe(true);
   });
@@ -675,5 +700,291 @@ describe('normalize import adoption', () => {
     expect(await lstatOrNull(join(project.root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(project.root, 'dab.yaml'))).toBeNull();
     expect(await lstatOrNull(join(project.root, '.agents/agents/other-reviewer.md'))).toBeNull();
+  });
+});
+
+describe('normalize source tree safety', () => {
+  it('writes nothing when .agents aliases .claude', async () => {
+    const root = await tempDir('dab-adopt-alias-');
+    await mkdir(join(root, '.claude'), { recursive: true });
+    await symlink('.claude', join(root, '.agents'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('path.overlap');
+    expect(await readdir(join(root, '.claude'))).toEqual([]);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('writes nothing when .agents is a dangling alias of .claude', async () => {
+    const root = await tempDir('dab-adopt-alias-dangling-');
+    await symlink('.claude', join(root, '.agents'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('path.overlap');
+    // The minimal source write must not create the missing .claude target.
+    expect(await lstatOrNull(join(root, '.claude'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+});
+
+describe('normalize managed projection drift', () => {
+  it('repairs a drifted managed agent symlink without --fix', async () => {
+    const project = await initializedProject();
+    const target = join(project.root, '.claude/agents/reviewer.md');
+    await rm(target);
+    await symlink('../../elsewhere.md', target);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readlink(target)).toBe('../../.agents/agents/reviewer.md');
+    expect(result.adoption?.imports).toEqual([]);
+    expect(result.adoption?.backups).toEqual([]);
+  });
+
+  it('repairs a drifted managed skill symlink without --fix', async () => {
+    const project = await initializedProject();
+    const target = join(project.root, '.claude/skills/doc-sync');
+    await rm(target, { recursive: true });
+    await symlink('../../elsewhere', target);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readlink(target)).toBe('../../.agents/skills/doc-sync');
+    expect(result.adoption?.imports).toEqual([]);
+    expect(result.adoption?.backups).toEqual([]);
+  });
+
+  it('repairs drifted managed links with --fix without importing or backing them up', async () => {
+    const project = await initializedProject();
+    const target = join(project.root, '.claude/agents/reviewer.md');
+    await rm(target);
+    await symlink('../../elsewhere.md', target);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readlink(target)).toBe('../../.agents/agents/reviewer.md');
+    expect(result.adoption?.imports).toEqual([]);
+    expect(result.adoption?.backups).toEqual([]);
+    expect(result.backups.some((item) => item.endsWith('.claude/agents/reviewer.md')))
+      .toBe(false);
+  });
+
+  it('repairs an unmanaged agent symlink with --fix when an authored source exists', async () => {
+    const project = await initializedProject();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/extra.md',
+      agentSource('extra', 'Authored.'),
+    );
+    const target = join(project.root, '.claude/agents/extra.md');
+    await symlink('../../elsewhere.md', target);
+
+    const blocked = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.diagnostics.map((item) => item.code)).toContain('projection.unmanaged');
+    expect((await lstat(target)).isSymbolicLink()).toBe(true);
+
+    const fixed = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(fixed.ok).toBe(true);
+    expect(await readlink(target)).toBe('../../.agents/agents/extra.md');
+    const backup = fixed.backups.find((item) => item.endsWith('.claude/agents/extra.md'));
+    expect(backup).toMatch(/^\.dab\/backups\//);
+  });
+
+  it('repairs an unmanaged skill symlink with --fix when an authored source exists', async () => {
+    const project = await initializedProject();
+    await writeProjectFile(
+      project.root,
+      '.agents/skills/extra-skill/SKILL.md',
+      skillSource('extra-skill', 'Authored.'),
+    );
+    const target = join(project.root, '.claude/skills/extra-skill');
+    await symlink('../../elsewhere', target);
+
+    const fixed = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(fixed.ok).toBe(true);
+    expect(await readlink(target)).toBe('../../.agents/skills/extra-skill');
+    const backup = fixed.backups.find((item) => item.endsWith('.claude/skills/extra-skill'));
+    expect(backup).toMatch(/^\.dab\/backups\//);
+  });
+});
+
+describe('normalize adoption dry-run plans', () => {
+  it('previews import, backup and symlink actions for an initialized project', async () => {
+    const project = await initializedProject();
+    await writeFile(
+      join(project.root, '.claude/agents/extra.md'),
+      agentSource('extra', 'Extra.'),
+    );
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.actions).toEqual(expect.arrayContaining([
+      'import .claude/agents/extra.md -> .agents/agents/extra.md',
+      'symlink .claude/agents/extra.md -> ../../.agents/agents/extra.md',
+    ]));
+    expect(
+      result.actions.some((action) =>
+        action.startsWith('backup .claude/agents/extra.md -> .dab/backups/')),
+    ).toBe(true);
+    expect(result.adoption?.backups).toHaveLength(1);
+    expect(result.adoption?.backups[0])
+      .toMatch(/^\.dab\/backups\/.*\/\.claude\/agents\/extra\.md$/);
+    expect(await lstatOrNull(join(project.root, '.agents/agents/extra.md'))).toBeNull();
+    expect((await lstat(join(project.root, '.claude/agents/extra.md'))).isFile()).toBe(true);
+  });
+
+  it('previews global skill imports with backup paths', async () => {
+    const fixture = await globalFixture();
+    const home = fixture.home;
+    await writeProjectFile(
+      home,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skillSource('pdf-tools', 'PDF.'),
+    );
+
+    const result = await normalizeProject({
+      cwd: join(home, '.agents'),
+      home,
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.actions).toEqual(expect.arrayContaining([
+      'import .claude/skills/pdf-tools -> .agents/skills/pdf-tools',
+      'symlink .claude/skills/pdf-tools -> ../../.agents/skills/pdf-tools',
+    ]));
+    expect(result.adoption?.backups).toHaveLength(1);
+    expect(result.adoption?.backups[0])
+      .toMatch(/^\.dab\/backups\/.*\/\.claude\/skills\/pdf-tools$/);
+    expect((await lstat(join(home, '.claude/skills/pdf-tools'))).isDirectory()).toBe(true);
+    expect(await lstatOrNull(join(home, '.agents/skills/pdf-tools'))).toBeNull();
+  });
+
+  it('prints adoption source, import and backup actions in human output', async () => {
+    const project = await initializedProject();
+    await writeFile(
+      join(project.root, '.claude/agents/extra.md'),
+      agentSource('extra', 'Extra.'),
+    );
+    const captured = capture();
+
+    const code = await runNormalize(
+      { cwd: project.root, home: dirname(project.root), runner: goodRunner },
+      captured.io,
+    );
+
+    expect(code).toBe(0);
+    const output = captured.stdout.join('');
+    expect(output).toContain('import .claude/agents/extra.md -> .agents/agents/extra.md');
+    expect(output).toContain('symlink .claude/agents/extra.md -> ../../.agents/agents/extra.md');
+    expect(output).toContain('.dab/backups/');
+    expect(output).toMatch(/backup \.claude\/agents\/extra\.md -> \.dab\/backups\//);
+  });
+
+  it('prints planned import actions and backup paths in a human dry run', async () => {
+    const project = await initializedProject();
+    await writeFile(
+      join(project.root, '.claude/agents/extra.md'),
+      agentSource('extra', 'Extra.'),
+    );
+    const captured = capture();
+
+    const code = await runNormalize(
+      {
+        cwd: project.root,
+        home: dirname(project.root),
+        runner: goodRunner,
+        dryRun: true,
+      },
+      captured.io,
+    );
+
+    expect(code).toBe(0);
+    const output = captured.stdout.join('');
+    expect(output).toContain('dab normalize (dry run)');
+    expect(output).toContain('import .claude/agents/extra.md -> .agents/agents/extra.md');
+    expect(output).toContain('symlink .claude/agents/extra.md -> ../../.agents/agents/extra.md');
+    expect(output).toMatch(/backup \.claude\/agents\/extra\.md -> \.dab\/backups\//);
+    expect((await lstat(join(project.root, '.claude/agents/extra.md'))).isFile()).toBe(true);
+  });
+
+  it('previews uninitialized import plans in actions and backup paths', async () => {
+    const root = await tempDir('dab-adopt-dry-plan-');
+    await writeProjectFile(root, '.claude/agents/extra.md', agentSource('extra', 'Extra.'));
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.actions).toEqual(expect.arrayContaining([
+      'create AGENTS.md',
+      'import .claude/agents/extra.md -> .agents/agents/extra.md',
+      'symlink .claude/agents/extra.md -> ../../.agents/agents/extra.md',
+    ]));
+    expect(result.adoption?.backups).toHaveLength(1);
+    expect(result.adoption?.backups[0])
+      .toMatch(/^\.dab\/backups\/.*\/\.claude\/agents\/extra\.md$/);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/agents/extra.md'))).toBeNull();
   });
 });

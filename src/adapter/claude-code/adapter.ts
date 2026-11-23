@@ -298,7 +298,13 @@ async function detect(input: TargetContext): Promise<TargetDetectOutcome> {
     ...await checkInstructions(input.paths.root, input.paths, options.instructions, generated),
   );
   diagnostics.push(
-    ...await checkProjections(input.paths.root, input.paths, discovered.projections, generated),
+    ...await checkProjections(
+      input.paths.root,
+      input.paths,
+      discovered.projections,
+      generated,
+      new Set(input.importedTargets ?? []),
+    ),
   );
 
   const projected = new Set(

@@ -26,6 +26,7 @@ import type {
   TargetNormalizePlan,
   TargetSettingsPlan,
 } from '../adapter/types.ts';
+import { previewClaudeAdoption } from '../adapter/claude-code/adoption.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { checkClaudeCode } from '../adapter/claude-code/version.ts';
@@ -61,6 +62,11 @@ export interface NormalizeOptions {
   platform?: NodeJS.Platform;
   now?: Date;
   runner?: CommandRunner;
+  /**
+   * Internal: skip Claude import planning/application. `dab init` sets it so an
+   * existing `.claude` tree is not imported as an init side effect.
+   */
+  suppressImports?: boolean;
 }
 
 export interface NormalizeIO {
@@ -185,13 +191,16 @@ function blockedResult(
 ): NormalizeResult {
   const targets = extras.targets ?? [];
   const compat = extras.compatTargets ?? targets;
+  const adoptionActions = extras.adoption === undefined
+    ? []
+    : [...extras.adoption.sourceActions, ...extras.adoption.importActions];
   return {
     ok: false,
     root,
     scope,
     dryRun: options.dryRun === true,
     exitCode: extras.exitCode ?? ExitCode.Validation,
-    actions: targets.flatMap((item) => item.actions),
+    actions: [...adoptionActions, ...targets.flatMap((item) => item.actions)],
     targets,
     diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
     settings: topLevelSettings(compat, false),
@@ -307,6 +316,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     cwd,
     home,
     ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.suppressImports === true ? { suppressImports: true } : {}),
   });
   const root = preparation.sourceRoot.root;
   const scope = preparation.sourceRoot.scope;
@@ -314,10 +324,14 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const imports = preparation.claudePlan?.entries ?? [];
   const importDiagnostics = preparation.claudePlan?.diagnostics ?? [];
   const preparationDiagnostics = [...preparation.diagnostics, ...importDiagnostics];
+  const importPreview = preparation.claudePlan === undefined
+    ? { actions: [], backups: [] }
+    : previewClaudeAdoption(root, preparation.claudePlan, backupRoot);
   let adoption: NormalizeAdoptionResult = {
     phase: preparation.phase,
     ...(preparation.sourcePlan === undefined ? {} : { sourcePlan: preparation.sourcePlan }),
     sourceActions: [],
+    importActions: [],
     imports: [],
     backups: [],
     diagnostics: [...preparationDiagnostics],
@@ -356,15 +370,20 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         scope,
         dryRun: true,
         exitCode: ExitCode.Ok,
-        actions: applied.actions,
+        actions: [...applied.actions, ...importPreview.actions],
         targets: [],
         diagnostics: sortDiagnostics(dedupeDiagnostics(preparationDiagnostics)),
         settings: emptySettings(),
         shimAction: 'none',
-        backups: [],
+        backups: importPreview.backups,
         gitignore: { changed: false, path: '' },
         manifestUpdated: false,
-        adoption: { ...adoption, imports },
+        adoption: {
+          ...adoption,
+          importActions: importPreview.actions,
+          backups: importPreview.backups,
+          imports,
+        },
       };
     }
   }
@@ -491,18 +510,27 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       scope,
       dryRun: true,
       exitCode: ExitCode.Ok,
-      actions: targets.flatMap((item) => item.actions),
+      actions: [
+        ...adoption.sourceActions,
+        ...importPreview.actions,
+        ...targets.flatMap((item) => item.actions),
+      ],
       targets,
       diagnostics: sortDiagnostics(diagnostics),
       settings: topLevelSettings(targets),
       shimAction: compatShimAction(targets),
-      backups: [],
+      backups: importPreview.backups,
       gitignore: {
         changed: false,
         path: paths.scope === 'global' ? '' : '.gitignore',
       },
       manifestUpdated: false,
-      ...adoptionExtras({ ...adoption, imports }),
+      ...adoptionExtras({
+        ...adoption,
+        importActions: importPreview.actions,
+        backups: importPreview.backups,
+        imports,
+      }),
     };
   }
 
@@ -519,10 +547,11 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     );
     if (hasErrors(imported.diagnostics)) {
       // Apply does not report per-entry success, so a failed run claims no
-      // imports; backups and diagnostics still describe what happened.
+      // imports; actions, backups and diagnostics still describe what happened.
       adoption = {
         ...adoption,
         imports: [],
+        importActions: imported.actions,
         backups: [...adoption.backups, ...importedBackups],
         diagnostics: [...adoption.diagnostics, ...imported.diagnostics],
       };
@@ -537,6 +566,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     adoption = {
       ...adoption,
       imports,
+      importActions: imported.actions,
       backups: [...adoption.backups, ...importedBackups],
       diagnostics: [...adoption.diagnostics, ...imported.diagnostics],
     };
@@ -568,7 +598,11 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     scope,
     dryRun: false,
     exitCode: ExitCode.Ok,
-    actions: targets.flatMap((item) => item.actions),
+    actions: [
+      ...adoption.sourceActions,
+      ...adoption.importActions,
+      ...targets.flatMap((item) => item.actions),
+    ],
     targets,
     diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
     settings: topLevelSettings(targets),
@@ -593,9 +627,13 @@ function formatHuman(result: NormalizeResult): string {
   lines.push(`  shim ${result.shimAction}`);
   lines.push(`  manifest ${result.manifestUpdated ? 'updated' : 'unchanged'}`);
   lines.push(`  .gitignore ${result.gitignore.changed ? 'updated' : 'unchanged'}`);
-  if (result.backups.length > 0) {
-    lines.push(`  backups: ${result.backups.length}`);
-    for (const backup of result.backups) {
+  const backups = [...new Set([
+    ...(result.adoption?.backups ?? []),
+    ...result.backups,
+  ])];
+  if (backups.length > 0) {
+    lines.push(`  ${result.dryRun ? 'planned ' : ''}backups: ${backups.length}`);
+    for (const backup of backups) {
       lines.push(`    ${toPosix(relative(process.cwd(), resolve(result.root, backup)))}`);
     }
   }

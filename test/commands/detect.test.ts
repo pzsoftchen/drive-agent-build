@@ -358,6 +358,83 @@ Unsafe.
     expect(result.diagnostics.map((item) => item.code)).not.toContain('generated.missing');
     expect(await readFile(settings, 'utf8')).toBe(content);
   });
+
+  it('marks a physical .claude agent importable instead of unmanaged', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.claude/agents/extra.md',
+      '---\nname: extra\ndescription: Extra.\n---\nExtra.\n',
+    );
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Agents',
+        label: '.claude/agents/extra.md',
+        status: 'importable',
+        detail: '.agents/agents/extra.md',
+      }),
+    ]));
+    expect(result.diagnostics.map((item) => item.code)).not.toContain('projection.unmanaged');
+  });
+
+  it('marks a physical copy of a managed projection importable instead of a conflict', async () => {
+    const project = await initialized();
+    const target = join(project.root, '.claude/agents/reviewer.md');
+    await rm(target);
+    await writeFile(
+      target,
+      '---\nname: reviewer\ndescription: Physical.\n---\nReview.\n',
+    );
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Agents',
+        label: '.claude/agents/reviewer.md',
+        status: 'importable',
+      }),
+    ]));
+    expect(result.diagnostics.map((item) => item.code)).not.toContain('projection.physical-copy');
+  });
+
+  it('marks a physical .claude skill importable instead of unmanaged', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      '---\nname: pdf-tools\ndescription: PDF.\n---\nPDF.\n',
+    );
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Skills',
+        label: '.claude/skills/pdf-tools',
+        status: 'importable',
+        detail: '.agents/skills/pdf-tools',
+      }),
+    ]));
+    expect(result.diagnostics.map((item) => item.code)).not.toContain('projection.unmanaged');
+  });
+
+  it('keeps an invalid physical entry as an unmanaged conflict, not importable', async () => {
+    const project = await initialized();
+    await writeProjectFile(project.root, '.claude/agents/bad.md', 'not frontmatter\n');
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.invalid-frontmatter');
+    expect(result.checklist.some((item) => item.status === 'importable')).toBe(false);
+  });
 });
 
 describe('runDetect', () => {

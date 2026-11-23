@@ -63,6 +63,7 @@ Global layout:
 - `dab init ~/.agents` initializes global scope: authored source lives in `~/.agents/` and projections live under `$HOME`.
 - `dab init path` uses `path` as the exact source root and creates it when missing. It refuses to create a source root inside an existing one.
 - Scans the repository and writes missing authored files. Authored conflicts stop before writes. Unmanaged `.claude` conflicts are reported as pending and left to `dab normalize --fix`.
+- Init never imports existing `.claude/agents` or `.claude/skills` entries and never creates adoption backups for them. Import is `dab normalize`'s job.
 - The generated manifest is v2 and includes `scope`, `targets` and `instructions: symlink`.
 - JSON output reports `root` (source root) and `scopeRoot` (path base); `created`, `skipped` and nested normalize paths are relative to `scopeRoot`.
 - `--dry-run` previews authored writes and pending conflicts without writing. `--ai` asks Claude Code for a proposal and writes only after confirmation; it cannot be combined with `--dry-run`.
@@ -183,6 +184,7 @@ next: dab normalize
 | `[IMPORTABLE]` | A physical `.claude/agents` or `.claude/skills` entry that `dab normalize` can import into `.agents`. |
 
 - `score` counts `[OK]` entries over all entries; every other status is not OK, and the score never changes the exit code.
+- Initialized scopes run the same read-only import plan as uninitialized scopes, so an importable entry is reported as `[IMPORTABLE]` instead of as unmanaged or physical-copy projection drift.
 - `phase` is `initialized` when `dab.yaml` parses and `.agents/` exists, `partial` when only one marker exists or the manifest is invalid, and `uninitialized` when neither exists.
 - `Profile` comes from a valid manifest; an uninitialized scope, or a partial scope without a valid manifest, shows `not initialized`.
 - Uninitialized and partial scopes always exit `2` and never write; `--strict` does not change this.
@@ -193,6 +195,8 @@ next: dab normalize
 - Unmanaged target paths and missing generated records are reported as drift.
 
 `--json` keeps `targets`, `diagnostics`, `summary` and `schemaVersion: 1`, and adds `scope`, `root`, `phase`, `profile` when known, `checklist`, `score` and `nextActions`. Each checklist entry has `group`, `label`, `status`, optional `detail`, optional `file` and optional `next`.
+
+Uninitialized and partial scopes return this full result object with `ok: false` and `exitCode: 2`; they no longer use the `{ ok: false, error }` envelope reserved for usage, validation and backend errors. `schemaVersion` stays `1` because the fields are additive.
 
 ## `dab normalize`
 
@@ -208,12 +212,13 @@ Plans or applies authored source adoption, Claude imports, projection repairs, t
 - Basenames and skill directory names are preserved. A frontmatter `name` mismatch warns but does not rename. A first import copies the whole skill directory, including extra files. When `.agents/skills/<name>` already exists, extra skill files are not merged; they stay in the backup with a warning.
 - Existing `.agents` source wins. When the `.claude` content differs, normalize keeps the source, backs up `.claude`, warns and still creates the link. A managed symlink that already points at the source is skipped.
 - Imports do not need `--fix`; `--fix` covers non-import unmanaged conflicts. A directory symlink at `.claude/agents` or `.claude/skills` is a conflict because DAB owns entries one by one.
+- A recorded projection symlink that drifts is repaired in place without `--fix`. An unrecorded entry symlink backed by an authored `.agents` source is repaired by `--fix`, which backs it up first; a link with no authored source is a conflict that must be removed manually, because DAB never imports or deletes unmanaged links.
 - Any invalid import candidate blocks every write: no adoption source files, imports or backups. When a later target preflight fails, `.claude` stays untouched and an idempotent source copy may already exist.
-- `--dry-run` previews source and repair actions and runs the same precheck without writing. Human output does not list imports; `--json` adds `adoption.imports` and, after a real run, `adoption.backups`.
+- `--dry-run` previews adoption source actions and the import, backup and symlink plan, including planned backup paths, and runs the same precheck without writing. Human output lists adoption source actions, import actions and adoption backups; `--json` adds `adoption.imports`, `adoption.importActions` and planned or applied `adoption.backups`. Top-level `actions` includes adoption actions before target actions.
 - In global scope the same import rules apply: physical entries under `$HOME/.claude` link into `~/.agents`, and nothing is written at the `$HOME` root.
 - Imports are idempotent. A run that imports new entries records their projections on the next run, so rerun `dab normalize` after an import to make `dab detect` clean.
 
-JSON output includes the top-level result, `scope` and an `adoption` object with `phase`, optional `sourcePlan`, `sourceActions`, `imports`, `backups` and `diagnostics`, plus one entry per enabled target:
+JSON output includes the top-level result, `scope` and an `adoption` object with `phase`, optional `sourcePlan`, `sourceActions`, `importActions`, `imports`, `backups` and `diagnostics`, plus one entry per enabled target:
 
 ```json
 {
@@ -223,6 +228,11 @@ JSON output includes the top-level result, `scope` and an `adoption` object with
       ".dab/backups/2026-11-23T00-00-00-000Z/.claude/agents/extra.md"
     ],
     "diagnostics": [],
+    "importActions": [
+      "import .claude/agents/extra.md -> .agents/agents/extra.md",
+      "backup .claude/agents/extra.md -> .dab/backups/2026-11-23T00-00-00-000Z/.claude/agents/extra.md",
+      "symlink .claude/agents/extra.md -> ../../.agents/agents/extra.md"
+    ],
     "imports": [
       {
         "diagnostics": [],
@@ -278,7 +288,7 @@ JSON output includes the top-level result, `scope` and an `adoption` object with
 ```
 
 - The payload includes the absolute `root`; all other paths in this result are relative to it, including `gitignore.path` and backup entries.
-- `--dry-run` runs the same precheck and exit codes without writing. On an uninitialized or partial scope it previews the adoption source and has no target plan, because the target plan needs the written source; its import plan is in `--json` under `adoption.imports`.
+- `--dry-run` runs the same precheck and exit codes without writing. On an uninitialized or partial scope it previews the adoption source and has no target plan, because the target plan needs the written source. Its import plan is in `--json` under `adoption.imports`, `adoption.importActions` and planned `adoption.backups`; top-level `actions` and `backups` repeat the planned strings and paths.
 - In global scope, `~/.claude/settings.json` and `$HOME/.gitignore` are read-only and normalize warns that global settings are not adopted.
 
 ## `dab policy explain`

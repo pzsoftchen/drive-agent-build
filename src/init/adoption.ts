@@ -1,4 +1,4 @@
-import { open, realpath, rm } from 'node:fs/promises';
+import { open, readlink, realpath, rm } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError } from '../core/errors.ts';
@@ -6,6 +6,8 @@ import { ensureDir, lstatOrNull } from '../core/fs-atomic.ts';
 import {
   assertParentInsideRoot,
   assertRealPathInsideRoot,
+  assertRealPathsDisjoint,
+  isPathInside,
   toPosix,
 } from '../core/paths.ts';
 import { MIN_CLAUDE_CODE_VERSION } from '../core/version-check.ts';
@@ -220,7 +222,10 @@ export interface NormalizeAdoptionResult {
   phase: AdoptionPhase;
   sourcePlan?: MinimalSourcePlan;
   sourceActions: string[];
+  /** Import actions applied on a real run or planned by a dry run. */
+  importActions: string[];
   imports?: ClaudeAdoptionEntry[];
+  /** Import backups created on a real run or planned by a dry run. */
   backups: string[];
   diagnostics: Diagnostic[];
 }
@@ -290,15 +295,29 @@ async function planImports(
   });
 }
 
-export async function prepareNormalizeAdoption(input: {
+export interface PrepareAdoptionInput {
   cwd: string;
   home: string;
   now?: Date;
-}): Promise<NormalizeAdoptionPreparation> {
+  /**
+   * Skip the Claude import plan entirely. `dab init` uses this so its existing
+   * behavior on an existing `.claude` tree is preserved: imports are
+   * normalize's job, not an init side effect.
+   */
+  suppressImports?: boolean;
+}
+
+export async function prepareNormalizeAdoption(
+  input: PrepareAdoptionInput,
+): Promise<NormalizeAdoptionPreparation> {
   const adoption = await resolveAdoptionRoot({ cwd: input.cwd, home: input.home });
   const sourceRoot = sourceRootOf(adoption);
   const manifestKey = toPosix(relative(adoption.root, adoption.manifestPath));
   const hasManifest = (await lstatOrNull(adoption.manifestPath)) !== null;
+  const importPlan = (manifest: ProjectManifest, paths: ProjectPaths) =>
+    input.suppressImports === true
+      ? Promise.resolve(undefined)
+      : planImports(adoption, manifest, paths);
 
   if (hasManifest && !adoption.manifestValid) {
     // Re-run the loader so callers receive the exact ConfigError (invalid
@@ -316,7 +335,7 @@ export async function prepareNormalizeAdoption(input: {
         phase: adoption.phase,
         manifest: loaded.manifest,
         paths,
-        claudePlan: await planImports(adoption, loaded.manifest, paths),
+        claudePlan: await importPlan(loaded.manifest, paths),
         diagnostics: [],
       };
     }
@@ -332,7 +351,7 @@ export async function prepareNormalizeAdoption(input: {
       manifest: loaded.manifest,
       paths,
       sourcePlan: { ...plan, files, manifest: loaded.manifest },
-      claudePlan: await planImports(adoption, loaded.manifest, paths),
+      claudePlan: await importPlan(loaded.manifest, paths),
       diagnostics: scan.diagnostics,
     };
   }
@@ -347,7 +366,7 @@ export async function prepareNormalizeAdoption(input: {
     manifest: sourcePlan.manifest,
     paths,
     sourcePlan,
-    claudePlan: await planImports(adoption, sourcePlan.manifest, paths),
+    claudePlan: await importPlan(sourcePlan.manifest, paths),
     diagnostics: scan.diagnostics,
   };
 }
@@ -363,6 +382,39 @@ function adoptionDiagnostic(error: DabError, file: string): Diagnostic {
 }
 
 /**
+ * Real-path disjointness cannot compare a dangling symlink with its intended
+ * target (`realpath` fails). Compare the direct link text as well so
+ * `.agents -> .claude` or `.claude -> .agents` is rejected before the source
+ * write creates the missing target.
+ */
+async function lexicalAlias(
+  root: string,
+  first: string,
+  second: string,
+): Promise<boolean> {
+  const firstPath = join(root, first);
+  const secondPath = join(root, second);
+  for (const [linkPath, otherPath] of [
+    [firstPath, secondPath],
+    [secondPath, firstPath],
+  ] as const) {
+    const info = await lstatOrNull(linkPath);
+    if (info?.isSymbolicLink() !== true) {
+      continue;
+    }
+    const resolved = resolve(dirname(linkPath), await readlink(linkPath));
+    if (
+      resolved === otherPath
+      || isPathInside(resolved, otherPath)
+      || isPathInside(otherPath, resolved)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Init-style containment checks run before the first write. `plan.directories`
  * omits implicitly created parents (policies, adapters, memory), so every
  * planned file is checked as well as the source tree itself.
@@ -372,6 +424,24 @@ async function sourceWriteDiagnostics(
   plan: MinimalSourcePlan,
   agents: string,
 ): Promise<Diagnostic[]> {
+  // An aliased `.agents`/`.claude` pair would route the minimal source writes
+  // through the generated tree before the target preflight notices. Check the
+  // tree identity first so a rejected layout writes nothing at all.
+  try {
+    await assertRealPathInsideRoot(root, '.claude');
+    await assertRealPathsDisjoint(root, '.agents', '.claude');
+    if (await lexicalAlias(root, '.agents', '.claude')) {
+      throw new ConfigError(
+        'authored and generated trees overlap: .agents and .claude',
+        'path.overlap',
+      );
+    }
+  } catch (error) {
+    if (error instanceof DabError) {
+      return [adoptionDiagnostic(error, '.agents')];
+    }
+    throw error;
+  }
   for (const relativePath of [
     agents,
     ...plan.directories,

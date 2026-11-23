@@ -4,8 +4,11 @@ English | [中文](CHANGELOG.zh.md)
 
 ## Unreleased
 
-- `dab detect` prints a read-only checklist for uninitialized, partial and initialized project and global scopes, with `[OK]`, `[MISSING]`, `[WARN]`, `[ERROR]` and `[IMPORTABLE]` states, a score and next actions; JSON adds `scope`, `root`, `phase`, `profile`, `checklist`, `score` and `nextActions`.
+- `dab detect` prints a read-only checklist for uninitialized, partial and initialized project and global scopes, with `[OK]`, `[MISSING]`, `[WARN]`, `[ERROR]` and `[IMPORTABLE]` states, a score and next actions; JSON adds `scope`, `root`, `phase`, `profile`, `checklist`, `score` and `nextActions`. Initialized scopes also report importable physical entries instead of unmanaged or physical-copy drift.
+- Uninitialized and partial `dab detect --json` results are now the full checklist object with `ok: false` and `exitCode: 2` instead of the error envelope; `schemaVersion` stays `1`.
 - `dab normalize` adopts missing minimal source and imports physical `.claude/agents` and `.claude/skills` entries into `.agents`, backing up originals under `.dab/backups/` and replacing them with per-entry symlinks. Invalid imports block every write, and `--fix` still covers non-import conflicts only.
+- `dab normalize --dry-run` lists import, backup and symlink actions and planned backup paths; human output also shows adoption source actions, import actions and backups on real runs.
+- Managed projection symlink drift is repaired without `--fix`; an unmanaged entry symlink with an authored source is repaired by `--fix`, while a link with no authored source needs manual removal. `dab init` never imports existing `.claude` entries.
 - Global scope gets the same checklist and adoption/import behavior; `~/.claude/settings.json` and `$HOME/.gitignore` remain read-only and `dab init ~/.agents` is still the explicit entry point for a missing global source.
 - `dab init` remains the one-time full-profile initializer; existing projects use `dab detect` and `dab normalize`.
 

@@ -62,9 +62,11 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 - `dab detect` 按 Instructions、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组。
 - 状态包括 `[OK]`、`[MISSING]`、`[WARN]`、`[ERROR]` 和 `[IMPORTABLE]`。`[IMPORTABLE]` 表示物理 `.claude/agents` 或 `.claude/skills` 条目可导入 `.agents`。
+- Detect 在每个 phase（包括 `initialized`）运行只读 import 计划；可导入条目不会同时报告为 unmanaged 或 physical-copy 投影漂移。
 - `score` 统计全部条目中的 `[OK]` 条目。它仅供参考，绝不决定退出码。
 - `nextActions` 是非 OK 条目去重后的 `next` 提示；被阻止的 preflight（例如无效 manifest 或 `$HOME` 冲突）不会建议 `dab normalize`。
 - JSON payload 追加 `scope`、`root`、`phase`、`profile`、`checklist`、`score` 和 `nextActions`，同时保留 `targets`、`diagnostics` 和 `summary`；`schemaVersion` 保持 `1`。
+- 未初始化和 partial scope 返回这一完整结果对象，其中 `ok: false`、`exitCode: 2`，不再使用保留给用法、校验和后端错误的 `{ ok: false, error }` 信封。
 
 ## 核心循环
 
@@ -118,7 +120,8 @@ generated:
 - Manifest 的 `generated` 记录是 target path 所有权的权威依据。
 - 已记录的 instruction 产物或 projection 符号链接发生漂移时会原地修复（`repair`/`repair-link`），不需要 `--fix` 或备份。已记录的 settings 文件与预期内容不一致时会先备份再重写，即使它是符号链接或目录。
 - 未记录且尚不匹配预期产物的 path 是 unmanaged。`normalize` 和 `detect` 会报告它，`normalize` 没有 `--fix` 时不写入任何内容。
-- Projection target 上的物理文件或目录即使已记录也是冲突。`dab normalize --fix` 会先把它移入带时间戳的 `.dab/backups/` 目录再替换；unmanaged 符号链接和 settings 文件同样需要 `--fix`。
+- 物理 `.claude/agents/*.md` 文件或 `.claude/skills/<dir>` 目录是 import 候选，不是 unmanaged 冲突。其他物理 projection target、settings 文件和无法解析的条目仍是冲突；`dab normalize --fix` 会先把它们移入带时间戳的 `.dab/backups/` 目录再替换或移除。
+- 已有 authored `.agents` source 的未记录条目符号链接由 `--fix` 先备份再修复。没有 authored source 的链接是冲突，需要手动移除；DAB 从不导入或删除 unmanaged 链接。
 - `normalize` 会采用并记录未记录但已指向预期 source 的符号链接，或已匹配配置模式的 instruction 产物，无需重写。
 - 已配置但没有安全映射的 target 会以 `target.unsupported` 失败。一个 target 失败会阻止所有 target 的写入，`--dry-run` 运行同一预检和退出码但不写入。
 - 根 `CLAUDE.md` 归用户所有，始终是致命冲突。
@@ -131,6 +134,8 @@ generated:
 - Import 保留 `.claude` 的 basename 或目录名。frontmatter `name` 是 fact id；不一致会警告，但不会重命名。
 - All-or-nothing 门禁覆盖 adoption 和 import：任何非法候选或不安全路径都会阻止所有 source 和 `.claude` 写入。后续 target 预检失败时，`.claude` 保持不变；幂等的 source 副本可能已经存在。
 - Import 对已初始化和未初始化/partial scope 都运行，覆盖 project 和 global scope。Global scope 下 `.claude` 条目链接到 `~/.agents`；`~/.claude/settings.json` 和 `$HOME/.gitignore` 永不读写。
+- `dab init` 从不导入或备份现有 `.claude` 条目；adoption 和 import 仍是 normalize 的职责。
+- `dab normalize --dry-run` 预览 source 写入、import、backup 和 symlink 动作及计划备份路径；真实运行时人类输出也会列出 adoption source 动作、import 动作和 adoption 备份。
 - 本阶段只导入 agents 和 skills。rules、settings、hooks 和 instructions 仍是 unmanaged 或冲突的 `.claude` 内容，需要单独采用。
 - Import 是幂等的。导入新条目的那次运行会在下一次运行时记录这些投影；重跑 `dab normalize` 可让生成记录和 `dab detect` 收敛。
 

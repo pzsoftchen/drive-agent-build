@@ -63,6 +63,7 @@ Global 布局：
 - `dab init ~/.agents` 初始化 global scope：编写源位于 `~/.agents/`，投影位于 `$HOME` 下。
 - `dab init path` 把 `path` 作为确切的 source root，并在缺失时创建它。它拒绝在已有 source root 内部创建 source root。
 - 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。未受管的 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
+- Init 从不导入现有 `.claude/agents` 或 `.claude/skills` 条目，也不会为它们创建 adoption 备份。Import 是 `dab normalize` 的职责。
 - 生成的 manifest 是 v2，包含 `scope`、`targets` 和 `instructions: symlink`。
 - JSON 输出包含 `root`（source root）和 `scopeRoot`（路径基准）；`created`、`skipped` 以及嵌套 normalize 路径都相对于 `scopeRoot`。
 - `--dry-run` 预览编写文件写入和 pending 冲突，不写入任何内容。`--ai` 让 Claude Code 生成提案，确认后才写入；不能与 `--dry-run` 同时使用。
@@ -183,6 +184,7 @@ next: dab normalize
 | `[IMPORTABLE]` | 物理 `.claude/agents` 或 `.claude/skills` 条目，可由 `dab normalize` 导入 `.agents`。 |
 
 - `score` 统计全部条目中 `[OK]` 的比例；其他状态都不计入 OK，且 score 永不改变退出码。
+- 已初始化 scope 与未初始化 scope 运行同一份只读 import 计划，因此可导入条目会报告为 `[IMPORTABLE]`，而不是 unmanaged 或 physical-copy 投影漂移。
 - `phase` 为 `initialized` 表示 `dab.yaml` 可解析且 `.agents/` 存在；只有一个 marker 或 manifest 无效时为 `partial`；两者都不存在时为 `uninitialized`。
 - `Profile` 来自有效的 manifest；未初始化 scope，或没有有效 manifest 的 partial scope，显示 `not initialized`。
 - 未初始化和 partial scope 始终退出 `2`，且从不写入；`--strict` 不改变这一点。
@@ -193,6 +195,8 @@ next: dab normalize
 - Unmanaged target path 和缺失的生成记录会作为漂移报告。
 
 `--json` 保留 `targets`、`diagnostics`、`summary` 和 `schemaVersion: 1`，并追加 `scope`、`root`、`phase`、已知时的 `profile`，以及 `checklist`、`score` 和 `nextActions`。每个 checklist 条目包含 `group`、`label`、`status`、可选的 `detail`、可选的 `file` 和可选的 `next`。
+
+未初始化和 partial scope 返回这一完整结果对象，其中 `ok: false`、`exitCode: 2`；不再使用保留给用法、校验和后端错误的 `{ ok: false, error }` 信封。由于字段只是追加，`schemaVersion` 仍为 `1`。
 
 ## `dab normalize`
 
@@ -208,12 +212,13 @@ dab normalize [--dry-run] [--fix] [--json]
 - 保留 basename 和 skill 目录名。frontmatter `name` 不一致会警告，但不会重命名。首次 import 会复制整个 skill 目录（包括额外文件）。当 `.agents/skills/<name>` 已存在时，额外文件不会合并；它们保留在备份中并产生警告。
 - 现有 `.agents` source 优先。当 `.claude` 内容不同时，normalize 保留 source、备份 `.claude`、发出警告并仍然创建链接。已指向 source 的 managed 符号链接会被跳过。
 - Import 不需要 `--fix`；`--fix` 只处理非 import 的 unmanaged 冲突。`.claude/agents` 或 `.claude/skills` 上的目录符号链接是冲突，因为 DAB 逐项拥有条目。
+- 已记录的 projection 符号链接发生漂移时会原地修复，不需要 `--fix`。未记录但已有 authored `.agents` source 的条目符号链接由 `--fix` 先备份再修复；没有 authored source 的链接是冲突，必须手动移除，因为 DAB 从不导入或删除 unmanaged 链接。
 - 任何非法 import 候选都会阻止所有写入：不写 adoption source 文件、不 import、不备份。后续 target 预检失败时，`.claude` 保持不变，幂等的 source 副本可能已经存在。
-- `--dry-run` 预览 source 和修复动作，并运行同一预检但不写入。人类输出不列出 import；`--json` 会提供 `adoption.imports`，真实运行后还有 `adoption.backups`。
+- `--dry-run` 预览 adoption source 动作以及 import、backup、symlink 计划和计划备份路径，并运行同一预检但不写入。人类输出列出 adoption source 动作、import 动作和 adoption 备份；`--json` 提供 `adoption.imports`、`adoption.importActions` 以及计划或实际 `adoption.backups`。顶层 `actions` 在 target 动作之前包含 adoption 动作。
 - Global scope 使用相同的 import 规则：`$HOME/.claude` 下的物理条目链接到 `~/.agents`，且不在 `$HOME` 根写入任何内容。
 - Import 是幂等的。导入新条目的那次运行会在下一次运行时记录这些投影，因此 import 后重跑 `dab normalize` 可让 `dab detect` 干净。
 
-JSON 输出包含顶层结果、`scope` 和 `adoption` 对象（含 `phase`、可选的 `sourcePlan`、`sourceActions`、`imports`、`backups` 和 `diagnostics`），以及每个启用 target 的条目：
+JSON 输出包含顶层结果、`scope` 和 `adoption` 对象（含 `phase`、可选的 `sourcePlan`、`sourceActions`、`importActions`、`imports`、`backups` 和 `diagnostics`），以及每个启用 target 的条目：
 
 ```json
 {
@@ -223,6 +228,11 @@ JSON 输出包含顶层结果、`scope` 和 `adoption` 对象（含 `phase`、�
       ".dab/backups/2026-11-23T00-00-00-000Z/.claude/agents/extra.md"
     ],
     "diagnostics": [],
+    "importActions": [
+      "import .claude/agents/extra.md -> .agents/agents/extra.md",
+      "backup .claude/agents/extra.md -> .dab/backups/2026-11-23T00-00-00-000Z/.claude/agents/extra.md",
+      "symlink .claude/agents/extra.md -> ../../.agents/agents/extra.md"
+    ],
     "imports": [
       {
         "diagnostics": [],
@@ -278,7 +288,7 @@ JSON 输出包含顶层结果、`scope` 和 `adoption` 对象（含 `phase`、�
 ```
 
 - 结果包含绝对 `root`；其他路径相对于该基准，包括 `gitignore.path` 和 backup 条目。
-- `--dry-run` 运行同一预检和退出码，但不写入。在未初始化或 partial scope 上，它预览 adoption source，且没有 target 计划，因为 target 计划需要已写入的 source；import 计划位于 `--json` 的 `adoption.imports`。
+- `--dry-run` 运行同一预检和退出码，但不写入。在未初始化或 partial scope 上，它预览 adoption source，且没有 target 计划，因为 target 计划需要已写入的 source。Import 计划位于 `--json` 的 `adoption.imports`、`adoption.importActions` 和计划中的 `adoption.backups`；顶层 `actions` 和 `backups` 重复这些计划字符串和路径。
 - Global scope 下 `~/.claude/settings.json` 和 `$HOME/.gitignore` 只读，normalize 会警告 global settings 尚未采用。
 
 ## `dab policy explain`

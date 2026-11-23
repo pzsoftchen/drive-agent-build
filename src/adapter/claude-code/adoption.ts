@@ -21,6 +21,7 @@ import {
 } from '../../core/paths.ts';
 import { discoverAgents, validateAgentSource } from '../../model/agents.ts';
 import { DiagnosticCodes } from '../../model/diagnostics-codes.ts';
+import { getGeneratedTarget } from '../../model/project-manifest.ts';
 import type { Scope } from '../../model/scope.ts';
 import { discoverSkills, validateSkillSource } from '../../model/skills.ts';
 import type { ProjectManifest } from '../../model/types.ts';
@@ -144,10 +145,41 @@ function unmanagedSymlink(source: string, target: string): Diagnostic {
   return {
     code: AdoptionCodes.unmanagedSymlink,
     severity: 'error',
-    message: `existing symlink is not managed by DAB: ${source}`,
+    message: `existing symlink is not managed by DAB and has no authored source: ${source}`,
     file: source,
-    hint: `Point it at ${target} or move the path out of .claude before rerunning normalize.`,
+    hint: `Point it at ${target} after adding that authored source, or remove the symlink; DAB never imports or deletes an unmanaged link.`,
   };
+}
+
+/**
+ * Root-relative `.claude` paths recorded as generated projections. The
+ * projection plan owns these targets: managed symlink drift is repaired, and a
+ * stale record is removed, without the adoption import planner reporting the
+ * path as an unmanaged conflict.
+ */
+function managedProjectionTargets(manifest?: ProjectManifest): Set<string> {
+  const generated = manifest === undefined
+    ? undefined
+    : getGeneratedTarget(manifest, 'claude-code');
+  return new Set((generated?.projections ?? []).map((projection) => projection.target));
+}
+
+/**
+ * An entry symlink that does not resolve to its expected `.agents` source is
+ * not an import candidate. When the projection plan owns the target (recorded
+ * or backed by an authored source), it repairs the link, or reports and
+ * `--fix`-backs it up; adoption only reports links DAB cannot map.
+ */
+function symlinkDiagnostic(
+  source: string,
+  target: string,
+  hasAuthoredSource: boolean,
+  managed: ReadonlySet<string>,
+): Diagnostic | undefined {
+  if (managed.has(target) || hasAuthoredSource) {
+    return undefined;
+  }
+  return unmanagedSymlink(source, target);
 }
 
 function nameMismatch(
@@ -247,6 +279,7 @@ interface CandidatePlan {
 async function planAgents(
   input: ClaudeAdoptionInput,
   authored: ReadonlyMap<string, string>,
+  managed: ReadonlySet<string>,
 ): Promise<CandidatePlan> {
   const sourceDir = join(input.claudeRoot, 'agents');
   const entries: ClaudeAdoptionEntry[] = [];
@@ -292,7 +325,16 @@ async function planAgents(
       if (await linkResolvesTo(sourceAbs, expected)) {
         continue;
       }
-      diagnostics.push(unmanagedSymlink(source, target));
+      const expectedInfo = await lstatOrNull(expected);
+      const problem = symlinkDiagnostic(
+        source,
+        target,
+        expectedInfo?.isFile() === true,
+        managed,
+      );
+      if (problem !== undefined) {
+        diagnostics.push(problem);
+      }
       continue;
     }
     if (!entry.isFile()) {
@@ -384,6 +426,7 @@ async function planAgents(
 async function planSkills(
   input: ClaudeAdoptionInput,
   authored: ReadonlyMap<string, string>,
+  managed: ReadonlySet<string>,
 ): Promise<CandidatePlan> {
   const sourceDir = join(input.claudeRoot, 'skills');
   const entries: ClaudeAdoptionEntry[] = [];
@@ -426,7 +469,16 @@ async function planSkills(
       if (await linkResolvesTo(sourceAbs, expected)) {
         continue;
       }
-      diagnostics.push(unmanagedSymlink(source, target));
+      const expectedInfo = await lstatOrNull(expected);
+      const problem = symlinkDiagnostic(
+        source,
+        target,
+        expectedInfo?.isDirectory() === true,
+        managed,
+      );
+      if (problem !== undefined) {
+        diagnostics.push(problem);
+      }
       continue;
     }
     if (!entry.isDirectory()) {
@@ -597,8 +649,9 @@ export async function planClaudeAdoption(
   input: ClaudeAdoptionInput,
 ): Promise<ClaudeAdoptionPlan> {
   const authored = await authoredFacts(input);
-  const agents = await planAgents(input, authored.agents);
-  const skills = await planSkills(input, authored.skills);
+  const managed = managedProjectionTargets(input.manifest);
+  const agents = await planAgents(input, authored.agents, managed);
+  const skills = await planSkills(input, authored.skills, managed);
   const entries = [...agents.entries, ...skills.entries];
   return {
     entries,
@@ -915,4 +968,40 @@ export async function applyClaudeAdoption(
   }
 
   return { actions, backups, diagnostics };
+}
+
+export interface ClaudeAdoptionPreview {
+  actions: string[];
+  backups: string[];
+}
+
+/**
+ * Describe what `applyClaudeAdoption` would do without touching the
+ * filesystem. Backup paths are relative to `root`, matching the applied
+ * result. Used by `dab normalize --dry-run`.
+ */
+export function previewClaudeAdoption(
+  root: string,
+  plan: ClaudeAdoptionPlan,
+  backupRoot: string,
+): ClaudeAdoptionPreview {
+  const actions: string[] = [];
+  const backups: string[] = [];
+  for (const entry of plan.entries) {
+    if (entry.writeSource) {
+      actions.push(`import ${entry.source} -> ${entry.target}`);
+    }
+    if (entry.replaceTarget) {
+      const backup = toPosix(relative(root, join(backupRoot, entry.source)));
+      backups.push(backup);
+      actions.push(`backup ${entry.source} -> ${backup}`);
+      actions.push(
+        `symlink ${entry.source} -> ${relativeLink(
+          resolve(root, entry.source),
+          resolve(root, entry.target),
+        )}`,
+      );
+    }
+  }
+  return { actions, backups };
 }

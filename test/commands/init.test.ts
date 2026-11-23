@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
@@ -453,5 +453,28 @@ describe('runInit', () => {
     expect(code).toBe(0);
     expect(await lstatOrNull(join(parent, 'project/AGENTS.md'))).not.toBeNull();
     expect(await lstatOrNull(join(parent, 'project/dab.yaml'))).not.toBeNull();
+  });
+
+  it('leaves existing .claude agents and skills to normalize instead of importing them', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    const agent = '---\nname: extra\ndescription: Extra.\n---\nExtra.\n';
+    const skill = '---\nname: pdf-tools\ndescription: PDF.\n---\nPDF.\n';
+    await mkdir(join(root, '.claude/agents'), { recursive: true });
+    await mkdir(join(root, '.claude/skills/pdf-tools'), { recursive: true });
+    await writeFile(join(root, '.claude/agents/extra.md'), agent);
+    await writeFile(join(root, '.claude/skills/pdf-tools/SKILL.md'), skill);
+    const captureResult = capture();
+
+    const code = await runInit({ cwd: root, json: true }, captureResult.io);
+
+    expect(code).toBe(0);
+    // Init keeps its behavior on existing .claude trees: no import, no backup.
+    expect(await lstatOrNull(join(root, '.agents/agents/extra.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/skills/pdf-tools'))).toBeNull();
+    expect((await lstat(join(root, '.claude/agents/extra.md'))).isFile()).toBe(true);
+    expect((await lstat(join(root, '.claude/skills/pdf-tools/SKILL.md'))).isFile()).toBe(true);
+    expect(await readFile(join(root, '.claude/agents/extra.md'), 'utf8')).toBe(agent);
+    expect(await lstatOrNull(join(root, '.dab'))).toBeNull();
   });
 });

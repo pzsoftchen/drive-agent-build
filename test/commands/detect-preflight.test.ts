@@ -130,6 +130,32 @@ describe('detect preflight', () => {
     expect(await lstatOrNull(join(project, 'dab.yaml'))).toBeNull();
   });
 
+  it('pins the uninitialized JSON result shape instead of the error envelope', async () => {
+    const project = await tempDir();
+
+    const { code, payload } = await detectJson({ cwd: project, home: dirname(project) });
+
+    expect(code).toBe(2);
+    expect(payload.exitCode).toBe(2);
+    expect(payload.ok).toBe(false);
+    expect(payload.error).toBeUndefined();
+    expect(Object.keys(payload).sort()).toEqual([
+      'checklist',
+      'diagnostics',
+      'exitCode',
+      'nextActions',
+      'ok',
+      'phase',
+      'profile',
+      'root',
+      'schemaVersion',
+      'scope',
+      'score',
+      'summary',
+      'targets',
+    ]);
+  });
+
   it('keeps preflight exit 2 even with --strict', async () => {
     const project = await tempDir();
 
@@ -163,6 +189,8 @@ describe('detect preflight', () => {
 
     expect(code).toBe(2);
     expect(payload.phase).toBe('partial');
+    expect(payload.exitCode).toBe(2);
+    expect(payload.error).toBeUndefined();
     expect(payload.checklist.map((item) => item.status)).toContain('importable');
     expect(payload.nextActions).toContain('dab normalize --dry-run');
     expect(payload.checklist).toEqual(expect.arrayContaining([

@@ -17,6 +17,10 @@ import {
 } from '../core/paths.ts';
 import { assertSupportedPlatform } from '../core/platform.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
+import {
+  planClaudeAdoption,
+  type ClaudeAdoptionEntry,
+} from '../adapter/claude-code/adoption.ts';
 import type {
   TargetDetectOutcome,
   TargetFactKind,
@@ -274,6 +278,16 @@ function statusEntry(
   }
 }
 
+function importEntry(entry: ClaudeAdoptionEntry): ChecklistEntry {
+  return {
+    group: entry.kind === 'agent' ? 'Agents' : 'Skills',
+    label: entry.source,
+    status: 'importable',
+    detail: entry.target,
+    next: 'dab normalize',
+  };
+}
+
 async function exists(root: string, path: string): Promise<boolean> {
   return (await lstatOrNull(join(root, path))) !== null;
 }
@@ -475,6 +489,19 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     throw error;
   }
 
+  // Imports run on every normalize, including initialized scopes. Detect runs
+  // the same read-only plan so an importable physical entry is reported as
+  // [IMPORTABLE] instead of as an unmanaged or physical-copy projection.
+  const importPlan = await planClaudeAdoption({
+    root,
+    scope: sourceRoot.scope,
+    agentsRoot: paths.agents,
+    claudeRoot: paths.claude,
+    manifest: loaded.manifest,
+  });
+  diagnostics.push(...importPlan.diagnostics);
+  const importedTargets = importPlan.entries.map((entry) => entry.source);
+
   const facts = await discoverSourceFacts(root, paths);
   diagnostics.push(
     ...facts.agents.diagnostics,
@@ -517,6 +544,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
       manifest: loaded.manifest,
       target,
       facts,
+      importedTargets,
       ...(options.runner === undefined ? {} : { runner: options.runner }),
     });
     diagnostics.push(...outcome.diagnostics);
@@ -544,6 +572,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     profile,
     entries: [
       ...await inventoryEntries(root, paths, diagnostics),
+      ...importPlan.entries.map((entry) => importEntry(entry)),
       ...targets.flatMap((outcome) =>
         outcome.statuses.map((status) => statusEntry(status, diagnostics))),
       ...diagnosticEntries(diagnostics),
