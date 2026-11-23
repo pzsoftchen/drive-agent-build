@@ -58,6 +58,7 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 |---|---|
 | DAD 编写事实、投影、漂移检测和策略解释 | 已在 0.1.1 发布 |
 | DAD 独立的 project/global scope 与 v2 manifest | 已在 0.1.1 发布 |
+| DAD 实践层：generic profile、单语 docs 和 authoring skills | 已实现，尚未发布 |
 | DAD 单开发任务证据 | 计划在 v0.2 提供，这是下一步 |
 | DAD 记忆与运行加固 | 计划在 v0.3 提供 |
 | DAD Codex 与 DSH adapter | 在单任务证据之后 |
@@ -99,8 +100,8 @@ pnpm link --global
 
 ## 命令做什么
 
-- `dab init` 写入项目编写骨架，并在安全时运行 normalize。
-- `dab normalize` 编译策略、生成指令和投影产物，并记录哈希。
+- `dab init` 写入项目编写骨架，包括 `docs/AGENTS.md`、`docs/architecture.md` 和 `dab-*` authoring skills，并在安全时运行 normalize。
+- `dab normalize` 编译策略、生成指令和投影产物、补齐缺失的 docs 和 authoring skills，并记录哈希。
 - `dab detect` 在不写入的情况下检查编写事实、生成输出、所有权和作用域。
 - `dab policy explain` 展示选定 target 的最终规则和 hooks。
 
@@ -136,6 +137,7 @@ pnpm link --global
 
 完整文档：[docs](https://github.com/pzsoftchen/drive-agent-build/tree/main/docs)
 
+- [文档指南](docs/AGENTS.md)
 - [DAB 为什么存在](docs/concepts/why-dab.zh.md)
 - [路线图](docs/roadmap.zh.md)
 - [架构](docs/architecture.zh.md)
@@ -144,6 +146,7 @@ pnpm link --global
 - [Claude Code 集成](docs/user/claude-code.zh.md)
 - [Agent 决策记录 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.zh.md)
 - [Agent 决策记录 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.zh.md)
+- [Agent 决策记录 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.zh.md)
 
 ## 许可证
 

@@ -41,7 +41,7 @@ Tests use temporary repositories and real files. They cover normal paths, confli
 
 ## Documentation
 
-Published product docs are paired. Run `pnpm run verify-translation-pairing --write` after confirming both sides, then `pnpm doc-sync`. Agent instructions, skills and roles are English single-source and covered by link, wrap and configured budget gates. Internal specs and plans under `docs/superpowers/` are Chinese-only by design; they are excluded from pairing but stay covered by link and wrap checks.
+Documentation tiers, placement, writing and verification rules live in [docs/AGENTS.md](AGENTS.md).
 
 ## Release
 

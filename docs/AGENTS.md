@@ -36,9 +36,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 
 - Describe the current state. Do not narrate history, planned work or implementation progress.
 - Write one physical line per paragraph so diffs stay reviewable. Use continuation lines only inside fenced code, tables and list items that need them.
-- Human-facing documents are paired English and Simplified Chinese and share one `.i18n.yaml` record, as required by [.agents/rules/docs-bilingual.md](../.agents/rules/docs-bilingual.md). Update both languages and the record in the same change.
-- Keep headings, lists, tables, fenced code and inline code structurally identical across a pair.
-- Do not translate commands, paths, configuration keys, identifiers or code blocks.
+- Human-facing documents in this repository remain paired English and Simplified Chinese; [.agents/rules/docs-bilingual.md](../.agents/rules/docs-bilingual.md) owns the pair structure, update rule and translation prohibitions.
 - Use relative links to files that exist. Never use absolute links or link to an example that is not in the repository.
 - State each rule and fact once; link to the owner instead of copying it.
 - Prefer concrete identifiers, paths and commands over adjectives.

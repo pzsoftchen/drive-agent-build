@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-23-practice-layer.md
+translation: .agents/notes/implemented/architecture/2026-11-23-practice-layer.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: 7f971a6345f88e91ca2908b7cc08506d93ea39e68377a718776ef196cb5b6181
+    translation: bbd2c427aad7517becb44eebaf30796f665c5d58a368816222675a294305bc11
+  - index: 2
+    level: 2
+    source: 790d8c3b242ed411a9ee785a98ccede8d6c2eb63350c76d3c7a5a7da058556d2
+    translation: 44144a8a85e503b48a252b6f42153bc3a2eb1c01893e9fa45a6bd2e7baeccc5c
+  - index: 3
+    level: 2
+    source: 76467ef510c124d8dd8e3294317bedd7ea3370fc190b7705dcda16b1d59650d3
+    translation: 5dac305f65f5f90d6169b1e7c316676ec4accb9b8b7f36fd95be0f2bf83c3fa6
+  - index: 4
+    level: 2
+    source: a05b972abcefa7a97393b1f8c34372cae2ba2911718b012948b413e502cf8f3c
+    translation: 458db333637b74fc766a1d8ce7ba5de0296de291a686dd7a981d28af70d0f111
+  - index: 5
+    level: 2
+    source: 3d09f79307a095c8b2bd7617246ae5c796e2a565ab3c0948f03ffebfc15330e3
+    translation: a5827639072313ccc0f16470077f46d49ae99b83aab5ddf575326ff2859380ad
+  - index: 6
+    level: 2
+    source: de7ac14db771e4e69cdb21c13f249da0db20fe9c9a7c417f0d07ea0a7a68f9e9
+    translation: 6f7d140bf31296fd42de8cfa36dd0e3432f39cb480668a266e4ef703176b5c18
+  - index: 7
+    level: 2
+    source: af2635eab7b71285f39f5b81bab670d6072d7a986f156093691e1c06b7df95b1
+    translation: 1fe1a85ff094d9c323e3fdd03987a3d7daefec51bef17b21f1b768b7c47ed53d
