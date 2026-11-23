@@ -1,11 +1,21 @@
-import { readdir, readlink } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import type { Dirent } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { copyFile, cp, readdir, readlink, realpath, rename, rm } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { compareStrings } from '../../core/compare.ts';
 import type { Diagnostic } from '../../core/diagnostics.ts';
-import { lstatOrNull, readTextFile } from '../../core/fs-atomic.ts';
+import {
+  backupPath,
+  ensureDir,
+  lstatOrNull,
+  readTextFile,
+  replaceSymlink,
+} from '../../core/fs-atomic.ts';
 import {
   assertParentInsideRoot,
+  isPathInside,
+  relativeLink,
   resolveInside,
   toPosix,
 } from '../../core/paths.ts';
@@ -48,6 +58,11 @@ const AdoptionCodes = {
   targetConflict: 'adoption.target-conflict',
   sourceUnreadable: 'adoption.source-unreadable',
   targetUnreadable: 'adoption.target-unreadable',
+  applyFailed: 'adoption.apply-failed',
+  sourceMissing: 'adoption.source-missing',
+  sourceSymlinkEscape: 'adoption.source-symlink-escape',
+  targetExists: 'adoption.target-exists',
+  targetMissing: 'adoption.target-missing',
 } as const;
 
 function errorMessage(error: unknown): string {
@@ -505,4 +520,277 @@ export async function planClaudeAdoption(
       ...entries.flatMap((entry) => entry.diagnostics),
     ],
   };
+}
+
+export interface ClaudeAdoptionApplyInput {
+  root: string;
+  plan: ClaudeAdoptionPlan;
+  backupRoot: string;
+}
+
+export interface ClaudeAdoptionApplyResult {
+  actions: string[];
+  backups: string[];
+  diagnostics: Diagnostic[];
+}
+
+interface ApplyContext {
+  root: string;
+  backupRoot: string;
+  actions: string[];
+  backups: string[];
+}
+
+function applyDiagnostic(
+  code: string,
+  file: string,
+  message: string,
+  hint?: string,
+): Diagnostic {
+  return {
+    code,
+    severity: 'error',
+    message,
+    file,
+    ...(hint === undefined ? {} : { hint }),
+  };
+}
+
+function applyFailure(entry: ClaudeAdoptionEntry, error: unknown): Diagnostic {
+  return applyDiagnostic(
+    AdoptionCodes.applyFailed,
+    entry.source,
+    `cannot import ${entry.kind} ${entry.source}: ${errorMessage(error)}`,
+    'Fix the filesystem error and rerun normalize; the reported copies, backups and links are kept.',
+  );
+}
+
+type SafePath =
+  | { ok: true; absolute: string }
+  | { ok: false; error: unknown };
+
+async function safeResolve(root: string, relativePath: string): Promise<SafePath> {
+  try {
+    const absolute = resolveInside(root, relativePath);
+    await assertParentInsideRoot(root, relativePath);
+    return { ok: true, absolute };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+async function realPathNearestExisting(candidate: string): Promise<string> {
+  let current = resolve(candidate);
+  for (;;) {
+    try {
+      return await realpath(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+      const parent = dirname(current);
+      if (parent === current) {
+        throw error;
+      }
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Copying a skill directory must not smuggle a link to a path outside the
+ * adoption root into the authored tree. Links are copied verbatim, so they are
+ * never followed while copying; this check decides whether they may be copied.
+ */
+async function symlinkEscapesRoot(root: string, linkPath: string): Promise<boolean> {
+  const raw = await readlink(linkPath);
+  const realRoot = await realpath(root);
+  const target = await realPathNearestExisting(resolve(dirname(linkPath), raw));
+  return !isPathInside(realRoot, target);
+}
+
+async function findEscapingSymlink(
+  root: string,
+  dir: string,
+): Promise<string | undefined> {
+  for (const entry of await readDirOrEmpty(dir)) {
+    const entryPath = join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      if (await symlinkEscapesRoot(root, entryPath)) {
+        return entryPath;
+      }
+    } else if (entry.isDirectory()) {
+      const nested = await findEscapingSymlink(root, entryPath);
+      if (nested !== undefined) {
+        return nested;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Copy into a staging directory and rename, so a failed copy never leaves a
+ * half-written skill that a later run would treat as the authored source.
+ */
+async function copySkillDirectory(sourceAbs: string, targetAbs: string): Promise<void> {
+  await ensureDir(dirname(targetAbs));
+  const staging = join(
+    dirname(targetAbs),
+    `.${basename(targetAbs)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`,
+  );
+  try {
+    await cp(sourceAbs, staging, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      dereference: false,
+      verbatimSymlinks: true,
+    });
+    await rename(staging, targetAbs);
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function applyAdoptionEntry(
+  context: ApplyContext,
+  entry: ClaudeAdoptionEntry,
+): Promise<Diagnostic | undefined> {
+  if (!entry.writeSource && !entry.replaceTarget) {
+    return undefined;
+  }
+
+  const source = await safeResolve(context.root, entry.source);
+  if (!source.ok) {
+    return applyDiagnostic(
+      AdoptionCodes.sourceEscape,
+      entry.source,
+      `${entry.kind} source is not a safe import path: ${errorMessage(source.error)}`,
+      'Rerun normalize to rebuild the import plan.',
+    );
+  }
+  const target = await safeResolve(context.root, entry.target);
+  if (!target.ok) {
+    return applyDiagnostic(
+      AdoptionCodes.targetEscape,
+      entry.target,
+      `${entry.kind} target is not a safe import path: ${errorMessage(target.error)}`,
+      'Rerun normalize to rebuild the import plan.',
+    );
+  }
+
+  const sourceInfo = await lstatOrNull(source.absolute);
+  const expectedSource = entry.kind === 'agent'
+    ? sourceInfo?.isFile() === true
+    : sourceInfo?.isDirectory() === true;
+  if (sourceInfo === null || sourceInfo.isSymbolicLink() || !expectedSource) {
+    return applyDiagnostic(
+      AdoptionCodes.sourceMissing,
+      entry.source,
+      `${entry.kind} source is no longer a physical ${entry.kind === 'agent' ? 'file' : 'directory'}: ${entry.source}`,
+      'Rerun normalize to rebuild the import plan.',
+    );
+  }
+
+  const targetInfo = await lstatOrNull(target.absolute);
+  if (entry.writeSource) {
+    if (targetInfo !== null) {
+      return applyDiagnostic(
+        AdoptionCodes.targetExists,
+        entry.target,
+        `refusing to overwrite the existing .agents source: ${entry.target}`,
+        'Rerun normalize so the plan keeps the existing source and only migrates the .claude entry.',
+      );
+    }
+  } else {
+    if (targetInfo === null) {
+      return applyDiagnostic(
+        AdoptionCodes.targetMissing,
+        entry.target,
+        `the existing .agents source disappeared before the import: ${entry.target}`,
+        'Rerun normalize to rebuild the import plan.',
+      );
+    }
+    const expectedTarget = entry.kind === 'agent'
+      ? targetInfo.isFile()
+      : targetInfo.isDirectory();
+    if (targetInfo.isSymbolicLink() || !expectedTarget) {
+      return applyDiagnostic(
+        AdoptionCodes.targetConflict,
+        entry.target,
+        `${entry.kind} target is not ${entry.kind === 'agent' ? 'a regular file' : 'a directory'}: ${entry.target}`,
+        'Move the existing entry or remove it before importing.',
+      );
+    }
+  }
+
+  if (entry.writeSource) {
+    if (entry.kind === 'skill') {
+      const escaping = await findEscapingSymlink(context.root, source.absolute);
+      if (escaping !== undefined) {
+        const file = relativePath(context.root, escaping);
+        return applyDiagnostic(
+          AdoptionCodes.sourceSymlinkEscape,
+          file,
+          `skill source contains a symlink that escapes the adoption root: ${file}`,
+          'Remove the symlink or point it inside the adoption root before rerunning normalize.',
+        );
+      }
+      await copySkillDirectory(source.absolute, target.absolute);
+    } else {
+      await ensureDir(dirname(target.absolute));
+      await copyFile(source.absolute, target.absolute, constants.COPYFILE_EXCL);
+    }
+    context.actions.push(`import ${entry.source} -> ${entry.target}`);
+  }
+
+  if (entry.replaceTarget) {
+    const backup = await backupPath(context.root, entry.source, context.backupRoot);
+    context.backups.push(backup);
+    context.actions.push(`backup ${entry.source} -> ${relativePath(context.root, backup)}`);
+    await rm(source.absolute, { recursive: true, force: true });
+    const linkTarget = relativeLink(source.absolute, target.absolute);
+    await replaceSymlink(source.absolute, linkTarget);
+    context.actions.push(`symlink ${entry.source} -> ${linkTarget}`);
+  }
+
+  return undefined;
+}
+
+/**
+ * Apply a Claude import plan: copy importable agents/skills into the authored
+ * `.agents` tree, then back up and replace each `.claude` entry with a
+ * per-entry symlink. Existing `.agents` sources are never overwritten.
+ * A backup failure aborts before replacement; there is no automatic rollback,
+ * so `actions` and `backups` report writes that already happened and a rerun
+ * rebuilds the plan from the resulting tree.
+ */
+export async function applyClaudeAdoption(
+  input: ClaudeAdoptionApplyInput,
+): Promise<ClaudeAdoptionApplyResult> {
+  const actions: string[] = [];
+  const backups: string[] = [];
+  const diagnostics: Diagnostic[] = [];
+  const context: ApplyContext = {
+    root: input.root,
+    backupRoot: input.backupRoot,
+    actions,
+    backups,
+  };
+
+  for (const entry of input.plan.entries) {
+    try {
+      const problem = await applyAdoptionEntry(context, entry);
+      if (problem !== undefined) {
+        diagnostics.push(problem);
+      }
+    } catch (error) {
+      diagnostics.push(applyFailure(entry, error));
+      break;
+    }
+  }
+
+  return { actions, backups, diagnostics };
 }

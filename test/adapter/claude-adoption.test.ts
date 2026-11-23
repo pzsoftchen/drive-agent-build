@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { lstat, mkdir, readFile, rm, symlink } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, readlink, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { planClaudeAdoption } from '../../src/adapter/claude-code/adoption.ts';
+import {
+  applyClaudeAdoption,
+  planClaudeAdoption,
+} from '../../src/adapter/claude-code/adoption.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
+import { makeTempDir } from '../helpers/tmp.ts';
 
 const projects: ProjectFixture[] = [];
+const tempDirs: string[] = [];
 
 async function project(): Promise<ProjectFixture> {
   const fixture = await makeProject('dab-claude-adoption-');
@@ -13,8 +18,17 @@ async function project(): Promise<ProjectFixture> {
   return fixture;
 }
 
+async function tempDir(): Promise<string> {
+  const dir = await makeTempDir('dab-claude-adoption-');
+  tempDirs.push(dir);
+  return dir;
+}
+
 afterEach(async () => {
-  await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
+  await Promise.all([
+    ...projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })),
+    ...tempDirs.splice(0).map((item) => rm(item, { recursive: true, force: true })),
+  ]);
 });
 
 function agent(name: string, description: string, body: string): string {
@@ -294,5 +308,220 @@ describe('planClaudeAdoption', () => {
     expect((await readFile(join(fixture.root, '.claude/skills/pdf-tools/SKILL.md'), 'utf8')))
       .toContain('name: pdf-tools');
     expect(await lstatOrNull(join(fixture.root, '.agents/skills/pdf-tools'))).toBeNull();
+  });
+});
+
+function apply(fixture: ProjectFixture, claudePlan: Awaited<ReturnType<typeof plan>>) {
+  return applyClaudeAdoption({
+    root: fixture.root,
+    plan: claudePlan,
+    backupRoot: join(fixture.root, '.dab/backups/test'),
+  });
+}
+
+describe('applyClaudeAdoption', () => {
+  it('copies an agent, backs up the original and creates a symlink', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/agents/reviewer.md',
+      agent('reviewer', 'Reviews.', 'Review.'),
+    );
+    const claudePlan = await plan(fixture);
+
+    const applied = await apply(fixture, claudePlan);
+
+    expect(await readFile(join(fixture.root, '.agents/agents/reviewer.md'), 'utf8'))
+      .toContain('name: reviewer');
+    expect(await readlink(join(fixture.root, '.claude/agents/reviewer.md')))
+      .toBe('../../.agents/agents/reviewer.md');
+    expect(applied.backups).toHaveLength(1);
+    expect(await readFile(applied.backups[0]!, 'utf8')).toContain('Review.');
+    expect(applied.diagnostics.filter((item) => item.severity === 'error')).toEqual([]);
+    expect(applied.actions).toEqual([
+      'import .claude/agents/reviewer.md -> .agents/agents/reviewer.md',
+      'backup .claude/agents/reviewer.md -> .dab/backups/test/.claude/agents/reviewer.md',
+      'symlink .claude/agents/reviewer.md -> ../../.agents/agents/reviewer.md',
+    ]);
+  });
+
+  it('copies a skill directory and backs up the whole original', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await writeProjectFile(fixture.root, '.claude/skills/pdf-tools/helper.txt', 'extra\n');
+    const claudePlan = await plan(fixture);
+
+    const applied = await apply(fixture, claudePlan);
+
+    expect(await readFile(join(fixture.root, '.agents/skills/pdf-tools/helper.txt'), 'utf8'))
+      .toBe('extra\n');
+    expect(await readlink(join(fixture.root, '.claude/skills/pdf-tools')))
+      .toBe('../../.agents/skills/pdf-tools');
+    expect(applied.backups).toHaveLength(1);
+    expect((await lstat(applied.backups[0]!)).isDirectory()).toBe(true);
+    expect(await readFile(join(applied.backups[0]!, 'helper.txt'), 'utf8')).toBe('extra\n');
+  });
+
+  it('keeps an existing .agents source and still backs up and links the target', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/reviewer.md',
+      agent('reviewer', 'Source.', 'Source.'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.claude/agents/reviewer.md',
+      agent('reviewer', 'Old.', 'Old.'),
+    );
+    const claudePlan = await plan(fixture);
+
+    const applied = await apply(fixture, claudePlan);
+
+    expect(await readFile(join(fixture.root, '.agents/agents/reviewer.md'), 'utf8'))
+      .toContain('Source.');
+    expect(await readFile(applied.backups[0]!, 'utf8')).toContain('Old.');
+    expect(await readlink(join(fixture.root, '.claude/agents/reviewer.md')))
+      .toBe('../../.agents/agents/reviewer.md');
+  });
+
+  it('does not merge extra skill files into an existing .agents skill', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await writeProjectFile(fixture.root, '.claude/skills/pdf-tools/extra.txt', 'extra\n');
+    const claudePlan = await plan(fixture);
+
+    const applied = await apply(fixture, claudePlan);
+
+    expect(await lstatOrNull(join(fixture.root, '.agents/skills/pdf-tools/extra.txt'))).toBeNull();
+    expect(await readFile(join(applied.backups[0]!, 'extra.txt'), 'utf8')).toBe('extra\n');
+    expect(await readlink(join(fixture.root, '.claude/skills/pdf-tools')))
+      .toBe('../../.agents/skills/pdf-tools');
+  });
+
+  it('refuses to overwrite an .agents source that appeared after planning', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/agents/reviewer.md',
+      agent('reviewer', 'Reviews.', 'Review.'),
+    );
+    const claudePlan = await plan(fixture);
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/reviewer.md',
+      agent('reviewer', 'Late.', 'Late.'),
+    );
+
+    const applied = await apply(fixture, claudePlan);
+
+    expect(await readFile(join(fixture.root, '.agents/agents/reviewer.md'), 'utf8'))
+      .toContain('Late.');
+    expect((await lstat(join(fixture.root, '.claude/agents/reviewer.md'))).isFile()).toBe(true);
+    expect(applied.actions).toEqual([]);
+    expect(applied.backups).toEqual([]);
+    expect(applied.diagnostics.find((item) => item.code === 'adoption.target-exists'))
+      .toMatchObject({ severity: 'error', file: '.agents/agents/reviewer.md' });
+  });
+
+  it('rejects a skill symlink that escapes the root without copying', async () => {
+    const fixture = await project();
+    const outside = await tempDir();
+    await writeProjectFile(outside, 'secret.txt', 'secret\n');
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await writeProjectFile(fixture.root, '.claude/skills/pdf-tools/nested/keep.txt', 'keep\n');
+    await symlink(outside, join(fixture.root, '.claude/skills/pdf-tools/nested/leak'));
+    const claudePlan = await plan(fixture);
+
+    const applied = await apply(fixture, claudePlan);
+
+    expect(await lstatOrNull(join(fixture.root, '.agents/skills/pdf-tools'))).toBeNull();
+    expect(await readdir(join(fixture.root, '.agents/skills'))).toEqual([]);
+    expect((await lstat(join(fixture.root, '.claude/skills/pdf-tools'))).isDirectory()).toBe(true);
+    expect(applied.actions).toEqual([]);
+    expect(applied.backups).toEqual([]);
+    expect(applied.diagnostics.find((item) => item.code === 'adoption.source-symlink-escape'))
+      .toMatchObject({ severity: 'error', file: '.claude/skills/pdf-tools/nested/leak' });
+  });
+
+  it('copies an internal skill symlink verbatim', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await writeProjectFile(fixture.root, '.claude/skills/pdf-tools/data.txt', 'data\n');
+    await symlink('data.txt', join(fixture.root, '.claude/skills/pdf-tools/helper.txt'));
+    const claudePlan = await plan(fixture);
+
+    await apply(fixture, claudePlan);
+
+    const copied = join(fixture.root, '.agents/skills/pdf-tools/helper.txt');
+    expect((await lstat(copied)).isSymbolicLink()).toBe(true);
+    expect(await readlink(copied)).toBe('data.txt');
+    expect(await readFile(copied, 'utf8')).toBe('data\n');
+  });
+
+  it('aborts before replacing when the backup fails', async () => {
+    const fixture = await project();
+    const outside = await tempDir();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/agents/reviewer.md',
+      agent('reviewer', 'Reviews.', 'Review.'),
+    );
+    const claudePlan = await plan(fixture);
+
+    const applied = await applyClaudeAdoption({
+      root: fixture.root,
+      plan: claudePlan,
+      backupRoot: join(outside, 'backups'),
+    });
+
+    expect(applied.backups).toEqual([]);
+    expect(applied.diagnostics.find((item) => item.code === 'adoption.apply-failed'))
+      .toMatchObject({ severity: 'error', file: '.claude/agents/reviewer.md' });
+    expect((await lstat(join(fixture.root, '.claude/agents/reviewer.md'))).isFile()).toBe(true);
+    expect(await readFile(join(fixture.root, '.claude/agents/reviewer.md'), 'utf8'))
+      .toContain('Review.');
+    // The source copy happened before the failed backup and is not rolled back.
+    expect(await readFile(join(fixture.root, '.agents/agents/reviewer.md'), 'utf8'))
+      .toContain('name: reviewer');
+  });
+
+  it('is idempotent when the plan is rebuilt after applying', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/agents/reviewer.md',
+      agent('reviewer', 'Reviews.', 'Review.'),
+    );
+    await apply(fixture, await plan(fixture));
+
+    const rebuilt = await plan(fixture);
+    const applied = await apply(fixture, rebuilt);
+
+    expect(rebuilt.entries).toEqual([]);
+    expect(applied.actions).toEqual([]);
+    expect(applied.backups).toEqual([]);
+    expect(applied.diagnostics).toEqual([]);
   });
 });
