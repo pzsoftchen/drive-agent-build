@@ -1,13 +1,20 @@
-import { open, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { ConfigError } from '../core/errors.ts';
+import { open, realpath, rm } from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
+import type { Diagnostic } from '../core/diagnostics.ts';
+import { ConfigError, DabError } from '../core/errors.ts';
 import { ensureDir, lstatOrNull } from '../core/fs-atomic.ts';
+import {
+  assertParentInsideRoot,
+  assertRealPathInsideRoot,
+  toPosix,
+} from '../core/paths.ts';
 import { MIN_CLAUDE_CODE_VERSION } from '../core/version-check.ts';
-import { loadProjectManifest } from '../model/project-manifest.ts';
+import type { ClaudeAdoptionEntry } from '../adapter/claude-code/adoption.ts';
+import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
 import { ProjectManifestSchema } from '../model/schemas.ts';
-import { resolveScopeMarker, type Scope } from '../model/scope.ts';
-import type { ProjectManifest } from '../model/types.ts';
-import type { ScanResult } from './scanner.ts';
+import { resolveScopeMarker, type Scope, type SourceRoot } from '../model/scope.ts';
+import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
+import { scanProject, type ScanResult } from './scanner.ts';
 import {
   renderAgentsMd,
   renderClaudeCodePolicy,
@@ -192,4 +199,207 @@ export async function writeSourceFiles(
     }
   }
   return { created, skipped };
+}
+
+export interface NormalizeAdoptionPreparation {
+  sourceRoot: SourceRoot;
+  phase: AdoptionPhase;
+  manifest: ProjectManifest;
+  paths: ProjectPaths;
+  sourcePlan?: MinimalSourcePlan;
+  diagnostics: Diagnostic[];
+}
+
+export interface NormalizeAdoptionResult {
+  phase: AdoptionPhase;
+  sourcePlan?: MinimalSourcePlan;
+  sourceActions: string[];
+  imports?: ClaudeAdoptionEntry[];
+  backups: string[];
+  diagnostics: Diagnostic[];
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return resolve(path);
+    }
+    throw error;
+  }
+}
+
+/**
+ * A project fallback can resolve to `$HOME` (for example a dotfiles git repo).
+ * `$HOME/.agents` is the global source root in that case, so writing a project
+ * skeleton there would silently convert the global source into a project.
+ */
+async function assertProjectHomeNotGlobal(
+  adoption: AdoptionRoot,
+  home: string,
+): Promise<void> {
+  if (adoption.scope !== 'project' || adoption.phase === 'initialized') {
+    return;
+  }
+  if ((await lstatOrNull(join(home, '.agents'))) === null) {
+    return;
+  }
+  if (await canonicalPath(adoption.root) !== await canonicalPath(home)) {
+    return;
+  }
+  throw new ConfigError(
+    'refusing to adopt project source at $HOME while ~/.agents is the global source root',
+    'config.source-root-nested',
+    { hint: 'Run dab normalize from inside ~/.agents to adopt global scope.' },
+  );
+}
+
+function sourceRootOf(adoption: AdoptionRoot): SourceRoot {
+  return {
+    scope: adoption.scope,
+    root: adoption.root,
+    sourceRoot: adoption.sourceRoot,
+    manifest: adoption.manifestPath,
+    instructions: adoption.instructionsPath,
+  };
+}
+
+export async function prepareNormalizeAdoption(input: {
+  cwd: string;
+  home: string;
+  now?: Date;
+}): Promise<NormalizeAdoptionPreparation> {
+  const adoption = await resolveAdoptionRoot({ cwd: input.cwd, home: input.home });
+  const sourceRoot = sourceRootOf(adoption);
+  const manifestKey = toPosix(relative(adoption.root, adoption.manifestPath));
+  const hasManifest = (await lstatOrNull(adoption.manifestPath)) !== null;
+
+  if (hasManifest && !adoption.manifestValid) {
+    // Re-run the loader so callers receive the exact ConfigError (invalid
+    // manifest, scope mismatch, unsupported paths) and nothing is overwritten.
+    await loadProjectManifest(adoption.root, { scope: adoption.scope });
+    throw new ConfigError(`invalid ${manifestKey}`, 'config.invalid');
+  }
+
+  if (hasManifest) {
+    const loaded = await loadProjectManifest(adoption.root, { scope: adoption.scope });
+    const paths = resolveProjectPaths(adoption.root, loaded.manifest);
+    if (adoption.phase === 'initialized') {
+      return {
+        sourceRoot,
+        phase: adoption.phase,
+        manifest: loaded.manifest,
+        paths,
+        diagnostics: [],
+      };
+    }
+    await assertProjectHomeNotGlobal(adoption, input.home);
+    const scan = await scanProject(adoption.root);
+    const plan = minimalSourcePlan(scan, adoption.scope);
+    // The authored manifest is authoritative: it is never part of the write
+    // plan and `plan.manifest` stays equal to what normalize loads afterwards.
+    const { [manifestKey]: _authored, ...files } = plan.files;
+    return {
+      sourceRoot,
+      phase: adoption.phase,
+      manifest: loaded.manifest,
+      paths,
+      sourcePlan: { ...plan, files, manifest: loaded.manifest },
+      diagnostics: scan.diagnostics,
+    };
+  }
+
+  await assertProjectHomeNotGlobal(adoption, input.home);
+  const scan = await scanProject(adoption.root);
+  const sourcePlan = minimalSourcePlan(scan, adoption.scope);
+  return {
+    sourceRoot,
+    phase: adoption.phase,
+    manifest: sourcePlan.manifest,
+    paths: resolveProjectPaths(adoption.root, sourcePlan.manifest),
+    sourcePlan,
+    diagnostics: scan.diagnostics,
+  };
+}
+
+function adoptionDiagnostic(error: DabError, file: string): Diagnostic {
+  return {
+    code: error.code,
+    severity: 'error',
+    message: error.message,
+    file,
+    ...(error.hint === undefined ? {} : { hint: error.hint }),
+  };
+}
+
+/**
+ * Init-style containment checks run before the first write. `plan.directories`
+ * omits implicitly created parents (policies, adapters, memory), so every
+ * planned file is checked as well as the source tree itself.
+ */
+async function sourceWriteDiagnostics(
+  root: string,
+  plan: MinimalSourcePlan,
+  agents: string,
+): Promise<Diagnostic[]> {
+  for (const relativePath of [
+    agents,
+    ...plan.directories,
+    ...Object.keys(plan.files),
+  ]) {
+    try {
+      await assertRealPathInsideRoot(root, relativePath);
+      await assertParentInsideRoot(root, relativePath);
+    } catch (error) {
+      if (error instanceof DabError) {
+        return [adoptionDiagnostic(error, relativePath)];
+      }
+      throw error;
+    }
+  }
+  return [];
+}
+
+/**
+ * Applies the prepared source adoption. `backupRoot` is accepted here because
+ * Task 7 continues with Claude imports under the same backup root; source
+ * creation only writes missing files, so it never produces a backup.
+ */
+export async function applyNormalizeAdoption(
+  prep: NormalizeAdoptionPreparation,
+  options: { dryRun: boolean; backupRoot: string },
+): Promise<{ actions: string[]; backups: string[]; diagnostics: Diagnostic[] }> {
+  if (prep.sourcePlan === undefined) {
+    return { actions: [], backups: [], diagnostics: [] };
+  }
+  const root = prep.sourceRoot.root;
+  const agents = toPosix(relative(root, prep.paths.agents));
+  const diagnostics = await sourceWriteDiagnostics(root, prep.sourcePlan, agents);
+  if (diagnostics.length > 0) {
+    return { actions: [], backups: [], diagnostics };
+  }
+
+  const actions = (created: readonly string[], skipped: readonly string[]): string[] => [
+    ...created.map((file) => `create ${file}`),
+    ...skipped.map((file) => `skip ${file}`),
+  ];
+
+  if (options.dryRun) {
+    const planned = await planSourceWrites(root, prep.sourcePlan);
+    return {
+      actions: actions(planned.create, planned.skip),
+      backups: [],
+      diagnostics: [],
+    };
+  }
+
+  // Task 7 consumes backupRoot for Claude imports; source creation never backs
+  // up because it only writes missing files.
+  const written = await writeSourceFiles(root, prep.sourcePlan);
+  return {
+    actions: actions(written.created, written.skipped),
+    backups: [],
+    diagnostics: [],
+  };
 }

@@ -5,7 +5,6 @@ import { dirname, join, resolve } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
-import { ConfigError } from '../../src/core/errors.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
 import {
   getGeneratedTarget,
@@ -634,15 +633,11 @@ Unsafe.
     }
   });
 
-  it('rejects Windows and missing manifests', async () => {
+  it('rejects unsupported platforms', async () => {
     const project = await projectFixture();
     await expect(
       normalizeProject({ cwd: project.root, platform: 'win32' }),
     ).rejects.toMatchObject({ code: 'platform.unsupported' });
-
-    const empty = await makeProject();
-    projects.push(empty);
-    await expect(normalizeProject({ cwd: empty.root })).rejects.toBeInstanceOf(ConfigError);
   });
 
   it('rejects a symlinked generated directory that escapes the project', async () => {
@@ -661,13 +656,14 @@ Unsafe.
     }
   });
 
-  it('emits a versioned JSON error envelope', async () => {
+  it('emits a versioned JSON error envelope for an invalid manifest', async () => {
     const project = await makeProject();
     projects.push(project);
+    await writeProjectFile(project.root, 'dab.yaml', 'version: nope\n');
     const stdout: string[] = [];
 
     const code = await runNormalize(
-      { cwd: project.root, json: true },
+      { cwd: project.root, home: dirname(project.root), json: true },
       { stdout: (value) => stdout.push(value), stderr: () => undefined },
     );
 
@@ -677,7 +673,8 @@ Unsafe.
       error: { code: string };
     };
     expect(payload.schemaVersion).toBe(1);
-    expect(payload.error.code).toBe('config.missing');
+    expect(payload.error.code).toBe('config.invalid');
+    expect(await readFile(join(project.root, 'dab.yaml'), 'utf8')).toBe('version: nope\n');
   });
 
   it('emits machine-readable JSON from runNormalize', async () => {
