@@ -53,9 +53,9 @@ v1 只支持两个值：
 
 Practice pack 是内部单元，包含：
 
-- `targets(context)`：声明本 pack 打算创建的文件和目录路径（不含内容）；context 的 anchors 只含已存在路径，用于条件声明。
+- `targets(context)`：声明本 pack 的候选文件和目录路径（不含内容）；这是静态候选声明，context.anchors 为空，存在性由 planner 统一 stat 后过滤。
 - `files(context)`：缺失时生成的模板；context 的 anchors 包含已存在路径和本 plan 的 targets。
-- `directories`：缺失时创建的目录。
+- `directories`：缺失时创建的目录；它不抑制已存在目录的子文件。需要“用户已有 skill 目录优先”的 pack 用 `skipChildrenWhenExists` 声明。
 - `checks(context)`：`detect` 使用的检查。
 - `guidance`：声明随包分发的 skill 或 rule；skill 内容通过 `files()` 进入同一份 plan，报告时按 `.agents/skills/dab-*` 路径归类为 `practices.skills`。v1 的 authoring pack 通过它分发 `dab-*` skills，documentation pack 仍只提供文件和检查。
 
@@ -75,7 +75,7 @@ interface AuthoredScaffoldInput {
 }
 ```
 
-两阶段解析解决 anchors 循环：planner 先 stat 现有路径，调用 `targets()` 得到本 plan 的目标路径，anchors = 现有路径 ∪ targets，再调用 `files()` 生成内容。`docsLanguage` 只从现有内容检测，不把同一次 plan 新建的 root `AGENTS.md` 当作语言信号。未知 profile 在 manifest/CLI 校验阶段 fail loud，不进入 planner。
+两阶段解析解决 anchors 循环：planner 先调用 `targets()` 收集候选路径，再 stat 现有路径，anchors = 现有路径 ∪ targets，最后调用 `files()` 生成内容。`docsLanguage` 只从现有内容检测，不把同一次 plan 新建的 root `AGENTS.md` 当作语言信号。未知 profile 在 manifest/CLI 校验阶段 fail loud，不进入 planner。
 
 v1 的组成：
 

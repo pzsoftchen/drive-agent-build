@@ -354,6 +354,7 @@ export interface PracticeContext {
 export interface PracticeTargetSet {
   paths: string[];
   directories?: string[];
+  skipChildrenWhenExists?: string[];
   policySkipped?: string[];
 }
 
@@ -432,10 +433,10 @@ Implement the flow exactly as the design:
 
 1. Resolve `docsLanguage` with `resolveDocsLanguage({ root, configured: manifest?.docs.language ?? 'auto', env })`.
 2. Build a base context with `anchors = new Set()`.
-3. Collect `targets()` from packs; union `paths`, declared `directories` and `policySkipped`.
-4. Stat every candidate path and declared directory. Missing → planned; existing file path → `skipped`; an existing declared directory → `skipped`, and every file under it is excluded from the plan (this is how an existing `dab-*` skill directory wins). A path whose type conflicts with its declared file/dir target, or whose parent escapes root, produces an error diagnostic and blocks the plan.
+3. Collect `targets()` from packs; union `paths`, declared `directories`, `skipChildrenWhenExists` and `policySkipped`.
+4. Stat every candidate path, declared directory and skip-parent. Missing → planned; existing file path → `skipped`; an existing declared directory → `skipped`. A file under an existing `skipChildrenWhenExists` parent is excluded from the plan (this is how an existing `dab-*` skill directory wins); broad directories must not exclude their children. A path whose type conflicts with its declared file/dir target, or whose parent escapes root, produces an error diagnostic and blocks the plan.
 5. `anchors = existing ∪ (targets - existing - policySkipped)`.
-6. Call `files()` with the final context; keep only keys that are candidate file paths, not existing, not under an existing declared directory, and not policy-skipped.
+6. Call `files()` with the final context; keep only keys that are candidate file paths, not existing, not under an existing skip-parent, and not policy-skipped.
 7. Collect `directories()`; keep only missing dirs not policy-skipped. `writeMissingFile` creates parents, so directories are for empty dirs only.
 8. Set `manifest` from `input.manifest ?? template manifest` for full/adoption.
 
@@ -646,8 +647,8 @@ Each skill must contain:
 - `dab-doc-writing`: placement/one-home-per-fact/fact-check/slop audit/pairing is not required (single language).
 
 Pack:
-- `targets`: project scope only; three skill **directories** plus their `SKILL.md` paths; `directories` contains the three skill dirs.
-- Planner rule: if a declared skill directory exists, skip the directory and all its declared files.
+- `targets`: project scope only; three skill **directories** plus their `SKILL.md` paths; `directories` contains the three skill dirs; `skipChildrenWhenExists` contains the same three dirs.
+- Planner rule: if a declared skill directory exists, skip the directory and all its declared files; broad directories such as `.agents/skills/` do not suppress children.
 - `files`: SKILL.md content only for missing dirs.
 - `directories`: missing skill dirs.
 
@@ -678,7 +679,7 @@ git commit -m "feat: add authoring skill pack"
 - Test: `test/commands/init-scope.test.ts`
 
 **Interfaces:**
-- Produces: `init` uses `planAuthoredScaffold({ root, scope, scan, profile, mode: 'full', manifest, proposals, version })`.
+- Produces: `init` uses `planAuthoredScaffold({ root, scope, scan, profile, mode: 'full', manifest, proposals, version }, [corePack, documentationPack, authoringPack])`; the pack list is explicit so docs/authoring are never silently omitted.
 - Produces: `InitResult.language: DocsLanguageResolution` and JSON top-level `language`.
 - Produces: new root `AGENTS.md` `## Documentation` section only when at least one docs target exists or is planned.
 
