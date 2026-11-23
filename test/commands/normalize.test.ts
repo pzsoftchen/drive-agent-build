@@ -304,9 +304,9 @@ describe('normalizeProject', () => {
     expect(await readFile(settingsPath, 'utf8')).not.toBe('{"permissions":{}}\n');
   });
 
-  it('blocks a physical agent copy before any write, then fixes with backup', async () => {
+  it('blocks a physical rule copy before any write, then fixes with backup', async () => {
     const project = await projectFixture();
-    const target = join(project.root, '.claude/agents/reviewer.md');
+    const target = join(project.root, '.claude/rules/testing.md');
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, 'physical copy\n');
 
@@ -328,8 +328,8 @@ describe('normalizeProject', () => {
     });
 
     expect(fixed.ok).toBe(true);
-    expect(await readlink(target)).toContain('.agents/agents/reviewer.md');
-    const backup = fixed.backups.find((item) => item.endsWith('.claude/agents/reviewer.md'));
+    expect(await readlink(target)).toContain('.agents/rules/testing.md');
+    const backup = fixed.backups.find((item) => item.endsWith('.claude/rules/testing.md'));
     expect(backup).toMatch(/^\.dab\/backups\//);
     expect(await readFile(join(project.root, backup ?? ''), 'utf8')).toBe('physical copy\n');
   });

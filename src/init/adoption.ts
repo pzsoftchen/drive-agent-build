@@ -9,7 +9,12 @@ import {
   toPosix,
 } from '../core/paths.ts';
 import { MIN_CLAUDE_CODE_VERSION } from '../core/version-check.ts';
-import type { ClaudeAdoptionEntry } from '../adapter/claude-code/adoption.ts';
+import {
+  applyClaudeAdoption,
+  planClaudeAdoption,
+  type ClaudeAdoptionEntry,
+  type ClaudeAdoptionPlan,
+} from '../adapter/claude-code/adoption.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
 import { ProjectManifestSchema } from '../model/schemas.ts';
 import { resolveScopeMarker, type Scope, type SourceRoot } from '../model/scope.ts';
@@ -207,6 +212,7 @@ export interface NormalizeAdoptionPreparation {
   manifest: ProjectManifest;
   paths: ProjectPaths;
   sourcePlan?: MinimalSourcePlan;
+  claudePlan?: ClaudeAdoptionPlan;
   diagnostics: Diagnostic[];
 }
 
@@ -265,6 +271,25 @@ function sourceRootOf(adoption: AdoptionRoot): SourceRoot {
   };
 }
 
+/**
+ * Plan the import of physical `.claude/agents` and `.claude/skills` entries.
+ * The plan is read-only, runs for every phase (including initialized scopes),
+ * and is gated by the caller before any source or `.claude` write.
+ */
+async function planImports(
+  adoption: AdoptionRoot,
+  manifest: ProjectManifest,
+  paths: ProjectPaths,
+): Promise<ClaudeAdoptionPlan> {
+  return planClaudeAdoption({
+    root: adoption.root,
+    scope: adoption.scope,
+    agentsRoot: paths.agents,
+    claudeRoot: paths.claude,
+    manifest,
+  });
+}
+
 export async function prepareNormalizeAdoption(input: {
   cwd: string;
   home: string;
@@ -291,6 +316,7 @@ export async function prepareNormalizeAdoption(input: {
         phase: adoption.phase,
         manifest: loaded.manifest,
         paths,
+        claudePlan: await planImports(adoption, loaded.manifest, paths),
         diagnostics: [],
       };
     }
@@ -306,6 +332,7 @@ export async function prepareNormalizeAdoption(input: {
       manifest: loaded.manifest,
       paths,
       sourcePlan: { ...plan, files, manifest: loaded.manifest },
+      claudePlan: await planImports(adoption, loaded.manifest, paths),
       diagnostics: scan.diagnostics,
     };
   }
@@ -313,12 +340,14 @@ export async function prepareNormalizeAdoption(input: {
   await assertProjectHomeNotGlobal(adoption, input.home);
   const scan = await scanProject(adoption.root);
   const sourcePlan = minimalSourcePlan(scan, adoption.scope);
+  const paths = resolveProjectPaths(adoption.root, sourcePlan.manifest);
   return {
     sourceRoot,
     phase: adoption.phase,
     manifest: sourcePlan.manifest,
-    paths: resolveProjectPaths(adoption.root, sourcePlan.manifest),
+    paths,
     sourcePlan,
+    claudePlan: await planImports(adoption, sourcePlan.manifest, paths),
     diagnostics: scan.diagnostics,
   };
 }
@@ -362,44 +391,56 @@ async function sourceWriteDiagnostics(
 }
 
 /**
- * Applies the prepared source adoption. `backupRoot` is accepted here because
- * Task 7 continues with Claude imports under the same backup root; source
- * creation only writes missing files, so it never produces a backup.
+ * Applies the prepared adoption: minimal source writes first, then the Claude
+ * imports/backups/symlinks under the same backup root. Callers may pass a
+ * preparation with only one of the two plans to stage the writes around a
+ * read-only target preflight; a source containment failure skips the imports
+ * entirely so neither tree is touched.
  */
 export async function applyNormalizeAdoption(
   prep: NormalizeAdoptionPreparation,
   options: { dryRun: boolean; backupRoot: string },
 ): Promise<{ actions: string[]; backups: string[]; diagnostics: Diagnostic[] }> {
-  if (prep.sourcePlan === undefined) {
-    return { actions: [], backups: [], diagnostics: [] };
-  }
   const root = prep.sourceRoot.root;
-  const agents = toPosix(relative(root, prep.paths.agents));
-  const diagnostics = await sourceWriteDiagnostics(root, prep.sourcePlan, agents);
-  if (diagnostics.length > 0) {
-    return { actions: [], backups: [], diagnostics };
+  const actions: string[] = [];
+  const backups: string[] = [];
+  const diagnostics: Diagnostic[] = [];
+
+  if (prep.sourcePlan !== undefined) {
+    const agents = toPosix(relative(root, prep.paths.agents));
+    const sourceDiagnostics = await sourceWriteDiagnostics(root, prep.sourcePlan, agents);
+    if (sourceDiagnostics.length > 0) {
+      return { actions: [], backups: [], diagnostics: sourceDiagnostics };
+    }
+    let created: string[];
+    let skipped: string[];
+    if (options.dryRun) {
+      const planned = await planSourceWrites(root, prep.sourcePlan);
+      created = planned.create;
+      skipped = planned.skip;
+    } else {
+      const written = await writeSourceFiles(root, prep.sourcePlan);
+      created = written.created;
+      skipped = written.skipped;
+    }
+    actions.push(
+      ...created.map((file) => `create ${file}`),
+      ...skipped.map((file) => `skip ${file}`),
+    );
   }
 
-  const actions = (created: readonly string[], skipped: readonly string[]): string[] => [
-    ...created.map((file) => `create ${file}`),
-    ...skipped.map((file) => `skip ${file}`),
-  ];
-
-  if (options.dryRun) {
-    const planned = await planSourceWrites(root, prep.sourcePlan);
-    return {
-      actions: actions(planned.create, planned.skip),
-      backups: [],
-      diagnostics: [],
-    };
+  // A dry run never replaces .claude entries; the import plan itself is
+  // reported through NormalizeResult.adoption.imports.
+  if (prep.claudePlan !== undefined && !options.dryRun) {
+    const applied = await applyClaudeAdoption({
+      root,
+      plan: prep.claudePlan,
+      backupRoot: options.backupRoot,
+    });
+    actions.push(...applied.actions);
+    backups.push(...applied.backups);
+    diagnostics.push(...applied.diagnostics);
   }
 
-  // Task 7 consumes backupRoot for Claude imports; source creation never backs
-  // up because it only writes missing files.
-  const written = await writeSourceFiles(root, prep.sourcePlan);
-  return {
-    actions: actions(written.created, written.skipped),
-    backups: [],
-    diagnostics: [],
-  };
+  return { actions, backups, diagnostics };
 }

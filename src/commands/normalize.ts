@@ -26,6 +26,7 @@ import type {
   TargetNormalizePlan,
   TargetSettingsPlan,
 } from '../adapter/types.ts';
+import type { ClaudeAdoptionEntry } from '../adapter/claude-code/adoption.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { checkClaudeCode } from '../adapter/claude-code/version.ts';
@@ -44,7 +45,7 @@ import {
   resolveProjectPaths,
   updateGeneratedManifest,
 } from '../model/project-manifest.ts';
-import { resolveSourceRoot, type Scope } from '../model/scope.ts';
+import type { Scope } from '../model/scope.ts';
 import type {
   GeneratedManifest,
   GeneratedTarget,
@@ -209,6 +210,26 @@ function adoptionExtras(
   return adoption === undefined ? {} : { adoption };
 }
 
+/**
+ * A physical `.claude/agents/<name>.md` or `.claude/skills/<name>` that the
+ * import plan replaces with a symlink is not a normalized projection conflict:
+ * the import resolves it. Every other projection conflict still blocks.
+ */
+function withoutImportResolvedConflicts(
+  diagnostics: readonly Diagnostic[],
+  imports: readonly ClaudeAdoptionEntry[],
+): Diagnostic[] {
+  if (imports.length === 0) {
+    return [...diagnostics];
+  }
+  const sources = new Set(imports.map((entry) => entry.source));
+  return diagnostics.filter(
+    (item) => item.code !== 'projection.physical-copy'
+      || item.file === undefined
+      || !sources.has(item.file),
+  );
+}
+
 function backupRootFor(root: string, now: Date): string {
   const stamp = now.toISOString().replaceAll(':', '-').replaceAll('.', '-');
   return join(root, '.dab', 'backups', stamp);
@@ -308,57 +329,68 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     home,
     ...(options.now === undefined ? {} : { now: options.now }),
   });
-  let adoption: NormalizeAdoptionResult | undefined;
+  const root = preparation.sourceRoot.root;
+  const scope = preparation.sourceRoot.scope;
+  const backupRoot = backupRootFor(root, options.now ?? new Date());
+  const imports = preparation.claudePlan?.entries ?? [];
+  const importDiagnostics = preparation.claudePlan?.diagnostics ?? [];
+  const preparationDiagnostics = [...preparation.diagnostics, ...importDiagnostics];
+  let adoption: NormalizeAdoptionResult = {
+    phase: preparation.phase,
+    ...(preparation.sourcePlan === undefined ? {} : { sourcePlan: preparation.sourcePlan }),
+    sourceActions: [],
+    imports: [],
+    backups: [],
+    diagnostics: [...preparationDiagnostics],
+  };
+
   if (preparation.phase !== 'initialized' && preparation.sourcePlan !== undefined) {
-    const applied = await applyNormalizeAdoption(preparation, {
-      dryRun: options.dryRun === true,
-      backupRoot: backupRootFor(preparation.sourceRoot.root, options.now ?? new Date()),
-    });
+    // Any invalid import candidate gates the minimal source copy as well, so a
+    // rejected plan writes neither `.agents` nor `.claude`.
+    if (hasErrors(preparationDiagnostics)) {
+      return blockedResult(root, scope, options, preparationDiagnostics, { adoption });
+    }
+    const applied = await applyNormalizeAdoption(
+      { ...preparation, claudePlan: undefined },
+      { dryRun: options.dryRun === true, backupRoot },
+    );
     adoption = {
-      phase: preparation.phase,
-      sourcePlan: preparation.sourcePlan,
+      ...adoption,
       sourceActions: applied.actions,
-      backups: applied.backups,
-      diagnostics: applied.diagnostics,
+      diagnostics: [...adoption.diagnostics, ...applied.diagnostics],
     };
     if (hasErrors(applied.diagnostics)) {
       return blockedResult(
-        preparation.sourceRoot.root,
-        preparation.sourceRoot.scope,
+        root,
+        scope,
         options,
-        [...preparation.diagnostics, ...applied.diagnostics],
+        [...preparationDiagnostics, ...applied.diagnostics],
         { adoption },
       );
     }
     if (options.dryRun === true) {
-      // Task 7 adds Claude imports and the complete target plan here. Until
-      // then a dry run reports the source adoption preview without writing.
+      // The target plan needs the written source tree, so an adoption dry run
+      // previews the source and import plan and leaves the target plan out.
       return {
         ok: true,
-        root: preparation.sourceRoot.root,
-        scope: preparation.sourceRoot.scope,
+        root,
+        scope,
         dryRun: true,
         exitCode: ExitCode.Ok,
         actions: applied.actions,
         targets: [],
-        diagnostics: sortDiagnostics(dedupeDiagnostics([
-          ...preparation.diagnostics,
-          ...applied.diagnostics,
-        ])),
+        diagnostics: sortDiagnostics(dedupeDiagnostics(preparationDiagnostics)),
         settings: emptySettings(),
         shimAction: 'none',
         backups: [],
         gitignore: { changed: false, path: '' },
         manifestUpdated: false,
-        adoption,
+        adoption: { ...adoption, imports },
       };
     }
   }
 
-  const sourceRoot = await resolveSourceRoot({ cwd, home });
-  const root = sourceRoot.root;
-  const scope = sourceRoot.scope;
-  const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
+  const loaded = await loadProjectManifest(root, { scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
   const enabledTargets = getEnabledTargets(loaded.manifest);
   const claudeTarget = enabledTargets.find((target) => target.provider === 'claude-code');
@@ -367,10 +399,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const claudeOptions = claudeTarget === undefined
     ? undefined
     : parseClaudeTargetOptions(claudeTarget);
-  const diagnostics: Diagnostic[] = [
-    ...preparation.diagnostics,
-    ...(adoption?.diagnostics ?? []),
-  ];
+  const diagnostics: Diagnostic[] = [...preparationDiagnostics];
 
   try {
     await assertSourceTreesSafe(root);
@@ -461,8 +490,11 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     plans.push(plan);
   }
 
-  if (hasErrors(diagnostics)) {
-    const backendError = diagnostics.some(
+  // Import targets that the plan replaces with a symlink are not conflicts; a
+  // blocked run still reports every diagnostic it found.
+  const blockingDiagnostics = withoutImportResolvedConflicts(diagnostics, imports);
+  if (hasErrors(blockingDiagnostics)) {
+    const backendError = blockingDiagnostics.some(
       (item) => item.code === 'backend.version' && item.severity === 'error',
     );
     return blockedResult(root, scope, options, diagnostics, {
@@ -482,7 +514,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       exitCode: ExitCode.Ok,
       actions: targets.flatMap((item) => item.actions),
       targets,
-      diagnostics: sortDiagnostics(diagnostics),
+      diagnostics: sortDiagnostics(blockingDiagnostics),
       settings: topLevelSettings(targets),
       shimAction: compatShimAction(targets),
       backups: [],
@@ -491,11 +523,38 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         path: paths.scope === 'global' ? '' : '.gitignore',
       },
       manifestUpdated: false,
-      ...adoptionExtras(adoption),
+      ...adoptionExtras({ ...adoption, imports }),
     };
   }
 
-  const backupRoot = backupRootFor(root, options.now ?? new Date());
+  // Imports replace physical `.claude` entries with per-entry symlinks only
+  // after every plan is clean; `.claude` stays untouched on earlier failures.
+  if (preparation.claudePlan !== undefined) {
+    const imported = await applyNormalizeAdoption(
+      { ...preparation, sourcePlan: undefined },
+      { dryRun: false, backupRoot },
+    );
+    adoption = {
+      ...adoption,
+      imports,
+      // Apply returns absolute paths; NormalizeResult paths are root-relative.
+      backups: [
+        ...adoption.backups,
+        ...imported.backups.map((backup) => toPosix(relative(root, resolve(root, backup)))),
+      ],
+      diagnostics: [...adoption.diagnostics, ...imported.diagnostics],
+    };
+    if (hasErrors(imported.diagnostics)) {
+      return blockedResult(
+        root,
+        scope,
+        options,
+        [...blockingDiagnostics, ...imported.diagnostics],
+        { adoption },
+      );
+    }
+  }
+
   const targets: TargetNormalizeResult[] = [];
   for (const plan of plans) {
     const applied = await plan.apply({ backupRoot });
@@ -508,7 +567,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const manifestUpdated = loaded.legacy
     || stableJson(loaded.manifest.generated ?? null) !== stableJson(generated);
   if (manifestUpdated) {
-    await updateGeneratedManifest(root, generated, { scope: sourceRoot.scope });
+    await updateGeneratedManifest(root, generated, { scope });
   }
 
   // $HOME/.gitignore is user-owned; global scope never manages it.
@@ -524,7 +583,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     exitCode: ExitCode.Ok,
     actions: targets.flatMap((item) => item.actions),
     targets,
-    diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
+    diagnostics: sortDiagnostics(dedupeDiagnostics(blockingDiagnostics)),
     settings: topLevelSettings(targets),
     shimAction: compatShimAction(targets),
     backups: claudeTargetResult(targets)?.backups ?? [],
