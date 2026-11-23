@@ -461,6 +461,31 @@ describe('applyClaudeAdoption', () => {
       .toMatchObject({ severity: 'error', file: '.claude/skills/pdf-tools/nested/leak' });
   });
 
+  it('rejects a chained symlink that escapes through a symlink and dot-dot', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await mkdir(join(fixture.root, '.claude/agents'), { recursive: true });
+    await symlink(
+      join(fixture.root, '.claude/agents'),
+      join(fixture.root, '.claude/skills/pdf-tools/s'),
+    );
+    await symlink('s/../../../etc/passwd', join(fixture.root, '.claude/skills/pdf-tools/t'));
+    const claudePlan = await plan(fixture);
+
+    const applied = await apply(fixture, claudePlan);
+
+    expect(await lstatOrNull(join(fixture.root, '.agents/skills/pdf-tools'))).toBeNull();
+    expect(await readdir(join(fixture.root, '.agents/skills'))).toEqual([]);
+    expect(applied.actions).toEqual([]);
+    expect(applied.backups).toEqual([]);
+    expect(applied.diagnostics.find((item) => item.code === 'adoption.source-symlink-escape'))
+      .toMatchObject({ severity: 'error', file: '.claude/skills/pdf-tools/t' });
+  });
+
   it('copies an internal skill symlink verbatim', async () => {
     const fixture = await project();
     await writeProjectFile(

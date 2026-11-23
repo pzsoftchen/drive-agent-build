@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import type { Dirent } from 'node:fs';
 import { copyFile, cp, readdir, readlink, realpath, rename, rm } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { compareStrings } from '../../core/compare.ts';
 import type { Diagnostic } from '../../core/diagnostics.ts';
@@ -579,33 +579,73 @@ async function safeResolve(root: string, relativePath: string): Promise<SafePath
   }
 }
 
-async function realPathNearestExisting(candidate: string): Promise<string> {
-  let current = resolve(candidate);
-  for (;;) {
-    try {
-      return await realpath(current);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
+function targetComponents(raw: string): string[] {
+  const normalized = sep === '\\' ? raw.replaceAll('/', '\\') : raw;
+  return normalized.split(sep).filter((part) => part.length > 0 && part !== '.');
+}
+
+/**
+ * Resolve a dangling link target the way the filesystem would: existing
+ * symlink components are expanded before later `..` components are applied.
+ * Only after the first missing component is the remainder collapsed lexically,
+ * because nothing below a missing path can be traversed.
+ */
+async function resolveLinkTarget(linkPath: string, raw: string): Promise<string> {
+  let resolved = isAbsolute(raw) ? parse(raw).root : await realpath(dirname(linkPath));
+  const pending = targetComponents(raw);
+  let depth = 0;
+
+  while (pending.length > 0) {
+    const component = pending.shift()!;
+    if (component === '..') {
+      resolved = dirname(resolved);
+      continue;
+    }
+    const candidate = join(resolved, component);
+    const info = await lstatOrNull(candidate);
+    if (info === null) {
+      return resolve(resolved, component, ...pending);
+    }
+    if (info.isSymbolicLink()) {
+      depth += 1;
+      if (depth > 40) {
+        throw new Error(`too many levels of symbolic links: ${linkPath}`);
       }
-      const parent = dirname(current);
-      if (parent === current) {
-        throw error;
+      const nested = await readlink(candidate);
+      if (isAbsolute(nested)) {
+        resolved = parse(nested).root;
       }
-      current = parent;
+      pending.unshift(...targetComponents(nested));
+      continue;
+    }
+    resolved = candidate;
+    if (pending.length > 0 && !info.isDirectory()) {
+      return resolve(candidate, ...pending);
     }
   }
+
+  return resolved;
 }
 
 /**
  * Copying a skill directory must not smuggle a link to a path outside the
  * adoption root into the authored tree. Links are copied verbatim, so they are
  * never followed while copying; this check decides whether they may be copied.
+ * The check must be filesystem-aware: `symlink/..` is resolved through the
+ * symlink, not collapsed lexically before it.
  */
 async function symlinkEscapesRoot(root: string, linkPath: string): Promise<boolean> {
-  const raw = await readlink(linkPath);
   const realRoot = await realpath(root);
-  const target = await realPathNearestExisting(resolve(dirname(linkPath), raw));
+  let target: string;
+  try {
+    target = await realpath(linkPath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+      throw error;
+    }
+    target = await resolveLinkTarget(linkPath, await readlink(linkPath));
+  }
   return !isPathInside(realRoot, target);
 }
 
