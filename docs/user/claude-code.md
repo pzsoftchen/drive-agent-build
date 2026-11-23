@@ -50,7 +50,7 @@ targets:
 
 - `dab normalize` copies physical `.claude/agents/*.md` files and `.claude/skills/<dir>/SKILL.md` directories into the authored `.agents` tree. Rules, `.claude/settings.json`, hooks and `CLAUDE.md` are not imported in this phase.
 - `.agents` is the source of truth. An existing source file or skill directory is never overwritten; when the `.claude` content differs, normalize warns and keeps the `.agents` copy.
-- The original `.claude` entry is backed up under `.dab/backups/<timestamp>/` and replaced with a per-entry symlink. The backup keeps extra skill files that are not merged into `.agents`.
+- The original `.claude` entry is backed up under `.dab/backups/<timestamp>/` and replaced with a per-entry symlink. A first import copies the whole skill directory, including extra files; when `.agents/skills/<name>` already exists, extra skill files are not merged and stay in the backup.
 - Imports use the `.claude` basename or directory name. The frontmatter `name` remains the fact id; a mismatch warns but does not rename the entry.
 - Imports do not need `--fix`. A directory symlink at `.claude/agents` or `.claude/skills` is a conflict because DAB owns entries one by one.
 - Any invalid candidate blocks every write: no source adoption, imports or backups. A run that imports new entries records their projections on the next run, so rerun `dab normalize` to make `dab detect` clean.
@@ -78,7 +78,7 @@ Project policy is compiled into `.claude/settings.json`. Project deny rules are 
 ## Troubleshooting
 
 1. Run `dab detect --json` and read the diagnostics by code; `[IMPORTABLE]` entries identify `.claude` agents and skills that normalize will adopt.
-2. Run `dab normalize --dry-run` to inspect planned adoption, imports and repairs.
+2. Run `dab normalize --dry-run` to inspect planned source and repair actions; add `--json` and read `adoption.imports` to preview imports.
 3. Run `dab normalize` to adopt and import, and rerun it after an import to record the new projections.
 4. Run `dab normalize --fix` only after reviewing backup paths for non-import conflicts.
 5. Run `dab policy explain --target claude-code --agent <name>` to inspect effective permissions.

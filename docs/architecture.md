@@ -54,7 +54,7 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 
 - A project root is the nearest ancestor with `dab.yaml` or `.agents/`; an uninitialized project uses the nearest `.git` ancestor, falling back to the current directory.
 - Global scope is selected only when the current directory is inside `~/.agents`. The root is `$HOME` and the source root is `~/.agents`; a completely missing `~/.agents` needs `dab init ~/.agents` first.
-- An invalid authored `dab.yaml` is reported as `[ERROR]` and is never overwritten. `normalize` stops with `config.invalid` and zero writes.
+- An invalid authored `dab.yaml` is reported as `[ERROR]` and is never overwritten. `normalize` stops with a configuration error (`config.yaml` for YAML syntax errors, `config.invalid` for schema or version errors) and zero writes.
 - Adoption writes only missing minimal source files; existing authored files are never replaced.
 - `dab detect` is read-only in every phase. Uninitialized and partial scopes exit `2` with a checklist; initialized scopes keep the normal `0`/`3`/`4` exit codes and `--strict` semantics.
 
@@ -127,7 +127,7 @@ generated:
 
 - Adoption runs before source-root resolution. An uninitialized or partial scope gets the missing minimal source: `AGENTS.md`, `dab.yaml`, the project policy, the Claude Code policy and the memory index, plus empty agents, skills, rules, hooks and notes directories. It reuses the `init` renderers but creates no profile agents or skills.
 - Import is a controlled migration, not an unmanaged conflict: physical `.claude/agents/*.md` and `.claude/skills/<dir>/SKILL.md` entries are copied into `.agents`, backed up under `.dab/backups/<timestamp>/`, and replaced with per-entry symlinks. `--fix` is not required.
-- `.agents` is the source of truth. An existing source file or skill directory is never overwritten; differing `.claude` content produces a warning, and extra skill files stay in the backup.
+- `.agents` is the source of truth. An existing source file or skill directory is never overwritten; differing `.claude` content produces a warning. A first import copies the whole skill directory, including extra files; when `.agents/skills/<name>` already exists, extra skill files stay in the backup.
 - Import preserves the `.claude` basename or directory name. The frontmatter `name` is the fact id; a mismatch warns but does not rename.
 - All-or-nothing gating covers adoption and import: any invalid candidate or unsafe path blocks every source and `.claude` write. After a later target preflight failure, `.claude` stays untouched; an idempotent source copy may already exist.
 - Imports run for initialized and uninitialized/partial scopes, in project and global scope. In global scope `.claude` entries link into `~/.agents`; `~/.claude/settings.json` and `$HOME/.gitignore` are never read or written.

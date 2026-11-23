@@ -131,24 +131,47 @@ dab detect [--strict] [--json]
 
 只读运行。它会在需要 manifest 之前解析 scope 和 adoption phase，因此未初始化或 partial scope 会返回 checklist，而不是 source-root 错误。随后它校验 scope、启用的 target adapter、Claude Code 版本、祖先指令文件、指令产物、投影、settings、策略、hooks、记忆、敏感信息、AGENTS.md 大小和链接。
 
-人类输出以 `Scope`、`Root` 和 `Profile` 开头，按 Instructions、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组，然后打印 `score: <ok>/<total> (<percent>%)`，并为每个不同的下一步输出一行 `next:`。
+人类输出先打印 `dab detect`，再打印 `Scope`、`Root` 和 `Profile`，按 Instructions、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组，然后打印 `score: <ok>/<total> (<percent>%)`，并为每个不同的下一步输出一行 `next:`。
 
 ```text
 dab detect
 Scope: project
 Root: /path/to/project
-Profile: feature
+Profile: not initialized
 
 Instructions
   [OK] AGENTS.md
-  [OK] .claude/CLAUDE.md
 
 Agents
-  [OK] reviewer
+  [OK] .agents/agents/
   [IMPORTABLE] .claude/agents/extra.md (.agents/agents/extra.md) -> dab normalize --dry-run
 
-score: 2/3 (67%)
+Skills
+  [OK] .agents/skills/
+
+Rules
+  [OK] .agents/rules/
+
+Policy
+  [OK] .agents/policies/project.yaml
+  [OK] .agents/adapters/claude-code.yaml
+
+Hooks
+  [OK] .agents/hooks/
+
+Memory
+  [OK] .agents/memory/INDEX.md
+
+Notes
+  [OK] .agents/notes/
+
+Generated target
+  [MISSING] dab.yaml -> dab normalize
+  [MISSING] .claude/settings.json -> dab normalize
+
+score: 9/12 (75%)
 next: dab normalize --dry-run
+next: dab normalize
 ```
 
 | 状态 | 含义 |
@@ -180,13 +203,13 @@ dab normalize [--dry-run] [--fix] [--json]
 规划或应用 authored source adoption、Claude import、投影修复、`.claude/CLAUDE.md` 指令产物、`.claude/settings.json`、`dab.yaml` 生成记录和 `.gitignore`。它在写入前预检每个启用的 target；一个 target 失败会阻止所有 target 写入。`--fix` 会在替换前把非 import 的冲突路径备份到 `.dab/backups/`。
 
 - Adoption 在 source-root 解析前运行。未初始化或 partial 的 project 会获得缺失的最小 authored source：`AGENTS.md`、`dab.yaml`、`.agents/policies/project.yaml`、`.agents/adapters/claude-code.yaml` 和 `.agents/memory/INDEX.md`，以及空的 `.agents/agents`、`.agents/skills`、`.agents/rules`、`.agents/hooks` 和 `.agents/notes` 目录。Global scope 使用 `.agents/AGENTS.md` 和 `.agents/dab.yaml`（位于 `$HOME`）以及相同的 source 子目录。它从不创建默认 agents 或 skills；full profile skeleton 请使用 `dab init`。
-- 现有 authored 文件永不被覆盖。现有 `dab.yaml` 若无法解析，normalize 会以 `config.invalid` 停止并零写入；修复文件后重跑。
+- 现有 authored 文件永不被覆盖。现有 `dab.yaml` 若无法解析，normalize 会以配置错误（YAML 语法错误为 `config.yaml`，schema 或版本错误为 `config.invalid`）停止并零写入；修复文件后重跑。
 - Import 在每次 normalize 时运行，不只发生在 adoption 期间。物理 `.claude/agents/<name>.md` 和 `.claude/skills/<name>/SKILL.md` 条目会复制到 `.agents`，原 `.claude` 条目会备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。
-- 保留 basename 和 skill 目录名。frontmatter `name` 不一致会警告，但不会重命名。Skill 的额外文件不会合并进 `.agents`；它们保留在备份中并产生警告。
+- 保留 basename 和 skill 目录名。frontmatter `name` 不一致会警告，但不会重命名。首次 import 会复制整个 skill 目录（包括额外文件）。当 `.agents/skills/<name>` 已存在时，额外文件不会合并；它们保留在备份中并产生警告。
 - 现有 `.agents` source 优先。当 `.claude` 内容不同时，normalize 保留 source、备份 `.claude`、发出警告并仍然创建链接。已指向 source 的 managed 符号链接会被跳过。
 - Import 不需要 `--fix`；`--fix` 只处理非 import 的 unmanaged 冲突。`.claude/agents` 或 `.claude/skills` 上的目录符号链接是冲突，因为 DAB 逐项拥有条目。
 - 任何非法 import 候选都会阻止所有写入：不写 adoption source 文件、不 import、不备份。后续 target 预检失败时，`.claude` 保持不变，幂等的 source 副本可能已经存在。
-- `--dry-run` 打印相同的 adoption 和 import 计划但不写入；真实运行会在 `--json` 中报告 imports 和 backups。
+- `--dry-run` 预览 source 和修复动作，并运行同一预检但不写入。人类输出不列出 import；`--json` 会提供 `adoption.imports`，真实运行后还有 `adoption.backups`。
 - Global scope 使用相同的 import 规则：`$HOME/.claude` 下的物理条目链接到 `~/.agents`，且不在 `$HOME` 根写入任何内容。
 - Import 是幂等的。导入新条目的那次运行会在下一次运行时记录这些投影，因此 import 后重跑 `dab normalize` 可让 `dab detect` 干净。
 
@@ -255,7 +278,7 @@ JSON 输出包含顶层结果、`scope` 和 `adoption` 对象（含 `phase`、�
 ```
 
 - 结果包含绝对 `root`；其他路径相对于该基准，包括 `gitignore.path` 和 backup 条目。
-- `--dry-run` 运行同一预检和退出码，但不写入。在未初始化或 partial scope 上，它预览 adoption source 和 import 计划，且没有 target 计划，因为 target 计划需要已写入的 source。
+- `--dry-run` 运行同一预检和退出码，但不写入。在未初始化或 partial scope 上，它预览 adoption source，且没有 target 计划，因为 target 计划需要已写入的 source；import 计划位于 `--json` 的 `adoption.imports`。
 - Global scope 下 `~/.claude/settings.json` 和 `$HOME/.gitignore` 只读，normalize 会警告 global settings 尚未采用。
 
 ## `dab policy explain`

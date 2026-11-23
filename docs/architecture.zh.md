@@ -54,7 +54,7 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 - Project root 是最近的、包含 `dab.yaml` 或 `.agents/` 的祖先目录；未初始化 project 使用最近的 `.git` 祖先目录，找不到时使用当前目录。
 - 仅当当前目录位于 `~/.agents` 内时才选择 global scope。root 是 `$HOME`，source root 是 `~/.agents`；完全缺失的 `~/.agents` 需要先运行 `dab init ~/.agents`。
-- 无效的 authored `dab.yaml` 会报告为 `[ERROR]`，且永不被覆盖。`normalize` 以 `config.invalid` 停止并零写入。
+- 无效的 authored `dab.yaml` 会报告为 `[ERROR]`，且永不被覆盖。`normalize` 以配置错误（YAML 语法错误为 `config.yaml`，schema 或版本错误为 `config.invalid`）停止并零写入。
 - Adoption 只写入缺失的最小 source 文件；现有 authored 文件永不被替换。
 - `dab detect` 在任何 phase 都只读。未初始化和 partial scope 会输出 checklist 并退出 `2`；已初始化 scope 保持正常的 `0`/`3`/`4` 退出码和 `--strict` 语义。
 
@@ -127,7 +127,7 @@ generated:
 
 - Adoption 在 source-root 解析前运行。未初始化或 partial scope 会获得缺失的最小 source：`AGENTS.md`、`dab.yaml`、项目策略、Claude Code 策略和 memory index，以及空的 agents、skills、rules、hooks 和 notes 目录。它复用 `init` 的渲染函数，但不创建 profile agents 或 skills。
 - Import 是受控迁移，不是 unmanaged 冲突：物理 `.claude/agents/*.md` 和 `.claude/skills/<dir>/SKILL.md` 条目会复制到 `.agents`，备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。不需要 `--fix`。
-- `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告，skill 的额外文件保留在备份中。
+- `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件保留在备份中。
 - Import 保留 `.claude` 的 basename 或目录名。frontmatter `name` 是 fact id；不一致会警告，但不会重命名。
 - All-or-nothing 门禁覆盖 adoption 和 import：任何非法候选或不安全路径都会阻止所有 source 和 `.claude` 写入。后续 target 预检失败时，`.claude` 保持不变；幂等的 source 副本可能已经存在。
 - Import 对已初始化和未初始化/partial scope 都运行，覆盖 project 和 global scope。Global scope 下 `.claude` 条目链接到 `~/.agents`；`~/.claude/settings.json` 和 `$HOME/.gitignore` 永不读写。

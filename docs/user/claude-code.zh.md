@@ -50,7 +50,7 @@ targets:
 
 - `dab normalize` 会把物理 `.claude/agents/*.md` 文件和 `.claude/skills/<dir>/SKILL.md` 目录复制到 authored `.agents` 树。本阶段不导入 rules、`.claude/settings.json`、hooks 和 `CLAUDE.md`。
 - `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；当 `.claude` 内容不同时，normalize 会警告并保留 `.agents` 副本。
-- 原 `.claude` 条目会备份到 `.dab/backups/<timestamp>/` 并替换为逐项符号链接。备份会保留未合并进 `.agents` 的额外 skill 文件。
+- 原 `.claude` 条目会备份到 `.dab/backups/<timestamp>/` 并替换为逐项符号链接。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件不会合并，并保留在备份中。
 - Import 使用 `.claude` 的 basename 或目录名。frontmatter `name` 仍是 fact id；不一致会警告，但不会重命名条目。
 - Import 不需要 `--fix`。`.claude/agents` 或 `.claude/skills` 上的目录符号链接是冲突，因为 DAB 逐项拥有条目。
 - 任何非法候选都会阻止所有写入：不采用 source、不执行 import、不备份。导入新条目的那次运行会在下一次运行时记录这些投影，因此重跑 `dab normalize` 可让 `dab detect` 干净。
@@ -78,7 +78,7 @@ targets:
 ## 故障排查
 
 1. 运行 `dab detect --json`，按 code 阅读诊断；`[IMPORTABLE]` 条目指出 normalize 将采用的 `.claude` agents 和 skills。
-2. 运行 `dab normalize --dry-run` 查看计划的 adoption、import 和修复。
+2. 运行 `dab normalize --dry-run` 查看计划的 source 和修复动作；加 `--json` 并阅读 `adoption.imports` 预览 import。
 3. 运行 `dab normalize` 执行 adoption 和 import，并在 import 后重跑以记录新投影。
 4. 只有在检查备份路径后才运行 `dab normalize --fix` 处理非 import 冲突。
 5. 运行 `dab policy explain --target claude-code --agent <name>` 查看最终权限。
