@@ -245,19 +245,28 @@ function normalizedArgument(value: string): string {
   return assertRelativePath(value, 'practice path');
 }
 
+interface BlockedReporting {
+  directories: string[];
+  skipped: string[];
+  policySkipped: string[];
+}
+
 function blockedPlan(
   input: AuthoredScaffoldInput,
   docsLanguage: DocsLanguageResolution,
   manifest: ProjectManifest | undefined,
   diagnostics: Diagnostic[],
+  reporting: BlockedReporting,
 ): AuthoredScaffoldPlan {
   return {
     profile: input.profile,
     mode: input.mode,
+    // The plan is blocked before files() runs, so no content is planned. The
+    // reporting lists stay populated for dry-run/blocked output consumers.
     files: {},
-    directories: [],
-    skipped: [],
-    policySkipped: [],
+    directories: reporting.directories,
+    skipped: reporting.skipped,
+    policySkipped: reporting.policySkipped,
     diagnostics,
     ...(manifest === undefined ? {} : { manifest }),
     docsLanguage,
@@ -483,8 +492,16 @@ export async function planAuthoredScaffold(
     addSkipped(path);
   }
 
+  const directories = plannedDirectories.filter(
+    (directory) => !policySkippedSet.has(directory),
+  );
+
   if (hasErrors(diagnostics)) {
-    return blockedPlan(input, docsLanguage, manifest, diagnostics);
+    return blockedPlan(input, docsLanguage, manifest, diagnostics, {
+      directories,
+      skipped,
+      policySkipped,
+    });
   }
 
   const anchors = new Set<string>(existing);
@@ -519,9 +536,6 @@ export async function planAuthoredScaffold(
     }
   }
 
-  const directories = plannedDirectories.filter(
-    (directory) => !policySkippedSet.has(directory),
-  );
   const seenDirectories = new Set<string>(declaredDirectorySet);
   for (const directory of skipChildren) {
     seenDirectories.add(directory);
@@ -573,7 +587,11 @@ export async function planAuthoredScaffold(
   }
 
   if (hasErrors(diagnostics)) {
-    return blockedPlan(input, docsLanguage, manifest, diagnostics);
+    return blockedPlan(input, docsLanguage, manifest, diagnostics, {
+      directories,
+      skipped,
+      policySkipped,
+    });
   }
 
   return {

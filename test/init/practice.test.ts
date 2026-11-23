@@ -169,16 +169,82 @@ describe('planAuthoredScaffold path safety', () => {
     expect(plan.directories).toEqual([]);
   });
 
-  it('rejects paths that escape the root or target generated .claude', async () => {
+  it('rejects paths that escape the root', async () => {
     const pack: PracticePack = {
       id: 'fake',
-      targets: () => ({ paths: ['../outside.md', '.claude/agents/one.md'] }),
-      files: () => ({ '../outside.md': 'outside', '.claude/agents/one.md': 'generated' }),
+      targets: () => ({ paths: ['../outside.md'] }),
+      files: () => ({ '../outside.md': 'outside' }),
     };
     const plan = await planWith(pack);
-    expect(plan.diagnostics.some((item) => item.severity === 'error')).toBe(true);
+    expect(errorFor(plan, '../outside.md')?.code).toBe('path.escape');
     expect(plan.files).toEqual({});
     expect(plan.directories).toEqual([]);
+  });
+
+  it('rejects a .claude file target without needing an escape', async () => {
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['.claude/agents/one.md'] }),
+      files: () => ({ '.claude/agents/one.md': 'generated' }),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, '.claude/agents/one.md')?.code).toBe('path.conflict');
+    expect(plan.files).toEqual({});
+    expect(plan.directories).toEqual([]);
+  });
+
+  it('rejects .claude directory and policy-skip declarations', async () => {
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({
+        paths: [],
+        directories: ['.claude/rules'],
+        policySkipped: ['.claude/settings.local.json'],
+      }),
+      files: () => ({}),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, '.claude/rules')?.code).toBe('path.conflict');
+    expect(errorFor(plan, '.claude/settings.local.json')?.code).toBe('path.conflict');
+    expect(plan.files).toEqual({});
+    expect(plan.directories).toEqual([]);
+    expect(plan.policySkipped).toEqual([]);
+  });
+});
+
+describe('planAuthoredScaffold blocked reporting', () => {
+  it('preserves skipped, policySkipped and directories when a diagnostic blocks', async () => {
+    await writeFile(join(root, 'existing.md'), 'authored');
+    await mkdir(join(root, 'conflict.md'), { recursive: true });
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({
+        paths: ['existing.md', 'conflict.md', 'skip.md'],
+        directories: ['planned-dir'],
+        policySkipped: ['skip.md'],
+      }),
+      files: () => ({ 'existing.md': 'one', 'conflict.md': 'two', 'skip.md': 'three' }),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'conflict.md')?.severity).toBe('error');
+    expect(plan.files).toEqual({});
+    expect(plan.skipped).toEqual(['existing.md']);
+    expect(plan.policySkipped).toEqual(['skip.md']);
+    expect(plan.directories).toEqual(['planned-dir']);
+  });
+
+  it('preserves planned directories when directories() blocks the plan', async () => {
+    await writeFile(join(root, 'not-a-dir'), 'file');
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: [], directories: ['planned-dir'] }),
+      files: () => ({}),
+      directories: () => ['not-a-dir'],
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'not-a-dir')?.code).toBe('path.conflict');
+    expect(plan.files).toEqual({});
+    expect(plan.directories).toEqual(['planned-dir']);
   });
 });
 
