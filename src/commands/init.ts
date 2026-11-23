@@ -4,7 +4,12 @@ import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import { runCommand } from '../core/command.ts';
-import { formatDiagnostics, hasErrors, type Diagnostic } from '../core/diagnostics.ts';
+import {
+  dedupeDiagnostics,
+  formatDiagnostics,
+  hasErrors,
+  type Diagnostic,
+} from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
@@ -796,7 +801,13 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     suppressImports: true,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
-  const diagnostics = [...scan.diagnostics, ...planDiagnostics, ...normalize.diagnostics];
+  // The nested normalize re-plans the same practice policy skips, so merge with
+  // exact-duplicate removal: one warning per skipped docs path.
+  const diagnostics = dedupeDiagnostics([
+    ...scan.diagnostics,
+    ...planDiagnostics,
+    ...normalize.diagnostics,
+  ]);
   return {
     ok: normalize.ok,
     exitCode: normalize.exitCode,

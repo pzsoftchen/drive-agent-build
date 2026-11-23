@@ -741,6 +741,55 @@ describe('normalize source tree safety', () => {
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
   });
+
+  it('blocks a dangling docs symlink with a governed diagnostic', async () => {
+    const root = await tempDir('dab-adopt-docs-dangling-');
+    await symlink('missing-shared-docs', join(root, 'docs'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('path.symlink-escape');
+    // Blocked-result contract: planned practice fields and diagnostics stay.
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.diagnostics.map((item) => item.code))
+      .toContain('path.symlink-escape');
+    expect(result.practices?.created).toEqual([]);
+    expect(result.adoption?.sourceActions).toEqual([]);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'missing-shared-docs'))).toBeNull();
+  });
+
+  it('blocks a dangling .agents/skills symlink with a governed diagnostic', async () => {
+    const root = await tempDir('dab-adopt-skills-dangling-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await symlink('missing-skills', join(root, '.agents/skills'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('path.symlink-escape');
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.diagnostics.map((item) => item.code))
+      .toContain('path.symlink-escape');
+    expect(result.adoption?.sourceActions).toEqual([]);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'missing-skills'))).toBeNull();
+  });
 });
 
 describe('normalize managed projection drift', () => {
@@ -1203,6 +1252,57 @@ describe('normalize practice layer', () => {
       .not.toContain('.agents/skills/dab-doc-writing/SKILL.md');
     expect(result.practices?.skills.skipped).toContain('.agents/skills/dab-doc-writing');
     expect(result.adoption?.backups.length).toBe(1);
+  });
+
+  it('does not write practice files when an initialized import is invalid', async () => {
+    const project = await initializedProject();
+    await writeFile(join(project.root, '.claude/agents/bad.md'), '---\nname: bad\n---\n');
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.invalid-frontmatter');
+    expect(result.practices?.mode).toBe('converge');
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(project.root, 'docs'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing')))
+      .toBeNull();
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+  });
+
+  it('does not write practice files when no target is enabled', async () => {
+    const project = await initializedProject();
+    const manifestPath = join(project.root, 'dab.yaml');
+    const manifest = await readFile(manifestPath, 'utf8');
+    await writeFile(manifestPath, manifest.replace('enabled: true', 'enabled: false'));
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('target.none');
+    expect(result.practices?.mode).toBe('converge');
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(project.root, 'docs'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing')))
+      .toBeNull();
   });
 
   it('keeps planned practice fields when an import blocks adoption', async () => {

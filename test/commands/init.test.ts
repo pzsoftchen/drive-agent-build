@@ -603,6 +603,11 @@ describe('runInit', () => {
       .toBe('paired docs');
     expect(result.diagnostics.map((item) => item.code))
       .toContain('practice.docs-bilingual-policy');
+    for (const path of ['docs/AGENTS.md', 'docs/architecture.md']) {
+      expect(result.diagnostics.filter(
+        (item) => item.code === 'practice.docs-bilingual-policy' && item.file === path,
+      )).toHaveLength(1);
+    }
     // A docs policy skip never blocks authoring skills or Claude targets.
     expect((await lstat(join(root, '.claude/CLAUDE.md'))).isSymbolicLink()).toBe(true);
     expect((await lstat(join(root, '.claude/skills/dab-doc-writing'))).isSymbolicLink()).toBe(true);

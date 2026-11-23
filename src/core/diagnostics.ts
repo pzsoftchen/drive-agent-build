@@ -39,6 +39,25 @@ export function hasErrors(items: readonly Diagnostic[]): boolean {
   return items.some((item) => item.severity === 'error');
 }
 
+/** Drop exact duplicates (same code, severity, location and message). */
+export function dedupeDiagnostics(items: readonly Diagnostic[]): Diagnostic[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = [
+      item.code,
+      item.severity,
+      item.file ?? '',
+      item.line ?? '',
+      item.message,
+    ].join('|');
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 export function withFixWarning(item: Diagnostic): Diagnostic {
   return {
     ...item,

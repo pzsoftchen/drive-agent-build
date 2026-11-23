@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { runCommand, type CommandRunner } from '../core/command.ts';
 import {
+  dedupeDiagnostics,
   formatDiagnostics,
   hasErrors,
   sortDiagnostics,
@@ -204,18 +205,6 @@ function practiceExtras(
   practices: NormalizePracticesResult | undefined,
 ): { practices?: NormalizePracticesResult } {
   return scope === 'project' && practices !== undefined ? { practices } : {};
-}
-
-function dedupeDiagnostics(items: readonly Diagnostic[]): Diagnostic[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = [item.code, item.severity, item.file ?? '', item.line ?? '', item.message].join('|');
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
 }
 
 function errorDiagnostic(error: DabError, file = 'dab.yaml'): Diagnostic {
@@ -578,10 +567,17 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     }
   }
 
+  // Errors already known before target planning (invalid imports, scan or
+  // planner errors) and a manifest without an enabled target must not scaffold
+  // practice files. Skip the writes now; the blocked result is returned after
+  // the read-only source/projection diagnostics below so those still surface.
+  const blockedBeforePlanning = hasErrors(preparationDiagnostics)
+    || enabledTargets.length === 0;
+
   // Practice writes run after the source-tree safety gate but before target
   // planning, so the new files become projections of this same normalization.
   if (practiceSourcePlan !== undefined && practicePlan !== undefined
-    && options.dryRun !== true) {
+    && !blockedBeforePlanning && options.dryRun !== true) {
     const written = await writeSourceFiles(root, practiceSourcePlan);
     practices = buildPractices(
       practicePlan,
@@ -627,6 +623,15 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       message: 'manifest has no enabled targets',
       hint: 'Enable at least one target or omit it from the manifest.',
     });
+    return blockedResult(root, scope, options, diagnostics, {
+      ...adoptionExtras(adoption),
+      ...practiceExtras(scope, practices),
+    });
+  }
+
+  // Known preparation errors block before target planning and before any
+  // import/target apply; practice writes were already skipped above.
+  if (hasErrors(preparationDiagnostics)) {
     return blockedResult(root, scope, options, diagnostics, {
       ...adoptionExtras(adoption),
       ...practiceExtras(scope, practices),
