@@ -116,7 +116,8 @@ function minimalManifest(scan: ScanResult, scope: Scope): ProjectManifest {
     version: 2,
     scope,
     project: { id: scan.projectId, name: scan.projectName },
-    profile: 'feature',
+    profile: 'generic',
+    docs: { language: 'auto' },
     targets: [{
       provider: 'claude-code',
       enabled: true,
@@ -135,7 +136,7 @@ export function minimalSourcePlan(scan: ScanResult, scope: Scope): MinimalSource
   return {
     files: {
       [agentsMd]: renderAgentsMd(scan),
-      [manifest]: renderDabYaml(scan, scope),
+      [manifest]: renderDabYaml(scan, scope, { profile: 'generic' }),
       '.agents/policies/project.yaml': renderProjectPolicy(),
       '.agents/adapters/claude-code.yaml': renderClaudeCodePolicy(),
       '.agents/memory/INDEX.md': renderMemoryIndex(),

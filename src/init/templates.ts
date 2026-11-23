@@ -138,19 +138,6 @@ Write a failing test before production code.
 `;
 }
 
-export function renderDocsBilingualRule(): string {
-  return `---
-paths: ["docs/**", "README.md", "CONTRIBUTING.md", ".agents/notes/**"]
----
-Human-facing documentation is paired English and Simplified Chinese.
-
-- Every \`foo.md\` has \`foo.zh.md\` and \`foo.i18n.yaml\`.
-- Update both languages and the record in the same change.
-- Keep headings, lists, tables, code blocks and inline code structurally identical.
-- Run the repository's documentation gate before committing.
-`;
-}
-
 export function renderProjectPolicy(): string {
   return `version: 1
 defaultMode: default
@@ -246,13 +233,21 @@ Link every entry from this index. Personal auto memory stays machine-local.
 `;
 }
 
-export function renderDabYaml(scan: ScanResult, scope: Scope): string {
+export function renderDabYaml(
+  scan: ScanResult,
+  scope: Scope,
+  options: { profile?: 'generic' | 'feature'; docsLanguage?: 'auto' | 'en' | 'zh' } = {},
+): string {
+  const profile = options.profile ?? 'generic';
+  const docsLanguage = options.docsLanguage ?? 'auto';
   return `version: 2
 scope: ${scope}
 project:
   id: ${JSON.stringify(scan.projectId)}
   name: ${JSON.stringify(scan.projectName)}
-profile: feature
+profile: ${profile}
+docs:
+  language: ${docsLanguage}
 targets:
   - provider: claude-code
     enabled: true
@@ -281,19 +276,19 @@ export function templateFiles(
   scan: ScanResult,
   scope: Scope,
   aiAddition?: string,
+  options: { profile?: 'generic' | 'feature' } = {},
 ): Record<string, string> {
   const agentsMd = scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
   const manifest = scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml';
   return {
     [agentsMd]: renderAgentsMd(scan, aiAddition),
-    [manifest]: renderDabYaml(scan, scope),
+    [manifest]: renderDabYaml(scan, scope, { profile: options.profile ?? 'generic' }),
     '.agents/agents/implementer.md': renderImplementerAgent(),
     '.agents/agents/reviewer.md': renderReviewerAgent(),
     '.agents/skills/feature-delivery/SKILL.md': renderFeatureDeliverySkill(scan),
     '.agents/skills/doc-sync/SKILL.md': renderDocSyncSkill(),
     '.agents/rules/generated-files.md': renderGeneratedFilesRule(),
     '.agents/rules/testing.md': renderTestingRule(),
-    '.agents/rules/docs-bilingual.md': renderDocsBilingualRule(),
     '.agents/policies/project.yaml': renderProjectPolicy(),
     '.agents/adapters/claude-code.yaml': renderClaudeCodePolicy(),
     '.agents/hooks/protect-generated/hook.yaml': renderHookMetadata(),
@@ -326,9 +321,5 @@ export const TEMPLATE_PROJECTIONS = [
   {
     source: '.agents/rules/testing.md',
     target: '.claude/rules/testing.md',
-  },
-  {
-    source: '.agents/rules/docs-bilingual.md',
-    target: '.claude/rules/docs-bilingual.md',
   },
 ] as const;

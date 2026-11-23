@@ -25,6 +25,7 @@ function projectPaths(root: string, scope: 'project' | 'global'): ProjectPaths {
     scope,
     project: { id: 'demo', name: 'Demo' },
     profile: 'feature',
+    docs: { language: 'auto' },
     targets: [{
       provider: 'claude-code',
       enabled: true,

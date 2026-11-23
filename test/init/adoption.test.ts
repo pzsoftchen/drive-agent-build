@@ -154,8 +154,18 @@ describe('minimalSourcePlan', () => {
       '.agents/hooks',
     ]);
     expect(plan.manifest.scope).toBe('project');
-    expect(plan.manifest.profile).toBe('feature');
+    expect(plan.manifest.profile).toBe('generic');
     expect(plan.manifest.paths).toEqual({ agents: '.agents', claude: '.claude' });
+  });
+
+  it('minimal source uses generic and docs.language auto', async () => {
+    const project = await projectFixture();
+    const scan = await scanProject(project.root);
+    const plan = minimalSourcePlan(scan, 'project');
+    expect(plan.manifest.profile).toBe('generic');
+    expect(plan.manifest.docs.language).toBe('auto');
+    expect(plan.files['dab.yaml']).toContain('profile: generic');
+    expect(plan.files['dab.yaml']).toContain('docs:\n  language: auto');
   });
 
   it('builds global minimal paths under .agents', async () => {

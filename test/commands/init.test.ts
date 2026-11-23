@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { lstat, mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runInit } from '../../src/commands/init.ts';
+import { initializeProject, runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
@@ -44,6 +44,24 @@ afterEach(async () => {
 });
 
 describe('runInit', () => {
+  it('defaults to generic with docs.language auto', async () => {
+    const root = await tempDir();
+    const result = await initializeProject({ cwd: root });
+    const manifest = await loadProjectManifest(root, { scope: 'project' });
+    expect(result.ok).toBe(true);
+    expect(manifest.manifest.profile).toBe('generic');
+    expect(manifest.manifest.docs.language).toBe('auto');
+    expect(await readFile(join(root, 'dab.yaml'), 'utf8')).toContain('profile: generic');
+    expect(await readFile(join(root, 'dab.yaml'), 'utf8')).toContain('docs:\n  language: auto');
+  });
+
+  it('accepts feature as a compatibility profile', async () => {
+    const root = await tempDir();
+    const result = await initializeProject({ cwd: root, profile: 'feature' });
+    expect(result.ok).toBe(true);
+    expect((await loadProjectManifest(root, { scope: 'project' })).manifest.profile).toBe('feature');
+  });
+
   it('creates a full skeleton and normalized Claude Code outputs', async () => {
     const root = await tempDir();
     await packageJson(root);
@@ -86,8 +104,12 @@ describe('runInit', () => {
     expect(await lstatOrNull(join(root, '.claude/rules/testing.md'))).not.toBeNull();
     expect(await lstatOrNull(join(root, '.claude/settings.local.json'))).toBeNull();
 
+    expect(await lstatOrNull(join(root, '.agents/rules/docs-bilingual.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.claude/rules/docs-bilingual.md'))).toBeNull();
+
     const manifest = await loadProjectManifest(root);
-    expect(manifest.manifest.profile).toBe('feature');
+    expect(manifest.manifest.profile).toBe('generic');
+    expect(manifest.manifest.docs.language).toBe('auto');
     expect(manifest.manifest.scope).toBe('project');
     const generated = getGeneratedTarget(manifest.manifest, 'claude-code');
     expect(generated?.instructions?.mode).toBe('symlink');
@@ -279,12 +301,12 @@ describe('runInit', () => {
     expect(payload.error.code).toBe('usage.ai-dry-run');
   });
 
-  it('rejects an unsupported profile without writing', async () => {
+  it('rejects an unknown profile without writing', async () => {
     const root = await tempDir();
     const captureResult = capture();
 
     const code = await runInit(
-      { cwd: root, profile: 'generic' as 'feature' },
+      { cwd: root, profile: 'nope' as 'generic' },
       captureResult.io,
     );
 

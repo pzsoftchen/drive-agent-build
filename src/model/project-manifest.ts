@@ -44,6 +44,7 @@ const MANIFEST_FIELD_ORDER = [
   'scope',
   'project',
   'profile',
+  'docs',
   'targets',
   'paths',
   'generated',
@@ -104,6 +105,7 @@ function migrateV1Manifest(legacy: LegacyProjectManifest): ProjectManifest {
     scope: 'project',
     project: legacy.project,
     profile: legacy.profile,
+    docs: legacy.docs ?? { language: 'auto' },
     targets: [{
       provider: 'claude-code',
       enabled: true,

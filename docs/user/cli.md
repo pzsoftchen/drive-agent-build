@@ -39,7 +39,7 @@ The npm package is `@saydone/dab`; `npx dab` resolves to a different package. Re
 ## `dab init`
 
 ```bash
-dab init [path] [--profile feature] [--ai] [--dry-run]
+dab init [path] [--profile generic|feature] [--ai] [--dry-run]
 ```
 
 Project layout:
@@ -64,7 +64,8 @@ Global layout:
 - `dab init path` uses `path` as the exact source root and creates it when missing. It refuses to create a source root inside an existing one.
 - Scans the repository and writes missing authored files. Authored conflicts stop before writes. Unmanaged `.claude` conflicts are reported as pending and left to `dab normalize --fix`.
 - Init never imports existing `.claude/agents` or `.claude/skills` entries and never creates adoption backups for them. Import is `dab normalize`'s job.
-- The generated manifest is v2 and includes `scope`, `targets` and `instructions: symlink`.
+- The generated manifest is v2 and includes `scope`, `profile`, `docs.language`, `targets` and `instructions: symlink`. `--profile` accepts `generic` (default) or `feature` and never overwrites an existing authored manifest.
+- The generic skeleton does not generate `.agents/rules/docs-bilingual.md`; existing authored rules are preserved.
 - JSON output reports `root` (source root) and `scopeRoot` (path base); `created`, `skipped` and nested normalize paths are relative to `scopeRoot`.
 - `--dry-run` previews authored writes and pending conflicts without writing. `--ai` asks Claude Code for a proposal and writes only after confirmation; it cannot be combined with `--dry-run`.
 
@@ -76,7 +77,9 @@ scope: project
 project:
   id: example
   name: Example
-profile: feature
+profile: generic
+docs:
+  language: auto
 targets:
   - provider: claude-code
     enabled: true
@@ -107,7 +110,9 @@ scope: global
 project:
   id: personal
   name: Personal
-profile: feature
+profile: generic
+docs:
+  language: auto
 targets:
   - provider: claude-code
     enabled: true
@@ -118,6 +123,8 @@ paths:
   claude: .claude
 ```
 
+- `profile` is `generic` (default) or `feature`; `feature` is kept as a compatibility profile for existing workflows.
+- `docs.language` accepts `auto` (default), `en` or `zh`.
 - `scope` must match the resolved location; a mismatch is an error.
 - `targets` is required and must contain at least one entry. Individual entries may set `enabled: false`; at least one target must stay enabled or normalize and detect fail with `target.none`.
 - An enabled target without an adapter fails with `target.unsupported`.

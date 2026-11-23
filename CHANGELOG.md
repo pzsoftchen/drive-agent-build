@@ -4,6 +4,7 @@ English | [中文](CHANGELOG.zh.md)
 
 ## Unreleased
 
+- `dab init` now writes `profile: generic` and `docs.language: auto` by default. `--profile generic|feature` selects the manifest profile, and the generic skeleton no longer generates `.agents/rules/docs-bilingual.md`; existing authored rules are preserved.
 - `dab detect` prints a read-only checklist for uninitialized, partial and initialized project and global scopes, with `[OK]`, `[MISSING]`, `[WARN]`, `[ERROR]` and `[IMPORTABLE]` states, a score and next actions; JSON adds `scope`, `root`, `phase`, `profile`, `checklist`, `score` and `nextActions`. Initialized scopes also report importable physical entries instead of unmanaged or physical-copy drift.
 - Uninitialized and partial `dab detect --json` results are now the full checklist object with `ok: false` and `exitCode: 2` instead of the error envelope; `schemaVersion` stays `1`.
 - `dab normalize` adopts missing minimal source and imports physical `.claude/agents` and `.claude/skills` entries into `.agents`, backing up originals under `.dab/backups/` and replacing them with per-entry symlinks. Invalid imports block every write, and `--fix` still covers non-import conflicts only.

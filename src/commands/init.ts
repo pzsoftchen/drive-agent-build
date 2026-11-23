@@ -57,7 +57,7 @@ export interface InitOptions {
   cwd: string;
   home?: string;
   path?: string;
-  profile?: 'feature';
+  profile?: 'generic' | 'feature';
   ai?: boolean;
   dryRun?: boolean;
   json?: boolean;
@@ -484,9 +484,13 @@ function formatInit(result: InitResult): string {
 
 export async function initializeProject(options: InitOptions): Promise<InitResult> {
   assertSupportedPlatform(options.platform);
-  if (options.profile !== undefined && options.profile !== 'feature') {
+  if (
+    options.profile !== undefined
+    && options.profile !== 'generic'
+    && options.profile !== 'feature'
+  ) {
     throw new UsageError(
-      `unsupported profile: ${options.profile}; v0.1 supports: feature`,
+      `unsupported profile: ${String(options.profile)}; supported profiles: generic, feature`,
       'usage.invalid-profile',
     );
   }
@@ -517,7 +521,8 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     version: 2,
     scope,
     project: { id: scan.projectId, name: scan.projectName },
-    profile: 'feature',
+    profile: options.profile ?? 'generic',
+    docs: { language: 'auto' },
     targets: [{
       provider: 'claude-code',
       enabled: true,
@@ -648,7 +653,9 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     aiApplied = true;
   }
 
-  const files = templateFiles(scan, scope, proposal?.agentsMdAddition);
+  const files = templateFiles(scan, scope, proposal?.agentsMdAddition, {
+    profile: options.profile ?? 'generic',
+  });
   for (const agent of proposal?.agents ?? []) {
     files[`.agents/agents/${agent.name}.md`] = renderAgentFromProposal(agent);
   }

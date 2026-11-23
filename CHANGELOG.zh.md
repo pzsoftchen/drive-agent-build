@@ -4,6 +4,7 @@
 
 ## 未发布
 
+- `dab init` 默认写入 `profile: generic` 和 `docs.language: auto`。`--profile generic|feature` 选择 manifest profile，generic skeleton 不再生成 `.agents/rules/docs-bilingual.md`；已有的 authored 规则会保留。
 - `dab detect` 为未初始化、partial 和已初始化的 project/global scope 输出只读 checklist，包含 `[OK]`、`[MISSING]`、`[WARN]`、`[ERROR]` 和 `[IMPORTABLE]` 状态、score 和 next actions；JSON 追加 `scope`、`root`、`phase`、`profile`、`checklist`、`score` 和 `nextActions`。已初始化 scope 也会把可导入的物理条目报告为 importable，而不是 unmanaged 或 physical-copy 漂移。
 - 未初始化和 partial 的 `dab detect --json` 结果现在是完整 checklist 对象，包含 `ok: false` 和 `exitCode: 2`，不再使用错误信封；`schemaVersion` 仍为 `1`。
 - `dab normalize` 采用缺失的最小 source，并把物理 `.claude/agents` 和 `.claude/skills` 条目导入 `.agents`，将原文件备份到 `.dab/backups/` 后替换为逐项符号链接。非法 import 会阻止所有写入，`--fix` 仍只处理非 import 冲突。

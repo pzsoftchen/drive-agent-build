@@ -85,7 +85,9 @@ scope: project
 project:
   id: example
   name: Example
-profile: feature
+profile: generic
+docs:
+  language: auto
 targets:
   - provider: claude-code
     enabled: true

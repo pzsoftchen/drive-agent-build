@@ -39,7 +39,7 @@ npm 包名是 `@saydone/dab`；`npx dab` 会解析到另一个包。需要 Node.
 ## `dab init`
 
 ```bash
-dab init [path] [--profile feature] [--ai] [--dry-run]
+dab init [path] [--profile generic|feature] [--ai] [--dry-run]
 ```
 
 Project 布局：
@@ -64,7 +64,8 @@ Global 布局：
 - `dab init path` 把 `path` 作为确切的 source root，并在缺失时创建它。它拒绝在已有 source root 内部创建 source root。
 - 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。未受管的 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
 - Init 从不导入现有 `.claude/agents` 或 `.claude/skills` 条目，也不会为它们创建 adoption 备份。Import 是 `dab normalize` 的职责。
-- 生成的 manifest 是 v2，包含 `scope`、`targets` 和 `instructions: symlink`。
+- 生成的 manifest 是 v2，包含 `scope`、`profile`、`docs.language`、`targets` 和 `instructions: symlink`。`--profile` 接受 `generic`（默认）或 `feature`，且从不覆盖已有的 authored manifest。
+- Generic skeleton 不生成 `.agents/rules/docs-bilingual.md`；已有的 authored 规则会保留。
 - JSON 输出包含 `root`（source root）和 `scopeRoot`（路径基准）；`created`、`skipped` 以及嵌套 normalize 路径都相对于 `scopeRoot`。
 - `--dry-run` 预览编写文件写入和 pending 冲突，不写入任何内容。`--ai` 让 Claude Code 生成提案，确认后才写入；不能与 `--dry-run` 同时使用。
 
@@ -76,7 +77,9 @@ scope: project
 project:
   id: example
   name: Example
-profile: feature
+profile: generic
+docs:
+  language: auto
 targets:
   - provider: claude-code
     enabled: true
@@ -107,7 +110,9 @@ scope: global
 project:
   id: personal
   name: Personal
-profile: feature
+profile: generic
+docs:
+  language: auto
 targets:
   - provider: claude-code
     enabled: true
@@ -118,6 +123,8 @@ paths:
   claude: .claude
 ```
 
+- `profile` 为 `generic`（默认）或 `feature`；`feature` 作为兼容 profile 保留给已有工作流。
+- `docs.language` 接受 `auto`（默认）、`en` 或 `zh`。
 - `scope` 必须匹配解析出的位置；不匹配是错误。
 - `targets` 是必需的，且至少包含一个条目。单个条目可以设置 `enabled: false`；必须至少保留一个启用的 target，否则 normalize 和 detect 会以 `target.none` 失败。
 - 启用的 target 没有 adapter 时会以 `target.unsupported` 失败。

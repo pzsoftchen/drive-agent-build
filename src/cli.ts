@@ -48,7 +48,7 @@ function helpText(): string {
   return `dab ${programVersion()} - Drive Agent as Builder
 
 Usage:
-  dab init [path] [--profile feature] [--ai] [--dry-run] [--json]
+  dab init [path] [--profile generic|feature] [--ai] [--dry-run] [--json]
   dab detect [--strict] [--json]
   dab normalize [--dry-run] [--fix] [--json]
   dab policy explain [--agent <name>] [--target <provider>] [--json]
@@ -82,13 +82,13 @@ function rejectUnknownOptions(args: string[], allowedFlags: string[]): void {
 
 interface InitArguments {
   path?: string;
-  profile: 'feature';
+  profile: 'generic' | 'feature';
   ai: boolean;
   dryRun: boolean;
 }
 
 function parseInitArgs(rest: string[]): InitArguments {
-  let profile = 'feature';
+  let profile: 'generic' | 'feature' = 'generic';
   let ai = false;
   let dryRun = false;
   let targetPath: string | undefined;
@@ -108,6 +108,12 @@ function parseInitArgs(rest: string[]): InitArguments {
       if (value === undefined || value.startsWith('-')) {
         throw new UsageError('missing value for --profile', 'usage.missing-option-value');
       }
+      if (value !== 'generic' && value !== 'feature') {
+        throw new UsageError(
+          `unsupported profile: ${value}; supported profiles: generic, feature`,
+          'usage.invalid-profile',
+        );
+      }
       profile = value;
       index += 1;
       continue;
@@ -121,15 +127,9 @@ function parseInitArgs(rest: string[]): InitArguments {
     targetPath = arg;
   }
 
-  if (profile !== 'feature') {
-    throw new UsageError(
-      `unsupported profile: ${profile}; v0.1 supports: feature`,
-      'usage.invalid-profile',
-    );
-  }
   return {
     ...(targetPath === undefined ? {} : { path: targetPath }),
-    profile: 'feature',
+    profile,
     ai,
     dryRun,
   };
