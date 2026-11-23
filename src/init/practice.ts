@@ -1,5 +1,4 @@
 import type { Stats } from 'node:fs';
-import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hasErrors, type Diagnostic } from '../core/diagnostics.ts';
 import { DabError } from '../core/errors.ts';
@@ -7,13 +6,20 @@ import { assertParentInsideRoot, assertRelativePath } from '../core/paths.ts';
 import { MIN_CLAUDE_CODE_VERSION } from '../core/version-check.ts';
 import { ProjectManifestSchema } from '../model/schemas.ts';
 import type { ProjectManifest } from '../model/types.ts';
-import { minimalSourcePlan } from './adoption.ts';
 import type { AiProposalAgent } from './ai-proposal.ts';
 import { resolveDocsLanguage, type DocsLanguageResolution } from './docs-language.ts';
+import { minimalSourcePlan } from './minimal-source.ts';
 import { authoringPack } from './practice-authoring.ts';
 import { documentationPack } from './practice-docs.ts';
+import {
+  authoredDirectoryState,
+  authoredFileProblem,
+  pathProblemFrom,
+  probeLstat,
+  problemMessage,
+} from './practice-paths.ts';
 import type { ScanResult } from './scanner.ts';
-import { renderAgentFromProposal, templateFiles } from './templates.ts';
+import { renderAgentFromProposal, renderAgentsMd, templateFiles, type DocumentationLinks } from './templates.ts';
 
 export type ResolvedProfile = 'generic' | 'feature';
 export type ScaffoldMode = 'full' | 'adoption' | 'converge';
@@ -40,6 +46,8 @@ export interface PracticeContext {
   proposals?: AuthoredScaffoldInput['proposals'];
   version: string;
   anchors: ReadonlySet<string>;
+  /** Declared targets the project policy skips; never validated or rendered. */
+  policySkipped: ReadonlySet<string>;
   docsLanguage: DocsLanguageResolution;
 }
 
@@ -86,21 +94,32 @@ function proposalFiles(
   return files;
 }
 
+const DOCS_AGENTS = 'docs/AGENTS.md';
+const DOCS_ARCHITECTURE = 'docs/architecture.md';
+
 /**
  * Root AGENTS.md is core-owned. Anchors contain existing paths plus planned
- * paths that are not policy-skipped, so the Documentation links only appear
- * when the docs exist or this plan creates them.
+ * paths that are not policy-skipped, so each Documentation link only appears
+ * when that doc exists or this plan creates it. A declared policy skip means
+ * the project owns its docs, so no Documentation section is rendered at all.
  */
-function documentationAnchored(context: PracticeContext): boolean {
-  return context.scope === 'project'
-    && (context.anchors.has('docs/AGENTS.md') || context.anchors.has('docs/architecture.md'));
+function documentationLinks(context: PracticeContext): DocumentationLinks | undefined {
+  if (context.scope !== 'project') {
+    return undefined;
+  }
+  return {
+    agents: !context.policySkipped.has(DOCS_AGENTS) && context.anchors.has(DOCS_AGENTS),
+    architecture: !context.policySkipped.has(DOCS_ARCHITECTURE)
+      && context.anchors.has(DOCS_ARCHITECTURE),
+  };
 }
 
 function fullCoreFiles(context: PracticeContext): Record<string, string> {
+  const documentation = documentationLinks(context);
   return {
     ...templateFiles(context.scan, context.scope, context.proposals?.agentsMdAddition, {
       profile: context.profile,
-      documentation: documentationAnchored(context),
+      ...(documentation === undefined ? {} : { documentation }),
     }),
     ...proposalFiles(context.proposals),
   };
@@ -122,7 +141,14 @@ function adoptionCoreFiles(
 }
 
 function adoptionFiles(context: PracticeContext): Record<string, string> {
-  return adoptionCoreFiles(context, minimalSourcePlan(context.scan, context.scope).files);
+  const plan = minimalSourcePlan(context.scan, context.scope);
+  const files = adoptionCoreFiles(context, plan.files);
+  const agentsMd = context.scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
+  const documentation = documentationLinks(context);
+  if (files[agentsMd] !== undefined && documentation !== undefined) {
+    files[agentsMd] = renderAgentsMd(context.scan, undefined, { documentation });
+  }
+  return files;
 }
 
 export const corePack: PracticePack = {
@@ -237,18 +263,11 @@ type StatResult =
   | { ok: false; message: string };
 
 async function statTarget(root: string, relativePath: string): Promise<StatResult> {
-  try {
-    return { ok: true, info: await lstat(join(root, relativePath)) };
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') {
-      return { ok: true, info: null };
-    }
-    if (code === 'ENOTDIR') {
-      return { ok: false, message: 'a parent component is not a directory' };
-    }
-    throw error;
+  const result = await probeLstat(join(root, relativePath));
+  if (result.problem !== undefined) {
+    return { ok: false, message: problemMessage(relativePath, result.problem) };
   }
+  return { ok: true, info: result.info };
 }
 
 function isUnder(path: string, directory: string): boolean {
@@ -298,11 +317,11 @@ function blockedPlan(
 
 /**
  * Plan authored (`.agents/` and project docs) files without writing anything.
- * The only reads are language detection samples and filesystem metadata.
+ * The only reads are language detection samples, metadata probes and the
+ * readability check for existing targets.
  *
- * Packs are supplied by the caller so tests and the future docs/authoring
- * packs can compose an exact plan. Production callers use the core pack only
- * until the pack registry grows.
+ * Packs are supplied by the caller so tests can compose an exact plan;
+ * production callers pass the explicit `PRACTICE_PACKS` registry.
  */
 export async function planAuthoredScaffold(
   input: AuthoredScaffoldInput,
@@ -322,6 +341,7 @@ export async function planAuthoredScaffold(
     mode: input.mode,
     version: input.version,
     anchors: new Set<string>(),
+    policySkipped: new Set<string>(),
     docsLanguage,
     ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
     ...(input.proposals === undefined ? {} : { proposals: input.proposals }),
@@ -385,7 +405,6 @@ export async function planAuthoredScaffold(
 
   // User-owned skill directories win only for the paths their pack marks as
   // skipChildrenWhenExists. Other declared directories never hide children.
-  const skipStats = new Map<string, Stats | null>();
   const existingSkipDirectories = new Set<string>();
   const skipped: string[] = [];
   const skippedSet = new Set<string>();
@@ -402,21 +421,13 @@ export async function planAuthoredScaffold(
     if (invalid.has(directory)) {
       continue;
     }
-    const result = await statTarget(input.root, directory);
-    if (!result.ok) {
-      diagnostics.push(pathConflict(directory, `${directory}: ${result.message}`));
+    const state = await authoredDirectoryState(input.root, directory);
+    if (state.kind === 'conflict') {
+      diagnostics.push(pathConflict(directory, state.message));
       invalid.add(directory);
       continue;
     }
-    skipStats.set(directory, result.info);
-    if (result.info === null) {
-      continue;
-    }
-    if (!result.info.isDirectory() && !result.info.isSymbolicLink()) {
-      diagnostics.push(
-        pathConflict(directory, `practice directory target is not a directory: ${directory}`),
-      );
-      invalid.add(directory);
+    if (state.kind === 'missing') {
       continue;
     }
     existing.add(directory);
@@ -427,7 +438,11 @@ export async function planAuthoredScaffold(
   const checkedParents = new Set<string>();
   async function checkParents(paths: Iterable<string>): Promise<void> {
     for (const path of paths) {
-      if (invalid.has(path) || checkedParents.has(path)) {
+      if (
+        invalid.has(path)
+        || checkedParents.has(path)
+        || policySkippedSet.has(path)
+      ) {
         continue;
       }
       if (isUnderAny(path, existingSkipDirectories)) {
@@ -440,9 +455,14 @@ export async function planAuthoredScaffold(
         if (error instanceof DabError) {
           diagnostics.push(errorDiagnostic(error, path));
           invalid.add(path);
-        } else {
+          continue;
+        }
+        const problem = pathProblemFrom(error);
+        if (problem === undefined) {
           throw error;
         }
+        diagnostics.push(pathConflict(path, problemMessage(path, problem)));
+        invalid.add(path);
       }
     }
   }
@@ -453,7 +473,11 @@ export async function planAuthoredScaffold(
   const plannedDirectories: string[] = [];
   const processedDirectories = new Set<string>();
   for (const directory of declaredDirectories) {
-    if (invalid.has(directory) || processedDirectories.has(directory)) {
+    if (
+      invalid.has(directory)
+      || processedDirectories.has(directory)
+      || policySkippedSet.has(directory)
+    ) {
       continue;
     }
     processedDirectories.add(directory);
@@ -463,24 +487,14 @@ export async function planAuthoredScaffold(
     if (isUnderAny(directory, existingSkipDirectories)) {
       continue;
     }
-    const cached = skipStats.get(directory);
-    const result = cached === undefined
-      ? await statTarget(input.root, directory)
-      : { ok: true as const, info: cached };
-    if (!result.ok) {
-      diagnostics.push(pathConflict(directory, `${directory}: ${result.message}`));
+    const state = await authoredDirectoryState(input.root, directory);
+    if (state.kind === 'conflict') {
+      diagnostics.push(pathConflict(directory, state.message));
       invalid.add(directory);
       continue;
     }
-    if (result.info === null) {
+    if (state.kind === 'missing') {
       plannedDirectories.push(directory);
-      continue;
-    }
-    if (!result.info.isDirectory() && !result.info.isSymbolicLink()) {
-      diagnostics.push(
-        pathConflict(directory, `practice directory target is not a directory: ${directory}`),
-      );
-      invalid.add(directory);
       continue;
     }
     existing.add(directory);
@@ -493,9 +507,19 @@ export async function planAuthoredScaffold(
     if (invalid.has(path) || isUnderAny(path, existingSkipDirectories)) {
       continue;
     }
+    if (policySkippedSet.has(path)) {
+      // Policy-skipped targets are never validated or written. An existing
+      // authored path is preserved as skipped; a missing one is reported as a
+      // policy skip. Path-state errors are ignored so a dangling or unreadable
+      // docs path cannot block unrelated skills and targets.
+      if ((await probeLstat(join(input.root, path))).info !== null) {
+        addSkipped(path);
+      }
+      continue;
+    }
     const result = await statTarget(input.root, path);
     if (!result.ok) {
-      diagnostics.push(pathConflict(path, `${path}: ${result.message}`));
+      diagnostics.push(pathConflict(path, result.message));
       invalid.add(path);
       continue;
     }
@@ -504,10 +528,9 @@ export async function planAuthoredScaffold(
       plannedFileSet.add(path);
       continue;
     }
-    if (result.info.isDirectory()) {
-      diagnostics.push(
-        pathConflict(path, `practice file target is a directory: ${path}`),
-      );
+    const problem = await authoredFileProblem(input.root, path);
+    if (problem !== undefined) {
+      diagnostics.push(pathConflict(path, problem));
       invalid.add(path);
       continue;
     }
@@ -518,16 +541,24 @@ export async function planAuthoredScaffold(
   const directories = plannedDirectories.filter(
     (directory) => !policySkippedSet.has(directory),
   );
+  // Existing policy-skipped docs are preserved (skipped); only a missing
+  // target is a policy skip, so the two lists stay disjoint.
+  const reportedPolicySkipped = policySkipped.filter((path) => !skippedSet.has(path));
 
   if (hasErrors(diagnostics)) {
     return blockedPlan(input, docsLanguage, manifest, diagnostics, {
       directories,
       skipped,
-      policySkipped,
+      policySkipped: reportedPolicySkipped,
     });
   }
 
-  const anchors = new Set<string>(existing);
+  const anchors = new Set<string>();
+  for (const path of existing) {
+    if (!policySkippedSet.has(path)) {
+      anchors.add(path);
+    }
+  }
   for (const path of plannedFiles) {
     if (!policySkippedSet.has(path)) {
       anchors.add(path);
@@ -539,7 +570,11 @@ export async function planAuthoredScaffold(
     }
   }
 
-  const finalContext: PracticeContext = { ...baseContext, anchors };
+  const finalContext: PracticeContext = {
+    ...baseContext,
+    anchors,
+    policySkipped: new Set(policySkippedSet),
+  };
 
   const files: Record<string, string> = {};
   for (const pack of packs) {
@@ -587,24 +622,23 @@ export async function planAuthoredScaffold(
             invalid.add(directory);
             continue;
           }
-          throw error;
+          const problem = pathProblemFrom(error);
+          if (problem === undefined) {
+            throw error;
+          }
+          diagnostics.push(pathConflict(directory, problemMessage(directory, problem)));
+          invalid.add(directory);
+          continue;
         }
       }
-      const result = await statTarget(input.root, directory);
-      if (!result.ok) {
-        diagnostics.push(pathConflict(directory, `${directory}: ${result.message}`));
+      const state = await authoredDirectoryState(input.root, directory);
+      if (state.kind === 'conflict') {
+        diagnostics.push(pathConflict(directory, state.message));
         invalid.add(directory);
         continue;
       }
-      if (result.info === null) {
+      if (state.kind === 'missing') {
         directories.push(directory);
-        continue;
-      }
-      if (!result.info.isDirectory() && !result.info.isSymbolicLink()) {
-        diagnostics.push(
-          pathConflict(directory, `practice directory target is not a directory: ${directory}`),
-        );
-        invalid.add(directory);
       }
     }
   }
@@ -613,7 +647,7 @@ export async function planAuthoredScaffold(
     return blockedPlan(input, docsLanguage, manifest, diagnostics, {
       directories,
       skipped,
-      policySkipped,
+      policySkipped: reportedPolicySkipped,
     });
   }
 
@@ -623,7 +657,7 @@ export async function planAuthoredScaffold(
     files,
     directories,
     skipped,
-    policySkipped,
+    policySkipped: reportedPolicySkipped,
     diagnostics,
     ...(manifest === undefined ? {} : { manifest }),
     docsLanguage,

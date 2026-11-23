@@ -19,12 +19,13 @@ import {
   resolveInside,
   toPosix,
 } from '../../core/paths.ts';
+import { isAuthoredPathProblem } from '../../init/practice-paths.ts';
 import { discoverAgents, validateAgentSource } from '../../model/agents.ts';
 import { DiagnosticCodes } from '../../model/diagnostics-codes.ts';
 import { getGeneratedTarget } from '../../model/project-manifest.ts';
 import type { Scope } from '../../model/scope.ts';
 import { discoverSkills, validateSkillSource } from '../../model/skills.ts';
-import type { ProjectManifest } from '../../model/types.ts';
+import type { DiscoveryResult, ProjectManifest } from '../../model/types.ts';
 
 export interface ClaudeAdoptionEntry {
   kind: 'agent' | 'skill';
@@ -619,13 +620,32 @@ interface AuthoredFacts {
 }
 
 /**
+ * A regular file at `.agents/skills` (or an unreadable authored tree) makes
+ * discovery raise ENOTDIR/EACCES. The practice checks own that diagnostic, so
+ * imports treat the affected tree as empty instead of failing the command.
+ */
+async function discoverAuthored<T>(
+  root: string,
+  run: () => Promise<DiscoveryResult<T>>,
+): Promise<DiscoveryResult<T>> {
+  try {
+    return await run();
+  } catch (error) {
+    if (isAuthoredPathProblem(error, root)) {
+      return { items: [], diagnostics: [] };
+    }
+    throw error;
+  }
+}
+
+/**
  * Authored names already used under `.agents`. Only valid discovered items are
  * indexed; their discovery diagnostics belong to the normalize pipeline.
  */
 async function authoredFacts(input: ClaudeAdoptionInput): Promise<AuthoredFacts> {
   const [agents, skills] = await Promise.all([
-    discoverAgents(input.root, input.agentsRoot),
-    discoverSkills(input.root, input.agentsRoot),
+    discoverAuthored(input.root, () => discoverAgents(input.root, input.agentsRoot)),
+    discoverAuthored(input.root, () => discoverSkills(input.root, input.agentsRoot)),
   ]);
   const agentNames = new Map<string, string>();
   for (const item of agents.items) {

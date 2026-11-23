@@ -196,6 +196,33 @@ describe('scope-aware init', () => {
     expect(agentsMd).not.toContain('## Documentation');
   });
 
+  it('does not report a global physical dab-* skill as an import pending', async () => {
+    const home = await tempDir('dab-home-init-');
+    await mkdir(join(home, '.claude/skills/dab-doc-writing'), { recursive: true });
+    await writeFile(
+      join(home, '.claude/skills/dab-doc-writing/SKILL.md'),
+      '---\nname: dab-doc-writing\ndescription: Existing.\n---\n# Existing\n',
+    );
+
+    const result = await initializeProject({
+      cwd: home,
+      path: '.agents',
+      home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.pending.some(
+      (item) => item.code === 'practice.skill-import-pending'
+        || item.code === 'practice.skill-import-conflict',
+    )).toBe(false);
+    // The nested normalize still runs and generates global projections.
+    expect(result.normalize).not.toBeNull();
+    expect(result.normalize?.ok).toBe(true);
+    expect((await lstatOrNull(join(home, '.claude/CLAUDE.md')))?.isSymbolicLink()).toBe(true);
+    expect(await lstatOrNull(join(home, '.claude/settings.json'))).toBeNull();
+  });
+
   it('leaves user-level settings and gitignore byte-identical in global scope', async () => {
     const home = await tempDir('dab-home-init-');
     const settings = '{"permissions":{"allow":["Bash(ls)"]}}\n';

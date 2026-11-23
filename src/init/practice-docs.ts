@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { lstatOrNull } from '../core/fs-atomic.ts';
 import type { DocsLanguage } from './docs-language.ts';
+import { probeLstat } from './practice-paths.ts';
 import type { PracticeContext, PracticePack, PracticeTargetSet } from './practice.ts';
 import type { ScanResult } from './scanner.ts';
 
@@ -280,7 +280,9 @@ export const documentationPack: PracticePack = {
     if (context.scope === 'global') {
       return { paths: [] };
     }
-    const bilingual = (await lstatOrNull(join(context.root, BILINGUAL_RULE))) !== null;
+    // A path-state error (for example a regular file at `.agents/rules`) is
+    // governed by the plan targets and detection; the rule simply cannot exist.
+    const bilingual = (await probeLstat(join(context.root, BILINGUAL_RULE))).info !== null;
     return bilingual
       ? { paths: [...DOC_TARGETS], policySkipped: [...DOC_TARGETS] }
       : { paths: [...DOC_TARGETS] };

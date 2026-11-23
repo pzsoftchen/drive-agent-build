@@ -11,31 +11,27 @@ import {
   toPosix,
 } from '../core/paths.ts';
 import { DAB_VERSION } from '../core/version.ts';
-import { MIN_CLAUDE_CODE_VERSION } from '../core/version-check.ts';
 import {
   applyClaudeAdoption,
   planClaudeAdoption,
   type ClaudeAdoptionEntry,
   type ClaudeAdoptionPlan,
 } from '../adapter/claude-code/adoption.ts';
+import { resolveDocsLanguage } from './docs-language.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
-import { ProjectManifestSchema } from '../model/schemas.ts';
 import { resolveScopeMarker, type Scope, type SourceRoot } from '../model/scope.ts';
 import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
+import { minimalSourcePlan, type MinimalSourcePlan } from './minimal-source.ts';
 import {
   PRACTICE_PACKS,
   planAuthoredScaffold,
   type AuthoredScaffoldPlan,
   type ResolvedProfile,
 } from './practice.ts';
+import { practiceParentProblems } from './practice-paths.ts';
 import { scanProject, type ScanResult } from './scanner.ts';
-import {
-  renderAgentsMd,
-  renderClaudeCodePolicy,
-  renderDabYaml,
-  renderMemoryIndex,
-  renderProjectPolicy,
-} from './templates.ts';
+
+export { minimalSourcePlan, type MinimalSourcePlan } from './minimal-source.ts';
 
 export type AdoptionPhase = 'initialized' | 'partial' | 'uninitialized';
 
@@ -101,55 +97,6 @@ export async function resolveAdoptionRoot(
       hasAgents: marker.hasAgents,
     }),
     manifestValid,
-  };
-}
-
-export interface MinimalSourcePlan {
-  files: Record<string, string>;
-  directories: string[];
-  manifest: ProjectManifest;
-}
-
-const MINIMAL_DIRECTORIES = [
-  '.agents/agents',
-  '.agents/skills',
-  '.agents/notes',
-  '.agents/rules',
-  '.agents/hooks',
-] as const;
-
-function minimalManifest(scan: ScanResult, scope: Scope): ProjectManifest {
-  return ProjectManifestSchema.parse({
-    version: 2,
-    scope,
-    project: { id: scan.projectId, name: scan.projectName },
-    profile: 'generic',
-    docs: { language: 'auto' },
-    targets: [{
-      provider: 'claude-code',
-      enabled: true,
-      options: {
-        minVersion: MIN_CLAUDE_CODE_VERSION,
-        instructions: 'symlink',
-      },
-    }],
-    paths: { agents: '.agents', claude: '.claude' },
-  });
-}
-
-export function minimalSourcePlan(scan: ScanResult, scope: Scope): MinimalSourcePlan {
-  const agentsMd = scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
-  const manifest = scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml';
-  return {
-    files: {
-      [agentsMd]: renderAgentsMd(scan),
-      [manifest]: renderDabYaml(scan, scope, { profile: 'generic' }),
-      '.agents/policies/project.yaml': renderProjectPolicy(),
-      '.agents/adapters/claude-code.yaml': renderClaudeCodePolicy(),
-      '.agents/memory/INDEX.md': renderMemoryIndex(),
-    },
-    directories: [...MINIMAL_DIRECTORIES],
-    manifest: minimalManifest(scan, scope),
   };
 }
 
@@ -321,6 +268,11 @@ export interface PrepareAdoptionInput {
  * Plan authored practice artifacts through the shared planner. Normalize uses
  * adoption mode before a manifest exists and converge mode afterwards; the
  * production pack registry is always explicit.
+ *
+ * A regular file at `.agents/rules` or `.agents/skills` breaks discovery and
+ * child writes with ENOTDIR. The planner reports child conflicts for adoption,
+ * but converge has no core targets, so probe both parents first and return a
+ * governed practice diagnostic with an empty plan.
  */
 async function planPractices(input: {
   root: string;
@@ -330,6 +282,43 @@ async function planPractices(input: {
   mode: 'adoption' | 'converge';
   manifest?: ProjectManifest;
 }): Promise<AuthoredScaffoldPlan> {
+  const docsLanguage = await resolveDocsLanguage({
+    root: input.root,
+    configured: input.manifest?.docs.language ?? 'auto',
+    env: process.env,
+  });
+  if (input.scope === 'project') {
+    const problems = await practiceParentProblems(input.root);
+    const diagnostics: Diagnostic[] = [];
+    for (const [code, problem] of [
+      ['practice.docs-path', problems.docs],
+      ['practice.skill-path', problems.skills],
+    ] as const) {
+      if (problem === undefined) {
+        continue;
+      }
+      diagnostics.push({
+        code,
+        severity: 'error',
+        message: problem.message,
+        file: problem.path,
+        hint: 'Resolve the path conflict manually; DAB never writes through it.',
+      });
+    }
+    if (diagnostics.length > 0) {
+      return {
+        profile: input.profile,
+        mode: input.mode,
+        files: {},
+        directories: [],
+        skipped: [],
+        policySkipped: [],
+        diagnostics,
+        ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
+        docsLanguage,
+      };
+    }
+  }
   return planAuthoredScaffold({
     root: input.root,
     scope: input.scope,

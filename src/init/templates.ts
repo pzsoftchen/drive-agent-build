@@ -7,20 +7,31 @@ function commandOrTodo(command: string | undefined): string {
   return command ?? 'TODO: add a command';
 }
 
+/** Documentation files that root AGENTS.md may link in its Documentation section. */
+export interface DocumentationLinks {
+  agents: boolean;
+  architecture: boolean;
+}
+
 export interface RenderAgentsMdOptions {
   /**
    * Project scope only: root AGENTS.md links the documentation scaffold. The
-   * core pack derives this from planner anchors, so a link is never added to a
-   * document that is not planned or already present.
+   * core pack derives each link from non-policy-skipped planner anchors, so a
+   * link is never added to a document that is not planned or already present.
    */
-  documentation?: boolean;
+  documentation?: DocumentationLinks;
 }
 
-const DOCUMENTATION_SECTION = `## Documentation
-
-- [docs/AGENTS.md](docs/AGENTS.md)
-- [docs/architecture.md](docs/architecture.md)
-`;
+function documentationSection(links: DocumentationLinks): string {
+  const items: string[] = [];
+  if (links.agents) {
+    items.push('- [docs/AGENTS.md](docs/AGENTS.md)');
+  }
+  if (links.architecture) {
+    items.push('- [docs/architecture.md](docs/architecture.md)');
+  }
+  return items.length === 0 ? '' : `\n## Documentation\n\n${items.join('\n')}\n`;
+}
 
 export function renderAgentsMd(
   scan: ScanResult,
@@ -31,9 +42,9 @@ export function renderAgentsMd(
   const addition = added === undefined || added.trim().length === 0
     ? ''
     : `\n${added.trim()}\n`;
-  const documentation = options.documentation === true
-    ? `\n${DOCUMENTATION_SECTION}`
-    : '';
+  const documentation = options.documentation === undefined
+    ? ''
+    : documentationSection(options.documentation);
   return `# ${scan.projectName}
 
 ## Project map
@@ -297,14 +308,16 @@ export function templateFiles(
   scan: ScanResult,
   scope: Scope,
   aiAddition?: string,
-  options: { profile?: 'generic' | 'feature'; documentation?: boolean } = {},
+  options: { profile?: 'generic' | 'feature'; documentation?: DocumentationLinks } = {},
 ): Record<string, string> {
   const agentsMd = scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
   const manifest = scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml';
   return {
-    [agentsMd]: renderAgentsMd(scan, aiAddition, {
-      documentation: options.documentation === true,
-    }),
+    [agentsMd]: renderAgentsMd(
+      scan,
+      aiAddition,
+      options.documentation === undefined ? {} : { documentation: options.documentation },
+    ),
     [manifest]: renderDabYaml(scan, scope, { profile: options.profile ?? 'generic' }),
     '.agents/agents/implementer.md': renderImplementerAgent(),
     '.agents/agents/reviewer.md': renderReviewerAgent(),

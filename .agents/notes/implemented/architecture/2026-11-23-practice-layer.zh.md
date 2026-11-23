@@ -34,14 +34,14 @@ DAB v0.1.1 只治理配置，却没有生成让项目的 agent 工作保持可�
 
 - 带 `.agents/rules/docs-bilingual.md` 的存量 v0.1.1 项目不会获得生成的 docs。它们会收到 `practice.docs-bilingual-policy` warning，但仍获得 authoring skills；迁移路径是删除该规则或等待 bilingual pack。
 - 已安装的 `dab-*` skills 是 authored 副本。DAB 版本升级后它们会保持落后，直到人或 agent 审阅并合入新文本；`dab detect` 报告落后标记，但从不覆盖 skill。
-- 物理 `.claude/skills/dab-*` 条目不会被重复创建：`init` 将其报告为 pending，`dab normalize` 导入后，后续运行会把它投影。
+- 可导入的物理 `.claude/skills/dab-*` 目录不会被重复创建：`init` 将其报告为 pending，`dab normalize` 导入后，后续运行会把它投影。非目录条目报告为 `practice.skill-import-conflict`，不提供 import 提示，init 从不写入或替换它。
 - `feature` manifest 获得与 `generic` 相同的实践行为，因此一次 normalize 可能新增此前不存在的 docs 和 skills。`--dry-run` 和 `practices` JSON 会先展示计划。
 - 新的 generic 项目不再获得双语规则。DAB 自身保留该规则，因此自己的 documentation pack 被 policy skip，而其他项目获得单语 docs；项目规则优先。
 - Detect score 包含 practice 条目，`--strict` 会在 practice 内容缺失或落后时失败，但两个 non-strict 的政策与保留类 warning 除外。
 
 ## Verification
 
-- `pnpm test`：59 个测试文件、608 个测试通过。
+- `pnpm test`：59 个测试文件、640 个测试通过。
 - `pnpm typecheck`：无错误。
 - `pnpm doc-sync`：配对、链接、排版、预算和 Agent Note 检查通过。
 - `pnpm build`：TypeScript 编译通过。

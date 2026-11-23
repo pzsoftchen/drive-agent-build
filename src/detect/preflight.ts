@@ -16,6 +16,7 @@ import {
   type AdoptionPhase,
   type AdoptionRoot,
 } from '../init/adoption.ts';
+import { pathProblemFrom, problemMessage } from '../init/practice-paths.ts';
 import { scanProject } from '../init/scanner.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
 import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
@@ -90,18 +91,47 @@ async function projectHomeCollision(
   };
 }
 
-async function exists(root: string, path: string): Promise<boolean> {
+const PRACTICE_OWNED_PATHS = ['.agents/skills', '.agents/rules'] as const;
+
+function isPracticeOwnedPath(path: string): boolean {
+  const normalized = path.replace(/\/+$/, '');
+  return PRACTICE_OWNED_PATHS.some(
+    (parent) => normalized === parent || normalized.startsWith(`${parent}/`),
+  );
+}
+
+interface PathProbe {
+  present: boolean;
+  diagnostic?: Diagnostic;
+}
+
+/**
+ * A path occupied by a regular file reports ENOTDIR; access and link errors are
+ * governed the same way. Practice-owned paths are reported by the practice
+ * checks, so preflight stays quiet for those. Every other path gets a governed
+ * diagnostic instead of being silently treated as missing.
+ */
+async function probePath(root: string, path: string): Promise<PathProbe> {
   try {
-    return (await lstatOrNull(join(root, path))) !== null;
+    return { present: (await lstatOrNull(join(root, path))) !== null };
   } catch (error) {
-    // A directory path occupied by a regular file reports ENOTDIR. The practice
-    // checks report the governed path error; preflight stays read-only instead
-    // of turning the state into an internal error.
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOTDIR' || code === 'EACCES' || code === 'EPERM') {
-      return false;
+    const problem = pathProblemFrom(error);
+    if (problem === undefined) {
+      throw error;
     }
-    throw error;
+    if (isPracticeOwnedPath(path)) {
+      return { present: false };
+    }
+    return {
+      present: false,
+      diagnostic: {
+        code: 'path.conflict',
+        severity: 'error',
+        message: problemMessage(path, problem),
+        file: path,
+        hint: 'Resolve the path conflict manually; DAB never writes through it.',
+      },
+    };
   }
 }
 
@@ -123,10 +153,20 @@ async function existenceEntry(input: {
   root: string;
   path: string;
   group: string;
+  diagnostics: Diagnostic[];
   next?: string;
 }): Promise<ChecklistEntry> {
-  const present = await exists(input.root, input.path);
-  if (present) {
+  const probe = await probePath(input.root, input.path);
+  if (probe.diagnostic !== undefined) {
+    input.diagnostics.push(probe.diagnostic);
+    return {
+      group: input.group,
+      label: input.path,
+      status: 'error',
+      detail: probe.diagnostic.message,
+    };
+  }
+  if (probe.present) {
     return { group: input.group, label: input.path, status: 'ok' };
   }
   return {
@@ -169,7 +209,8 @@ async function plannedEntries(input: {
   hasManifest: boolean;
   manifestValid: boolean;
   claudePlan: ClaudeAdoptionPlan;
-}): Promise<ChecklistEntry[]> {
+}): Promise<{ entries: ChecklistEntry[]; diagnostics: Diagnostic[] }> {
+  const diagnostics: Diagnostic[] = [];
   const { root, scope, paths, claudePlan } = input;
   const agents = relativePath(root, paths.agents);
   // An authored manifest that cannot be parsed must be fixed before normalize
@@ -180,12 +221,14 @@ async function plannedEntries(input: {
       root,
       path: relativePath(root, paths.instructions),
       group: 'Instructions',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     await existenceEntry({
       root,
       path: `${agents}/agents/`,
       group: 'Agents',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     ...claudePlan.entries
@@ -199,6 +242,7 @@ async function plannedEntries(input: {
       root,
       path: `${agents}/skills/`,
       group: 'Skills',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     ...claudePlan.entries
@@ -212,36 +256,42 @@ async function plannedEntries(input: {
       root,
       path: `${agents}/rules/`,
       group: 'Rules',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     await existenceEntry({
       root,
       path: `${agents}/policies/project.yaml`,
       group: 'Policy',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     await existenceEntry({
       root,
       path: `${agents}/adapters/claude-code.yaml`,
       group: 'Policy',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     await existenceEntry({
       root,
       path: `${agents}/hooks/`,
       group: 'Hooks',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     await existenceEntry({
       root,
       path: `${agents}/memory/INDEX.md`,
       group: 'Memory',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
     await existenceEntry({
       root,
       path: `${agents}/notes/`,
       group: 'Notes',
+      diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
   ];
@@ -261,22 +311,33 @@ async function plannedEntries(input: {
   // Global settings are user-owned and never generated by DAB.
   if (scope === 'project') {
     const settings = relativePath(root, join(paths.claude, 'settings.json'));
-    entries.push(await exists(root, settings)
-      ? {
+    const probe = await probePath(root, settings);
+    if (probe.diagnostic !== undefined) {
+      diagnostics.push(probe.diagnostic);
+      entries.push({
         group: 'Generated target',
         label: settings,
-        status: 'warn',
-        detail: 'existing settings are not managed until normalize',
-      }
-      : {
-        group: 'Generated target',
-        label: settings,
-        status: 'missing',
-        ...(next === undefined ? {} : { next }),
+        status: 'error',
+        detail: probe.diagnostic.message,
       });
+    } else {
+      entries.push(probe.present
+        ? {
+          group: 'Generated target',
+          label: settings,
+          status: 'warn',
+          detail: 'existing settings are not managed until normalize',
+        }
+        : {
+          group: 'Generated target',
+          label: settings,
+          status: 'missing',
+          ...(next === undefined ? {} : { next }),
+        });
+    }
   }
 
-  return entries;
+  return { entries, diagnostics };
 }
 
 /**
@@ -310,8 +371,12 @@ export async function preflightProject(
   const scan = await scanProject(adoption.root);
   const sourcePlan = minimalSourcePlan(scan, adoption.scope);
   const manifestPath = relativePath(adoption.root, adoption.manifestPath);
-  const hasManifest = await exists(adoption.root, manifestPath);
   const diagnostics: Diagnostic[] = [...scan.diagnostics];
+  const manifestProbe = await probePath(adoption.root, manifestPath);
+  const hasManifest = manifestProbe.present;
+  if (manifestProbe.diagnostic !== undefined) {
+    diagnostics.push(manifestProbe.diagnostic);
+  }
 
   let manifest = sourcePlan.manifest;
   let manifestValid = false;
@@ -375,7 +440,7 @@ export async function preflightProject(
       )
       .flatMap((item) => (item.file === undefined ? [] : [item.file])),
   );
-  const entries = (await plannedEntries({
+  const planned = await plannedEntries({
     root: adoption.root,
     scope: adoption.scope,
     paths,
@@ -383,7 +448,11 @@ export async function preflightProject(
     hasManifest,
     manifestValid,
     claudePlan,
-  })).filter((entry) => !governed.has(entry.label.replace(/\/$/, '')));
+  });
+  diagnostics.push(...planned.diagnostics);
+  const entries = planned.entries.filter(
+    (entry) => !governed.has(entry.label.replace(/\/$/, '')),
+  );
 
   diagnostics.push(...practice.diagnostics);
   entries.push(...practice.entries);

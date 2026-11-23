@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import type { Diagnostic } from '../../src/core/diagnostics.ts';
 import { minimalSourcePlan } from '../../src/init/adoption.ts';
 import {
@@ -62,6 +64,22 @@ async function planCore(
 
 function errorFor(plan: AuthoredScaffoldPlan, file: string): Diagnostic | undefined {
   return plan.diagnostics.find((item) => item.severity === 'error' && item.file === file);
+}
+
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
+
+async function makeFifo(path: string): Promise<boolean> {
+  if (process.platform === 'win32') {
+    return false;
+  }
+  try {
+    await promisify(execFile)('mkfifo', [path]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe('planAuthoredScaffold anchors', () => {
@@ -209,6 +227,160 @@ describe('planAuthoredScaffold path safety', () => {
     expect(plan.files).toEqual({});
     expect(plan.directories).toEqual([]);
     expect(plan.policySkipped).toEqual([]);
+  });
+});
+
+describe('planAuthoredScaffold existing target validation', () => {
+  it('rejects a file target symlinked outside the root', async () => {
+    const outside = await tempDir('dab-practice-outside-');
+    await writeFile(join(outside, 'AGENTS.md'), 'outside');
+    await symlink(join(outside, 'AGENTS.md'), join(root, 'AGENTS.md'));
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['AGENTS.md'] }),
+      files: () => ({ 'AGENTS.md': 'template' }),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'AGENTS.md')?.code).toBe('path.conflict');
+    expect(errorFor(plan, 'AGENTS.md')?.message).toContain('escape');
+    expect(plan.files).toEqual({});
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('accepts a file target symlinked to a file inside the root', async () => {
+    await writeFile(join(root, 'authored.md'), 'authored');
+    await symlink(join(root, 'authored.md'), join(root, 'AGENTS.md'));
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['AGENTS.md'] }),
+      files: () => ({ 'AGENTS.md': 'template' }),
+    };
+    const plan = await planWith(pack);
+    expect(plan.diagnostics).toEqual([]);
+    expect(plan.files).toEqual({});
+    expect(plan.skipped).toEqual(['AGENTS.md']);
+  });
+
+  it('rejects a file target symlinked to a directory inside the root', async () => {
+    await mkdir(join(root, 'real-dir'), { recursive: true });
+    await symlink(join(root, 'real-dir'), join(root, 'AGENTS.md'));
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['AGENTS.md'] }),
+      files: () => ({ 'AGENTS.md': 'template' }),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'AGENTS.md')?.message).toContain('not a regular file');
+    expect(plan.files).toEqual({});
+  });
+
+  it('rejects a special-file target', async () => {
+    if (!(await makeFifo(join(root, 'pipe.md')))) {
+      return;
+    }
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['pipe.md'] }),
+      files: () => ({ 'pipe.md': 'template' }),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'pipe.md')?.message).toContain('not a regular file');
+    expect(plan.files).toEqual({});
+  });
+
+  it('rejects an unreadable file target where permissions can deny reads', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    await writeFile(join(root, 'AGENTS.md'), 'authored');
+    await chmod(join(root, 'AGENTS.md'), 0o000);
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['AGENTS.md'] }),
+      files: () => ({ 'AGENTS.md': 'template' }),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'AGENTS.md')?.message).toContain('cannot be read');
+    expect(plan.files).toEqual({});
+  });
+
+  it('accepts a directory target symlinked to a directory inside the root', async () => {
+    await mkdir(join(root, 'real-dir'), { recursive: true });
+    await symlink(join(root, 'real-dir'), join(root, 'x'));
+    const pack: PracticePack = {
+      id: 'skills',
+      targets: () => ({
+        paths: ['x/SKILL.md'],
+        directories: ['x'],
+        skipChildrenWhenExists: ['x'],
+      }),
+      files: () => ({ 'x/SKILL.md': 'skill' }),
+    };
+    const plan = await planWith(pack);
+    expect(plan.diagnostics).toEqual([]);
+    expect(plan.files).toEqual({});
+    expect(plan.skipped).toEqual(['x']);
+  });
+
+  it('rejects a directory target symlinked to a file', async () => {
+    await writeFile(join(root, 'target.txt'), 'file');
+    await symlink(join(root, 'target.txt'), join(root, 'x'));
+    const pack: PracticePack = {
+      id: 'skills',
+      targets: () => ({ paths: ['x/SKILL.md'], directories: ['x'], skipChildrenWhenExists: ['x'] }),
+      files: () => ({ 'x/SKILL.md': 'skill' }),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'x')?.code).toBe('path.conflict');
+    expect(plan.files).toEqual({});
+  });
+
+  it('rejects a directory target symlinked outside the root', async () => {
+    const outside = await tempDir('dab-practice-outside-');
+    await symlink(outside, join(root, 'x'));
+    const pack: PracticePack = {
+      id: 'skills',
+      targets: () => ({ paths: [], directories: ['x'] }),
+      files: () => ({}),
+    };
+    const plan = await planWith(pack);
+    expect(errorFor(plan, 'x')?.code).toBe('path.conflict');
+    expect(plan.directories).toEqual([]);
+  });
+});
+
+describe('planAuthoredScaffold policy skip safety', () => {
+  it('preserves existing policy-skipped targets without validating or anchoring them', async () => {
+    await writeFile(join(root, 'one.md'), 'authored');
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({
+        paths: ['one.md', 'two.md', 'three.md'],
+        policySkipped: ['one.md', 'two.md'],
+      }),
+      files: (context) => ({
+        'three.md': context.anchors.has('one.md') ? 'anchored existing' : 'no anchor',
+      }),
+    };
+    const plan = await planWith(pack);
+    expect(plan.diagnostics).toEqual([]);
+    expect(plan.skipped).toEqual(['one.md']);
+    expect(plan.policySkipped).toEqual(['two.md']);
+    expect(plan.files).toEqual({ 'three.md': 'no anchor' });
+  });
+
+  it('does not validate a missing policy-skipped target through a dangling parent', async () => {
+    const outside = await tempDir('dab-practice-outside-');
+    await symlink(join(outside, 'missing'), join(root, 'docs'), 'dir');
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['docs/a.md'], policySkipped: ['docs/a.md'] }),
+      files: () => ({ 'docs/a.md': 'template' }),
+    };
+    const plan = await planWith(pack);
+    expect(plan.diagnostics).toEqual([]);
+    expect(plan.files).toEqual({});
+    expect(plan.policySkipped).toEqual(['docs/a.md']);
   });
 });
 

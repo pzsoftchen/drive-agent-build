@@ -59,7 +59,7 @@
 - Produces: `TEMPLATE_PROJECTIONS` without the `.agents/rules/docs-bilingual.md` entry.
 - Produces: `InitOptions['profile']` is `'generic' | 'feature'`; default `generic`.
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 Add to `test/model/manifest.test.ts`:
 
@@ -82,13 +82,13 @@ it('defaults docs.language to auto and rejects unknown values', () => {
 
 Use the existing `validManifest` fixture and remove the old literal `feature` expectation.
 
-- [ ] **Step 2: Run the schema tests to verify they fail**
+- [x] **Step 2: Run the schema tests to verify they fail**
 
 Run: `pnpm vitest run test/model/manifest.test.ts`
 
 Expected: FAIL because `generic`/`docs` are not in `ProjectManifestSchema`.
 
-- [ ] **Step 3: Implement schema and legacy conversion**
+- [x] **Step 3: Implement schema and legacy conversion**
 
 In `src/model/schemas.ts`:
 
@@ -106,7 +106,7 @@ docs: DocsConfigSchema,
 
 Keep `LegacyProjectManifestSchema.profile` as `z.literal('feature')`. In `src/model/project-manifest.ts`, set `docs: legacy.docs ?? { language: 'auto' }` when converting a legacy manifest.
 
-- [ ] **Step 4: Write failing init/default tests**
+- [x] **Step 4: Write failing init/default tests**
 
 Add to `test/commands/init.test.ts`:
 
@@ -143,13 +143,13 @@ it('minimal source uses generic and docs.language auto', () => {
 });
 ```
 
-- [ ] **Step 5: Run the focused tests to verify they fail**
+- [x] **Step 5: Run the focused tests to verify they fail**
 
 Run: `pnpm vitest run test/model/manifest.test.ts test/commands/init.test.ts test/init/adoption.test.ts`
 
 Expected: FAIL on `generic`, `docs`, and the old profile rejection.
 
-- [ ] **Step 6: Implement init/defaults and remove generic bilingual rule**
+- [x] **Step 6: Implement init/defaults and remove generic bilingual rule**
 
 In `src/init/templates.ts`:
 
@@ -180,13 +180,13 @@ In `src/init/adoption.ts`, `minimalManifest` writes `profile: 'generic'` and `do
 
 In `src/commands/init.ts`, change `InitOptions['profile']` to `'generic' | 'feature'` and the default manifest to `generic`/`docs: { language: 'auto' }`. In `src/cli.ts`, parse `--profile generic|feature`, default `generic`, and update the error text/help.
 
-- [ ] **Step 7: Run focused tests to verify they pass**
+- [x] **Step 7: Run focused tests to verify they pass**
 
 Run: `pnpm vitest run test/model/manifest.test.ts test/commands/init.test.ts test/init/adoption.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 8: Run typecheck and commit**
+- [x] **Step 8: Run typecheck and commit**
 
 Run: `pnpm typecheck`
 
@@ -231,7 +231,7 @@ export async function resolveDocsLanguage(input: {
 }): Promise<DocsLanguageResolution>;
 ```
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `test/init/docs-language.test.ts` must cover:
 
@@ -274,13 +274,13 @@ it('ignores code fences and requires 20% plus 8 CJK characters', () => {
 
 Use a fresh temp directory per case; inject `env` rather than mutating `process.env`.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm vitest run test/init/docs-language.test.ts`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement the detector**
+- [x] **Step 3: Implement the detector**
 
 `detectTextLanguage` removes fenced code blocks, samples the title/first paragraph, counts CJK characters (`一-鿿`) over non-whitespace characters, and returns `zh` when `cjk >= 8 && cjk / nonWhitespace >= 0.2`; otherwise `en` if there is any non-whitespace text.
 
@@ -297,13 +297,13 @@ Expected: FAIL because the module does not exist.
 
 Read only; no writes. Ignore unreadable files as no signal.
 
-- [ ] **Step 4: Run focused test and typecheck**
+- [x] **Step 4: Run focused test and typecheck**
 
 Run: `pnpm vitest run test/init/docs-language.test.ts && pnpm typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/init/docs-language.ts test/init/docs-language.test.ts
@@ -380,7 +380,7 @@ export interface AuthoredScaffoldPlan {
 export async function planAuthoredScaffold(input: AuthoredScaffoldInput): Promise<AuthoredScaffoldPlan>;
 ```
 
-- [ ] **Step 1: Write failing planner tests**
+- [x] **Step 1: Write failing planner tests**
 
 `test/init/practice.test.ts` must cover:
 
@@ -421,13 +421,13 @@ it('rejects a target path whose type conflicts', async () => {
 
 Also assert: full core parity with `templateFiles`, adoption core parity with `minimalSourcePlan` files/directories, converge core is empty, and `docsLanguage` is resolved and attached.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm vitest run test/init/practice.test.ts`
 
 Expected: FAIL because `src/init/practice.ts` does not exist.
 
-- [ ] **Step 3: Implement the planner**
+- [x] **Step 3: Implement the planner**
 
 Implement the flow exactly as the design:
 
@@ -448,13 +448,13 @@ Core pack:
 
 Do not read/write target file contents except the read-only language detection; no `.claude` access.
 
-- [ ] **Step 4: Run focused test and typecheck**
+- [x] **Step 4: Run focused test and typecheck**
 
 Run: `pnpm vitest run test/init/practice.test.ts && pnpm typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/init/practice.ts test/init/practice.test.ts
@@ -487,7 +487,7 @@ export function renderArchitectureMd(input: {
 export const documentationPack: PracticePack;
 ```
 
-- [ ] **Step 1: Write failing template tests**
+- [x] **Step 1: Write failing template tests**
 
 `test/init/practice-docs.test.ts` must assert:
 
@@ -527,13 +527,13 @@ it('policy-skips both docs when the bilingual rule exists', async () => {
 
 Also test: missing command emits line-start `TODO: add a <command> command`; TODO is ignored inside code fences; no fabricated component names; global scope target set is empty; existing docs are skipped.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm vitest run test/init/practice-docs.test.ts`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement templates and pack**
+- [x] **Step 3: Implement templates and pack**
 
 `docs/AGENTS.md` template requirements:
 - Title/intro, document structure/tiers, placement, writing rules, slop checklist, verification.
@@ -555,13 +555,13 @@ Pack:
 - `files`: render both in `context.docsLanguage.value`; no pairs.
 - Do not write root `AGENTS.md`; that is core's job.
 
-- [ ] **Step 4: Run focused test and typecheck**
+- [x] **Step 4: Run focused test and typecheck**
 
 Run: `pnpm vitest run test/init/practice-docs.test.ts && pnpm typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/init/practice-docs.ts test/init/practice-docs.test.ts
@@ -591,7 +591,7 @@ export function renderAuthoringSkill(name: (typeof AUTHORING_SKILL_NAMES)[number
 export const authoringPack: PracticePack;
 ```
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```ts
 it('renders schema-valid skills with a dab-skill version marker', async () => {
@@ -627,13 +627,13 @@ it('skips an existing skill directory instead of adding SKILL.md', async () => {
 
 Also test: invalid existing `SKILL.md` is left to existing discovery (do not create/overwrite); non-project scope returns no targets; file at the skill directory path is a path-type error.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm vitest run test/init/practice-authoring.test.ts`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement skills and pack**
+- [x] **Step 3: Implement skills and pack**
 
 Each skill must contain:
 - YAML frontmatter with exact `name` and a trigger-oriented `description`.
@@ -652,13 +652,13 @@ Pack:
 - `files`: SKILL.md content only for missing dirs.
 - `directories`: missing skill dirs.
 
-- [ ] **Step 4: Run focused test and typecheck**
+- [x] **Step 4: Run focused test and typecheck**
 
 Run: `pnpm vitest run test/init/practice-authoring.test.ts && pnpm typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/init/practice-authoring.ts test/init/practice-authoring.test.ts
@@ -683,7 +683,7 @@ git commit -m "feat: add authoring skill pack"
 - Produces: `InitResult.language: DocsLanguageResolution` and JSON top-level `language`.
 - Produces: new root `AGENTS.md` `## Documentation` section only when at least one docs target exists or is planned.
 
-- [ ] **Step 1: Write failing init integration tests**
+- [x] **Step 1: Write failing init integration tests**
 
 Add:
 
@@ -724,13 +724,13 @@ it('reports language in JSON and does not overwrite an existing manifest', async
 
 Also test: existing docs/skills skipped; dry-run plan; global scope no docs/skills; `init --profile feature` writes feature.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm vitest run test/commands/init.test.ts test/commands/init-scope.test.ts`
 
 Expected: FAIL because init still calls `templateFiles()` and no docs/skills are created.
 
-- [ ] **Step 3: Wire init to the planner**
+- [x] **Step 3: Wire init to the planner**
 
 - Add `src/core/version.ts` exporting `DAB_VERSION` read from `package.json`, and use it for the planner `version` and `dab-skill` markers. `src/cli.ts` may reuse it instead of its local package read.
 - Build `proposals` from `proposal?.agentsMdAddition` and `proposal?.agents`.
@@ -750,13 +750,13 @@ Only for project scope; omit if policy-skipped.
 - Add `language` to `InitResult` and print `Language: <value> (source: <source>)` in human output; JSON adds top-level `language`. Dry-run uses the same plan.
 - Keep `init --ai` confirmation flow; no LLM call in planner.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 Run: `pnpm vitest run test/commands/init.test.ts test/commands/init-scope.test.ts && pnpm typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/core/version.ts src/init/practice.ts src/init/templates.ts src/commands/init.ts src/cli.ts test/commands/init.test.ts test/commands/init-scope.test.ts
@@ -790,7 +790,7 @@ export interface NormalizePracticesResult {
 }
 ```
 
-- [ ] **Step 1: Write failing normalize tests**
+- [x] **Step 1: Write failing normalize tests**
 
 Add to `test/commands/normalize-adoption.test.ts`:
 
@@ -830,13 +830,13 @@ it('never overwrites existing docs and is idempotent', async () => {
 
 Also test: dry-run `practices.created` planned/no writes; blocked diagnostics; global normalize omits `practices`; existing feature manifest keeps profile.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm vitest run test/commands/normalize-adoption.test.ts test/commands/normalize.test.ts`
 
 Expected: FAIL because normalize has no docs/skills/practices.
 
-- [ ] **Step 3: Implement adoption/converge integration**
+- [x] **Step 3: Implement adoption/converge integration**
 
 - In `prepareNormalizeAdoption`, call the planner for both phases with `DAB_VERSION` from `src/core/version.ts`:
   - uninitialized/partial: mode `adoption`; use plan files/dirs in place of `minimalSourcePlan` (keep the existing all-or-nothing/import preflight).
@@ -853,13 +853,13 @@ Expected: FAIL because normalize has no docs/skills/practices.
 - Existing docs/skills never overwritten; `--fix` does not touch them.
 - Human output adds `Language: <value> (source: <source>)` once and create/skip lines for practice paths.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 Run: `pnpm vitest run test/commands/normalize-adoption.test.ts test/commands/normalize.test.ts && pnpm typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/init/adoption.ts src/commands/normalize.ts test/commands/normalize-adoption.test.ts test/commands/normalize.test.ts
@@ -894,7 +894,7 @@ git commit -m "feat: converge practice layer during normalize"
   - `practice.docs-path` / `practice.skill-path` error
 - Produces checklist entries with `group: 'Documentation'` and authoring skills in `Skills`.
 
-- [ ] **Step 1: Write failing detect tests**
+- [x] **Step 1: Write failing detect tests**
 
 Add to `test/commands/detect-preflight.test.ts`:
 
@@ -929,13 +929,13 @@ it('reports stale markers as strict but unversioned markers as non-strict/no-nex
 
 Update `test/detect/checklist.test.ts` for the `Documentation` group order.
 
-- [ ] **Step 2: Run focused tests to verify they fail**
+- [x] **Step 2: Run focused tests to verify they fail**
 
 Run: `pnpm vitest run test/detect/practice.test.ts test/commands/detect-preflight.test.ts test/detect/checklist.test.ts`
 
 Expected: FAIL because the group/module/diagnostics do not exist.
 
-- [ ] **Step 3: Implement preflight and initialized checks**
+- [x] **Step 3: Implement preflight and initialized checks**
 
 - Add `Documentation` to `GROUP_ORDER` after `Instructions`.
 - In preflight, call the planner in `adoption` mode with `DAB_VERSION`; for a partial scope with a valid manifest, pass that manifest so its profile and `docs.language` are used; for uninitialized/no-valid-manifest use the default `generic` + `auto`. Derive:
@@ -954,13 +954,13 @@ Expected: FAIL because the group/module/diagnostics do not exist.
 - Global scope returns no docs/skills entries.
 - JSON checklist includes the new groups/entries; `schemaVersion` stays 1.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 Run: `pnpm vitest run test/detect/practice.test.ts test/commands/detect-preflight.test.ts test/commands/detect.test.ts test/detect/checklist.test.ts && pnpm typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/detect/practice.ts src/detect/checklist.ts src/commands/detect.ts src/detect/preflight.ts test/detect/practice.test.ts test/commands/detect-preflight.test.ts test/commands/detect.test.ts test/detect/checklist.test.ts
@@ -979,7 +979,7 @@ git commit -m "feat: report practice layer in detect"
 - Modify: `AGENTS.md` (Documentation link, if not already present)
 - Run: `node dist/cli.js normalize`
 
-- [ ] **Step 1: Add the single-language docs standard**
+- [x] **Step 1: Add the single-language docs standard**
 
 Create `docs/AGENTS.md` (English) from the pack template, adapted to DAB:
 - Document tiers and placement.
@@ -991,11 +991,11 @@ Create `docs/AGENTS.md` (English) from the pack template, adapted to DAB:
 
 Add a `Documentation` link in root `AGENTS.md` pointing to `docs/AGENTS.md` and `docs/architecture.md`.
 
-- [ ] **Step 2: Install the three authoring skills**
+- [x] **Step 2: Install the three authoring skills**
 
 Copy the pack-rendered `dab-*` skill content into `.agents/skills/` (same content as the templates, with the current DAB version marker). Do not modify `docs-bilingual.md` or existing skills.
 
-- [ ] **Step 3: Normalize and verify**
+- [x] **Step 3: Normalize and verify**
 
 Run:
 
@@ -1009,7 +1009,7 @@ pnpm doc-sync
 
 Expected: normalize creates only missing projections/links; detect shows Documentation and Skills OK; `docs/architecture` pairing remains; no `.zh.md`/`.i18n.yaml` for `docs/AGENTS.md`; no bilingual rule removal.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/AGENTS.md AGENTS.md .agents/skills/dab-doc-writing/SKILL.md .agents/skills/dab-architecture-writing/SKILL.md .agents/skills/dab-decision-notes/SKILL.md
@@ -1030,7 +1030,7 @@ git commit -m "docs: dogfood the practice layer"
 - Modify: `docs/superpowers/plans/README.md` (mark plan implemented only after execution)
 - Verify: all tests/typecheck/doc-sync/detect/normalize.
 
-- [ ] **Step 1: Update paired user and architecture docs**
+- [x] **Step 1: Update paired user and architecture docs**
 
 Cover:
 - `init` default `generic`; `feature` alias; `docs.language: auto|en|zh` and detection/reporting.
@@ -1043,7 +1043,7 @@ Cover:
 
 Update English and Chinese in the same change, `.i18n.yaml` records, then run `pnpm run verify-translation-pairing --write`.
 
-- [ ] **Step 2: Add the Agent Note**
+- [x] **Step 2: Add the Agent Note**
 
 Create the English/Chinese/i18n triplet under `.agents/notes/implemented/architecture/` with:
 - Problem: DAB only governed config; docs/skills were not scaffolded.
@@ -1052,7 +1052,7 @@ Create the English/Chinese/i18n triplet under `.agents/notes/implemented/archite
 - Consequences: existing v0.1.1 projects with bilingual rules do not get auto docs; skills are authored copies; no automatic skill updates.
 - Verification: listed commands and test counts.
 
-- [ ] **Step 3: Update CHANGELOG and roadmap**
+- [x] **Step 3: Update CHANGELOG and roadmap**
 
 Add an Unreleased/minor entry for:
 - generic default/feature alias;
@@ -1061,7 +1061,7 @@ Add an Unreleased/minor entry for:
 - normalize docs/skills and new JSON fields;
 - detect Documentation/Skills and strict mapping.
 
-- [ ] **Step 4: Run the full verification**
+- [x] **Step 4: Run the full verification**
 
 ```bash
 pnpm test
@@ -1075,7 +1075,7 @@ git diff --check
 
 Expected: 54+ test files pass (with updated assertions), typecheck 0, doc-sync clean, `detect --strict` exits 0 with score 100% and no undocumented drift, normalize dry-run unchanged, diff check clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs README.md README.zh.md README.i18n.yaml CHANGELOG.md CHANGELOG.zh.md .agents/notes docs/superpowers/plans/README.md

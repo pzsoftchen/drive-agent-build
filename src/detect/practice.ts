@@ -1,10 +1,7 @@
-import type { Stats } from 'node:fs';
-import { lstat, realpath, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
-import { DabError } from '../core/errors.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
-import { assertParentInsideRoot, isPathInside } from '../core/paths.ts';
+import { isPathInside } from '../core/paths.ts';
 import { scanMarkdown, slugifyHeading } from '../docs/markdown.ts';
 import {
   resolveDocsLanguage,
@@ -17,6 +14,13 @@ import {
   type AuthoredScaffoldPlan,
   type PracticePack,
 } from '../init/practice.ts';
+import {
+  authoredDirectoryState,
+  authoredFileProblem,
+  practiceParentProblems,
+  probeLstat,
+  problemMessage,
+} from '../init/practice-paths.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import type { Scope } from '../model/scope.ts';
 import { validateSkillSource } from '../model/skills.ts';
@@ -144,107 +148,11 @@ function practiceLanguage(
   });
 }
 
-type PathProblem = 'parent-not-directory' | 'access-denied' | 'symlink-loop';
-
-function pathProblemFrom(error: unknown): PathProblem | undefined {
-  switch ((error as NodeJS.ErrnoException).code) {
-    case 'ENOTDIR':
-      return 'parent-not-directory';
-    case 'EACCES':
-    case 'EPERM':
-      return 'access-denied';
-    case 'ELOOP':
-      return 'symlink-loop';
-    default:
-      return undefined;
-  }
-}
-
-function problemMessage(path: string, problem: PathProblem): string {
-  switch (problem) {
-    case 'parent-not-directory':
-      return `${path}: a parent component is not a directory`;
-    case 'access-denied':
-      return `${path}: path cannot be accessed`;
-    case 'symlink-loop':
-      return `${path}: path contains a symlink loop`;
-  }
-}
-
-interface PracticeLstat {
-  info: Stats | null;
-  problem?: PathProblem;
-}
-
-/** lstat that turns path-state errors into a governed problem instead of throwing. */
-async function practiceLstat(absolute: string): Promise<PracticeLstat> {
-  try {
-    return { info: await lstat(absolute) };
-  } catch (error) {
-    const problem = pathProblemFrom(error);
-    if (problem !== undefined) {
-      return { info: null, problem };
-    }
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { info: null };
-    }
-    throw error;
-  }
-}
-
-/** stat (following links) used only for parent-directory probes. */
-async function practiceStat(absolute: string): Promise<PracticeLstat> {
-  try {
-    return { info: await stat(absolute) };
-  } catch (error) {
-    const problem = pathProblemFrom(error);
-    if (problem !== undefined) {
-      return { info: null, problem };
-    }
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { info: null };
-    }
-    throw error;
-  }
-}
-
-interface PracticeParentProblem {
-  path: string;
-  message: string;
-}
-
-interface PracticeParentProblems {
-  docs?: PracticeParentProblem;
-  skills?: PracticeParentProblem;
-}
-
-/**
- * The planner stats pack-owned parents: the bilingual rule under `.agents/rules`
- * and each skill directory under `.agents/skills`. A regular file at either
- * parent makes those stats throw ENOTDIR, so probe the parents first and skip
- * only the affected pack.
- */
-async function practiceParentProblems(root: string): Promise<PracticeParentProblems> {
-  const problems: PracticeParentProblems = {};
-  for (const [path, key] of [
-    ['.agents/rules', 'docs'],
-    ['.agents/skills', 'skills'],
-  ] as const) {
-    const result = await practiceStat(join(root, path));
-    if (result.problem !== undefined) {
-      problems[key] = { path, message: problemMessage(path, result.problem) };
-    } else if (result.info !== null && !result.info.isDirectory()) {
-      problems[key] = { path, message: `${path} is not a directory` };
-    }
-  }
-  return problems;
-}
-
 function addParentProblem(
   collector: PracticeCollector,
   language: DocsLanguageResolution,
   group: 'docs' | 'skills',
-  problem: PracticeParentProblem,
+  problem: { path: string; message: string },
 ): void {
   const docs = group === 'docs';
   collector.addDiagnostic({
@@ -338,94 +246,9 @@ function reportPlanConflicts(
   return conflicted;
 }
 
-/**
- * Returns a path problem when the documentation entry is not a regular file
- * that resolves inside the repository. A missing file is handled by the
- * caller, so `undefined` also means "absent".
- */
-async function docPathProblem(root: string, file: string): Promise<string | undefined> {
-  const absolute = join(root, file);
-  const result = await practiceLstat(absolute);
-  if (result.problem !== undefined) {
-    return problemMessage(file, result.problem);
-  }
-  const info = result.info;
-  if (info === null) {
-    return undefined;
-  }
-  try {
-    await assertParentInsideRoot(root, file);
-  } catch (error) {
-    if (error instanceof DabError) {
-      return error.message;
-    }
-    throw error;
-  }
-  if (!info.isSymbolicLink()) {
-    return info.isFile() ? undefined : `documentation path is not a regular file: ${file}`;
-  }
-  try {
-    const real = await realpath(absolute);
-    if (!isPathInside(root, real)) {
-      return `documentation path escapes the repository through a symlink: ${file}`;
-    }
-    return (await stat(absolute)).isFile()
-      ? undefined
-      : `documentation path is not a regular file: ${file}`;
-  } catch (error) {
-    const problem = pathProblemFrom(error);
-    if (problem !== undefined) {
-      return problemMessage(file, problem);
-    }
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return `documentation path is a dangling symlink: ${file}`;
-    }
-    throw error;
-  }
-}
-
-type SkillDirectoryState =
-  | { kind: 'missing' }
-  | { kind: 'directory'; absolute: string }
-  | { kind: 'conflict'; message: string };
-
-async function skillDirectoryState(root: string, name: string): Promise<SkillDirectoryState> {
-  const directory = skillDirectory(name);
-  const absolute = join(root, directory);
-  const result = await practiceLstat(absolute);
-  if (result.problem !== undefined) {
-    return { kind: 'conflict', message: problemMessage(directory, result.problem) };
-  }
-  const info = result.info;
-  if (info === null) {
-    return { kind: 'missing' };
-  }
-  try {
-    await assertParentInsideRoot(root, directory);
-  } catch (error) {
-    if (error instanceof DabError) {
-      return { kind: 'conflict', message: error.message };
-    }
-    throw error;
-  }
-  if (info.isSymbolicLink()) {
-    return {
-      kind: 'conflict',
-      message: `authoring skill path is a symlink and cannot be imported: ${directory}`,
-    };
-  }
-  if (!info.isDirectory()) {
-    return {
-      kind: 'conflict',
-      message: `authoring skill path is not a directory: ${directory}`,
-    };
-  }
-  return { kind: 'directory', absolute };
-}
-
 type SkillFileState =
   | { kind: 'missing' }
-  | { kind: 'invalid' }
+  | { kind: 'invalid'; diagnostics: Diagnostic[] }
   | { kind: 'present'; text: string }
   | { kind: 'conflict'; message: string };
 
@@ -436,45 +259,19 @@ async function skillFileState(
 ): Promise<SkillFileState> {
   const file = skillFile(name);
   const absolute = join(root, file);
-  const result = await practiceLstat(absolute);
-  if (result.problem !== undefined) {
-    return { kind: 'conflict', message: problemMessage(file, result.problem) };
+  const problem = await authoredFileProblem(root, file);
+  if (problem !== undefined) {
+    return { kind: 'conflict', message: problem };
   }
-  const info = result.info;
-  if (info === null) {
+  if ((await probeLstat(absolute)).info === null) {
     return { kind: 'missing' };
-  }
-  if (info.isSymbolicLink()) {
-    try {
-      const real = await realpath(absolute);
-      if (!isPathInside(root, real)) {
-        return {
-          kind: 'conflict',
-          message: `skill file escapes the repository through a symlink: ${file}`,
-        };
-      }
-      if (!(await stat(absolute)).isFile()) {
-        return { kind: 'conflict', message: `skill file is not a regular file: ${file}` };
-      }
-    } catch (error) {
-      const problem = pathProblemFrom(error);
-      if (problem !== undefined) {
-        return { kind: 'conflict', message: problemMessage(file, problem) };
-      }
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return { kind: 'conflict', message: `skill file is a dangling symlink: ${file}` };
-      }
-      throw error;
-    }
-  } else if (!info.isFile()) {
-    return { kind: 'conflict', message: `skill file is not a regular file: ${file}` };
   }
 
   // Existing skill discovery owns invalid frontmatter and unknown fields. The
   // practice check must not add a second entry for the same broken skill.
   const validated = await validateSkillSource(root, directory);
   if (validated.diagnostics.some((item) => item.severity === 'error')) {
-    return { kind: 'invalid' };
+    return { kind: 'invalid', diagnostics: validated.diagnostics };
   }
 
   try {
@@ -589,7 +386,7 @@ async function linkDiagnostics(
     }
     // A path whose parent is a regular file raises ENOTDIR rather than ENOENT.
     // It is a broken link, not an internal error.
-    const targetState = await practiceLstat(target);
+    const targetState = await probeLstat(target);
     if (targetState.problem !== undefined) {
       diagnostics.push(
         linkError(link.line, `link target cannot be resolved (${targetState.problem}): ${link.target}`),
@@ -860,7 +657,7 @@ export async function checkPracticePackages(
     if (conflicted.has(file)) {
       continue;
     }
-    const state = await practiceLstat(join(root, file));
+    const state = await probeLstat(join(root, file));
     if (state.problem !== undefined) {
       addDocsPath(collector, language, file, problemMessage(file, state.problem), MANUAL_PATH_NEXT);
       continue;
@@ -874,7 +671,7 @@ export async function checkPracticePackages(
       continue;
     }
 
-    const problem = await docPathProblem(root, file);
+    const problem = await authoredFileProblem(root, file);
     if (problem !== undefined) {
       addDocsPath(collector, language, file, problem, MANUAL_PATH_NEXT);
       continue;
@@ -975,7 +772,7 @@ export async function checkPracticePackages(
     if (conflicted.has(directory) || conflicted.has(skillFile(name))) {
       continue;
     }
-    const state = await skillDirectoryState(root, name);
+    const state = await authoredDirectoryState(root, directory);
     if (state.kind === 'missing') {
       addSkillMissing(collector, name, NORMALIZE_NEXT);
       continue;
@@ -1079,7 +876,7 @@ export async function preflightPractice(input: {
     if (conflicted.has(file)) {
       continue;
     }
-    const state = await practiceLstat(join(input.root, file));
+    const state = await probeLstat(join(input.root, file));
     if (state.problem !== undefined) {
       addDocsPath(collector, language, file, problemMessage(file, state.problem), MANUAL_PATH_NEXT);
       continue;
@@ -1112,13 +909,35 @@ export async function preflightPractice(input: {
     if (conflicted.has(directory) || conflicted.has(skillFile(name))) {
       continue;
     }
-    const state = await skillDirectoryState(input.root, name);
+    const state = await authoredDirectoryState(input.root, directory);
     if (state.kind === 'missing') {
       addSkillMissing(collector, name, next, false);
       continue;
     }
     if (state.kind === 'conflict') {
       addSkillPath(collector, name, directory, state.message);
+      continue;
+    }
+    const fileState = await skillFileState(input.root, name, state.absolute);
+    if (fileState.kind === 'conflict') {
+      addSkillFileProblem(collector, name, fileState.message);
+      continue;
+    }
+    if (fileState.kind === 'invalid') {
+      // Preflight does not run source discovery, so it reports the invalid
+      // source itself instead of claiming the directory is preserved.
+      for (const diagnostic of fileState.diagnostics) {
+        collector.addDiagnostic(diagnostic);
+      }
+      continue;
+    }
+    if (fileState.kind === 'missing') {
+      collector.addEntry({
+        group: 'Skills',
+        label: name,
+        status: 'warn',
+        detail: 'skill directory has no SKILL.md',
+      });
       continue;
     }
     collector.addEntry({

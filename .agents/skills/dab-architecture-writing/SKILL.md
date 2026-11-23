@@ -28,7 +28,7 @@ Write only what the repository proves. Leave an owner question when the design i
 - When `docs/AGENTS.md` does not exist, read the root `AGENTS.md` and the project rules under `.agents/rules/`. Project rules always win over this skill.
 - The code, tests, configuration and executed commands that can evidence each claim.
 - The owner documents and the links that the change touches.
-- The project documentation language. Write in that one language and do not create translations or pairing records.
+- The project documentation language. Write in that one language; create translations or pairing records only when project rules require them.
 
 ## Evidence and fact-check
 

@@ -61,6 +61,11 @@ import {
   type AuthoredScaffoldPlan,
 } from '../init/practice.ts';
 import { AUTHORING_SKILL_NAMES } from '../init/practice-authoring.ts';
+import {
+  authoredDirectoryState,
+  practiceParentProblems,
+  probeStat,
+} from '../init/practice-paths.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import {
   renderAgentFromProposal,
@@ -163,30 +168,46 @@ interface PendingSkillImportPlan {
 }
 
 /**
- * Init never imports Claude entries. When only `.claude/skills/dab-<name>`
- * exists, writing the authoring template would collide with the physical entry
- * that normalize owns, so drop the template and report an import pending.
+ * Init never imports Claude entries and authoring skills are project-only. An
+ * importable `.claude/skills/dab-<name>` directory is pending for normalize, so
+ * init drops that template. A non-directory entry cannot be imported: drop the
+ * template too and report a governed conflict without an import hint.
  */
 async function pendingSkillImports(
   root: string,
+  scope: Scope,
   plan: AuthoredScaffoldPlan,
 ): Promise<PendingSkillImportPlan> {
   const files = { ...plan.files };
   const directories = [...plan.directories];
   const diagnostics: Diagnostic[] = [];
+  if (scope !== 'project') {
+    return { files, directories, diagnostics };
+  }
   for (const name of AUTHORING_SKILL_NAMES) {
     const source = `.agents/skills/${name}`;
     if ((await lstatOrNull(join(root, source))) !== null) {
       continue;
     }
     const target = `.claude/skills/${name}`;
-    if ((await lstatOrNull(join(root, target))) === null) {
+    const state = await authoredDirectoryState(root, target);
+    if (state.kind === 'missing') {
       continue;
     }
     delete files[`${source}/SKILL.md`];
     const index = directories.indexOf(source);
     if (index !== -1) {
       directories.splice(index, 1);
+    }
+    if (state.kind === 'conflict') {
+      diagnostics.push({
+        code: 'practice.skill-import-conflict',
+        severity: 'error',
+        message: `existing Claude skill path is not an importable directory: ${state.message}`,
+        file: target,
+        hint: `Remove ${target} or replace it with a directory, then rerun dab init.`,
+      });
+      continue;
     }
     diagnostics.push({
       code: 'practice.skill-import-pending',
@@ -517,12 +538,18 @@ function formatInit(result: InitResult): string {
     lines.push(`normalize: ${result.normalize.ok ? 'ok' : 'failed'}`);
   }
   if (result.pending.length > 0) {
-    lines.push('pending generated conflicts:');
+    lines.push('pending conflicts:');
     for (const item of result.pending) {
       lines.push(`  ${item.file ?? '-'} ${item.code} ${item.message}`);
     }
-    lines.push('next: dab normalize --dry-run');
-    if (result.pending.some((item) => item.code !== 'practice.skill-import-pending')) {
+    // A non-importable `.claude` entry and an import pending are resolved by
+    // hand or by plain normalize, never by the destructive `--fix` path.
+    const targetConflicts = result.pending.some(
+      (item) => item.code !== 'practice.skill-import-pending'
+        && item.code !== 'practice.skill-import-conflict',
+    );
+    if (targetConflicts) {
+      lines.push('next: dab normalize --dry-run');
       lines.push('next: dab normalize --fix');
     }
     if (result.pending.some((item) => item.code === 'practice.skill-import-pending')) {
@@ -667,7 +694,16 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   ];
 
   let existingProjections: Projection[] = [];
-  if ((await lstatOrNull(paths.agents)) !== null) {
+  // Discovery reads `.agents/skills` and `.agents/rules`; a regular file at
+  // either parent raises ENOTDIR. The planner reports those conflicts and
+  // blocks every write, so enumeration is skipped instead of failing here.
+  const agentsProbe = await probeStat(paths.agents);
+  const parentProblems = await practiceParentProblems(layout.scopeRoot);
+  if (
+    agentsProbe.info?.isDirectory() === true
+    && parentProblems.docs === undefined
+    && parentProblems.skills === undefined
+  ) {
     const existing = await discoverProjections(layout.scopeRoot, paths);
     const errors = existing.diagnostics.filter((item) => item.severity === 'error');
     if (errors.length > 0) {
@@ -768,7 +804,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     );
   }
 
-  const skillImports = await pendingSkillImports(layout.scopeRoot, plan);
+  const skillImports = await pendingSkillImports(layout.scopeRoot, scope, plan);
   const files = skillImports.files;
   const targets = targetMap(existingProjections);
   for (const agent of proposal?.agents ?? []) {

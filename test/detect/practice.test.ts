@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
@@ -12,6 +12,7 @@ import {
 import { makeGlobalFixture } from '../helpers/global.ts';
 import { populateProject } from '../helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
+import { makeTempDir } from '../helpers/tmp.ts';
 
 const goodRunner: CommandRunner = async () => ({
   stdout: '2.1.325 (Claude Code)\n',
@@ -61,6 +62,7 @@ Run pnpm test.
 
 const projects: ProjectFixture[] = [];
 const homes: string[] = [];
+const dirs: string[] = [];
 
 async function initializedProject(): Promise<ProjectFixture> {
   const project = await makeProject();
@@ -93,6 +95,7 @@ afterEach(async () => {
     projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })),
   );
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 describe('detect practice layer', () => {
@@ -381,6 +384,116 @@ See [nested](architecture.md/child.md).
       ]));
     }
     expect((await detect(project, true)).exitCode).toBe(0);
+  });
+
+  it('governs a regular file at .agents/rules on an initialized project', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await rm(join(project.root, '.agents/rules'), { recursive: true, force: true });
+    await writeProjectFile(project.root, '.agents/rules', 'not a directory\n');
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.docs-path',
+        severity: 'error',
+        file: '.agents/rules',
+      }),
+    ]));
+  });
+
+  it('governs a regular file at .agents/skills on an initialized project', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await rm(join(project.root, '.agents/skills'), { recursive: true, force: true });
+    await writeProjectFile(project.root, '.agents/skills', 'not a directory\n');
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-path',
+        severity: 'error',
+        file: '.agents/skills',
+      }),
+    ]));
+  });
+
+  it('reports a skill directory symlinked to a file as a path error', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await writeProjectFile(project.root, '.agents/skills/real-target.txt', 'not a skill\n');
+    await rm(join(project.root, '.agents/skills/dab-doc-writing'), {
+      recursive: true,
+      force: true,
+    });
+    await symlink(
+      join(project.root, '.agents/skills/real-target.txt'),
+      join(project.root, '.agents/skills/dab-doc-writing'),
+    );
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-path',
+        severity: 'error',
+        file: '.agents/skills/dab-doc-writing',
+      }),
+    ]));
+  });
+
+  it('accepts a skill directory symlinked to a directory inside the root', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    const real = '.agents/skill-sources/dab-doc-writing';
+    await writeProjectFile(
+      project.root,
+      `${real}/SKILL.md`,
+      renderAuthoringSkill('dab-doc-writing', DAB_VERSION),
+    );
+    await rm(join(project.root, '.agents/skills/dab-doc-writing'), {
+      recursive: true,
+      force: true,
+    });
+    await symlink(join(project.root, real), join(project.root, '.agents/skills/dab-doc-writing'));
+
+    const result = await detect(project);
+
+    expect(codes(result)).not.toContain('practice.skill-path');
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Skills',
+        label: 'dab-doc-writing',
+        status: 'ok',
+        detail: `version ${DAB_VERSION}`,
+      }),
+    ]));
+  });
+
+  it('reports a docs file symlinked outside the root as a path error', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    const outside = await makeTempDir('dab-detect-outside-');
+    dirs.push(outside);
+    await writeFile(join(outside, 'AGENTS.md'), '# outside\n');
+    await rm(join(project.root, 'docs/AGENTS.md'), { force: true });
+    await symlink(join(outside, 'AGENTS.md'), join(project.root, 'docs/AGENTS.md'));
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.docs-path',
+        severity: 'error',
+        file: 'docs/AGENTS.md',
+      }),
+    ]));
   });
 
   it('never reports practice entries in global scope', async () => {

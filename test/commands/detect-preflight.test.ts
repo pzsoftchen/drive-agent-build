@@ -307,6 +307,42 @@ describe('detect preflight', () => {
     )).toBe(false);
   });
 
+  it('does not claim an invalid existing authoring skill is ok', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/skills/dab-doc-writing/SKILL.md', '# not a skill\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.diagnostics.map((item) => item.code)).toContain('skill.invalid-frontmatter');
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Skills',
+        label: '.agents/skills/dab-doc-writing/SKILL.md',
+        status: 'error',
+      }),
+    ]));
+    expect(result.checklist.some(
+      (item) => item.group === 'Skills'
+        && item.label === 'dab-doc-writing'
+        && item.status === 'ok',
+    )).toBe(false);
+  });
+
+  it('emits a governed diagnostic for a non-practice path with a file parent', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/policies', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/policies/project.yaml',
+      }),
+    ]));
+  });
+
   it('shows Documentation and authoring skill entries before initialization', async () => {
     const root = await tempDir();
 

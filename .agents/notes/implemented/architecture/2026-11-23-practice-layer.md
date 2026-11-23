@@ -34,14 +34,14 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 
 - Existing v0.1.1 projects with `.agents/rules/docs-bilingual.md` do not receive generated docs. They get `practice.docs-bilingual-policy` warnings and still receive authoring skills; deleting the rule or waiting for a bilingual pack is the migration path.
 - Installed `dab-*` skills are authored copies. A DAB version bump leaves them stale until a person or agent reviews and merges the new text; `dab detect` reports the stale marker but never overwrites the skill.
-- A physical `.claude/skills/dab-*` entry is not duplicated: `init` reports it pending, and `dab normalize` imports it before later runs project it.
+- An importable physical `.claude/skills/dab-*` directory is not duplicated: `init` reports it pending, and `dab normalize` imports it before later runs project it. A non-directory entry is reported as `practice.skill-import-conflict` with no import hint, and init never writes or replaces it.
 - `feature` manifests receive the same practice behavior as `generic`, so a normalize can add docs and skills that did not exist before. `--dry-run` and the `practices` JSON expose the plan first.
 - New generic projects no longer get the bilingual rule. DAB itself keeps the rule, so its own documentation pack is policy-skipped while other projects get single-language docs; project rules win.
 - The detect score includes practice entries, and `--strict` fails on missing or stale practice content except the two non-strict policy and preserved warnings.
 
 ## Verification
 
-- `pnpm test`: 59 test files, 608 tests pass.
+- `pnpm test`: 59 test files, 640 tests pass.
 - `pnpm typecheck`: no errors.
 - `pnpm doc-sync`: pairing, links, wrap, budgets and Agent Note checks pass.
 - `pnpm build`: TypeScript compiles.

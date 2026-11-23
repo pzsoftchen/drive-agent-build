@@ -19,7 +19,7 @@ This skill owns the general workflow only. Project-specific placement and writin
 4. Write current-state prose in the project's single language. Describe what exists now; do not narrate history, planned work or implementation progress.
 5. Slop audit: apply the project's checklist and remove repeated rules, reasoning traces, hand-copied directory trees, emphasis inflation and paragraph walls.
 6. Check that every relative link points to a file that exists and that headings, lists, tables and fenced code stay stable unless the change is about structure.
-7. Do not generate translations or pairing records; the project documentation uses one language.
+7. Do not generate translations or pairing records unless project rules require them; the project documentation uses one language.
 8. Verify with the project commands below and record what you checked.
 
 ## Inputs
@@ -28,7 +28,7 @@ This skill owns the general workflow only. Project-specific placement and writin
 - When `docs/AGENTS.md` does not exist, read the root `AGENTS.md` and the project rules under `.agents/rules/`. Project rules always win over this skill.
 - The code, tests, configuration and executed commands that can evidence each claim.
 - The owner documents and the links that the change touches.
-- The project documentation language. Write in that one language and do not create translations or pairing records.
+- The project documentation language. Write in that one language; create translations or pairing records only when project rules require them.
 
 ## Evidence and fact-check
 
