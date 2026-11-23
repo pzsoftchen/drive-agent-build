@@ -10,6 +10,8 @@ import type { ProjectManifest } from '../model/types.ts';
 import { minimalSourcePlan } from './adoption.ts';
 import type { AiProposalAgent } from './ai-proposal.ts';
 import { resolveDocsLanguage, type DocsLanguageResolution } from './docs-language.ts';
+import { authoringPack } from './practice-authoring.ts';
+import { documentationPack } from './practice-docs.ts';
 import type { ScanResult } from './scanner.ts';
 import { renderAgentFromProposal, templateFiles } from './templates.ts';
 
@@ -84,10 +86,21 @@ function proposalFiles(
   return files;
 }
 
+/**
+ * Root AGENTS.md is core-owned. Anchors contain existing paths plus planned
+ * paths that are not policy-skipped, so the Documentation links only appear
+ * when the docs exist or this plan creates them.
+ */
+function documentationAnchored(context: PracticeContext): boolean {
+  return context.scope === 'project'
+    && (context.anchors.has('docs/AGENTS.md') || context.anchors.has('docs/architecture.md'));
+}
+
 function fullCoreFiles(context: PracticeContext): Record<string, string> {
   return {
     ...templateFiles(context.scan, context.scope, context.proposals?.agentsMdAddition, {
       profile: context.profile,
+      documentation: documentationAnchored(context),
     }),
     ...proposalFiles(context.proposals),
   };
@@ -139,6 +152,16 @@ export const corePack: PracticePack = {
     return {};
   },
 };
+
+/**
+ * Production pack registry. Callers pass this list explicitly so a new pack can
+ * never be silently omitted by the planner's core-only default.
+ */
+export const PRACTICE_PACKS: readonly PracticePack[] = [
+  corePack,
+  documentationPack,
+  authoringPack,
+];
 
 function templateManifest(input: AuthoredScaffoldInput): ProjectManifest | undefined {
   if (input.mode === 'converge') {

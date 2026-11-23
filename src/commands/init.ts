@@ -4,11 +4,12 @@ import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import { runCommand } from '../core/command.ts';
-import { formatDiagnostics, type Diagnostic } from '../core/diagnostics.ts';
+import { formatDiagnostics, hasErrors, type Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
 import { contractJson } from '../core/json.ts';
+import { DAB_VERSION } from '../core/version.ts';
 import {
   assertParentInsideRoot,
   assertRealPathInsideRoot,
@@ -45,10 +46,14 @@ import {
   requestAiProposal,
   type AiProposal,
 } from '../init/ai-proposal.ts';
+import {
+  resolveDocsLanguage,
+  type DocsLanguageResolution,
+} from '../init/docs-language.ts';
+import { PRACTICE_PACKS, planAuthoredScaffold } from '../init/practice.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import {
   renderAgentFromProposal,
-  templateFiles,
   TEMPLATE_PROJECTIONS,
 } from '../init/templates.ts';
 import { normalizeProject, type NormalizeResult } from './normalize.ts';
@@ -81,6 +86,8 @@ export interface InitResult {
   conflicts: Diagnostic[];
   pending: Diagnostic[];
   diagnostics: Diagnostic[];
+  /** Resolved project documentation language and its detection source. */
+  language: DocsLanguageResolution;
   normalize: NormalizeResult | null;
   ai?: {
     applied: boolean;
@@ -97,6 +104,7 @@ function blocked(
   scope: Scope,
   root: string,
   scopeRoot: string,
+  language: DocsLanguageResolution,
   diagnostics: Diagnostic[],
   conflicts: Diagnostic[],
   dryRun = false,
@@ -113,7 +121,18 @@ function blocked(
     conflicts,
     pending: [],
     diagnostics,
+    language,
     normalize: null,
+  };
+}
+
+function policySkipDiagnostic(path: string): Diagnostic {
+  return {
+    code: 'practice.docs-bilingual-policy',
+    severity: 'warning',
+    message: `project bilingual rule skips single-language documentation: ${path}`,
+    file: path,
+    hint: 'Remove .agents/rules/docs-bilingual.md to let DAB scaffold single-language docs.',
   };
 }
 
@@ -324,22 +343,6 @@ async function writeIfMissing(
   created.push(relativePath);
 }
 
-async function planFileWrites(
-  root: string,
-  files: Readonly<Record<string, string>>,
-): Promise<{ created: string[]; skipped: string[] }> {
-  const created: string[] = [];
-  const skipped: string[] = [];
-  for (const relativePath of Object.keys(files).sort()) {
-    if ((await lstatOrNull(join(root, relativePath))) === null) {
-      created.push(relativePath);
-    } else {
-      skipped.push(relativePath);
-    }
-  }
-  return { created, skipped };
-}
-
 function targetMap(existing: readonly Projection[]): Map<string, string> {
   const targets = new Map<string, string>();
   for (const projection of existing) {
@@ -440,6 +443,7 @@ function resolveInitLayout(initRoot: string, scope: Scope, home: string): InitLa
 function formatInit(result: InitResult): string {
   const lines = [
     `dab init ${result.root} scope=${result.scope}${result.dryRun ? ' (dry run)' : ''}`,
+    `Language: ${result.language.value} (source: ${result.language.source})`,
   ];
   if (result.created.length > 0) {
     lines.push(result.dryRun ? 'would create:' : 'created:');
@@ -517,11 +521,15 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   const existingManifest = (await lstatOrNull(layout.manifestPath)) === null
     ? undefined
     : await loadProjectManifest(layout.scopeRoot, { scope });
+  // An authored manifest wins over --profile; init never rewrites it.
+  const resolvedProfile = existingManifest?.manifest.profile
+    ?? options.profile
+    ?? 'generic';
   const manifest: ProjectManifest = existingManifest?.manifest ?? {
     version: 2,
     scope,
     project: { id: scan.projectId, name: scan.projectName },
-    profile: options.profile ?? 'generic',
+    profile: resolvedProfile,
     docs: { language: 'auto' },
     targets: [{
       provider: 'claude-code',
@@ -531,6 +539,11 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     paths: { agents: '.agents', claude: '.claude' },
   };
   const paths: ProjectPaths = resolveProjectPaths(layout.scopeRoot, manifest);
+  const language = await resolveDocsLanguage({
+    root: layout.scopeRoot,
+    configured: existingManifest?.manifest.docs.language ?? 'auto',
+    env: process.env,
+  });
 
   const safety: Diagnostic[] = [];
   try {
@@ -560,7 +573,15 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         message: error.message,
         file: scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml',
       });
-      return blocked(scope, root, layout.scopeRoot, [...scan.diagnostics, ...safety], safety, dryRun);
+      return blocked(
+        scope,
+        root,
+        layout.scopeRoot,
+        language,
+        [...scan.diagnostics, ...safety],
+        safety,
+        dryRun,
+      );
     }
     throw error;
   }
@@ -576,6 +597,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       scope,
       root,
       layout.scopeRoot,
+      language,
       [...scan.diagnostics, ...authored, ...authoredConflicts],
       authoredErrors,
       dryRun,
@@ -595,6 +617,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         scope,
         root,
         layout.scopeRoot,
+        language,
         [...scan.diagnostics, ...existing.diagnostics],
         errors,
         dryRun,
@@ -646,6 +669,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         conflicts: [],
         pending: [],
         diagnostics: preflightDiagnostics,
+        language,
         normalize: null,
         ai: { applied: false, proposal },
       };
@@ -653,13 +677,40 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     aiApplied = true;
   }
 
-  const files = templateFiles(scan, scope, proposal?.agentsMdAddition, {
-    profile: options.profile ?? 'generic',
-  });
-  for (const agent of proposal?.agents ?? []) {
-    files[`.agents/agents/${agent.name}.md`] = renderAgentFromProposal(agent);
+  const proposals = proposal === undefined
+    ? undefined
+    : { agentsMdAddition: proposal.agentsMdAddition, agents: proposal.agents };
+  const plan = await planAuthoredScaffold(
+    {
+      root: layout.scopeRoot,
+      scope,
+      scan,
+      profile: resolvedProfile,
+      mode: 'full',
+      version: DAB_VERSION,
+      env: process.env,
+      ...(existingManifest === undefined ? {} : { manifest: existingManifest.manifest }),
+      ...(proposals === undefined ? {} : { proposals }),
+    },
+    PRACTICE_PACKS,
+  );
+  const planDiagnostics = [
+    ...plan.diagnostics,
+    ...plan.policySkipped.map(policySkipDiagnostic),
+  ];
+  if (hasErrors(plan.diagnostics)) {
+    return blocked(
+      scope,
+      root,
+      layout.scopeRoot,
+      plan.docsLanguage,
+      [...preflightDiagnostics, ...planDiagnostics],
+      plan.diagnostics.filter((item) => item.severity === 'error'),
+      dryRun,
+    );
   }
 
+  const files = plan.files;
   const targets = targetMap(existingProjections);
   for (const agent of proposal?.agents ?? []) {
     targets.set(`.claude/agents/${agent.name}.md`, `.agents/agents/${agent.name}.md`);
@@ -675,7 +726,8 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       scope,
       root,
       layout.scopeRoot,
-      [...preflightDiagnostics, ...generated.fatal],
+      plan.docsLanguage,
+      [...preflightDiagnostics, ...planDiagnostics, ...generated.fatal],
       generated.fatal,
       dryRun,
     );
@@ -683,7 +735,6 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   const pending = generated.pending.map(pendingDiagnostic);
 
   if (dryRun) {
-    const preview = await planFileWrites(layout.scopeRoot, files);
     return {
       ok: true,
       exitCode: ExitCode.Ok,
@@ -691,22 +742,31 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       root,
       scopeRoot: layout.scopeRoot,
       dryRun: true,
-      created: preview.created,
-      skipped: preview.skipped,
+      created: Object.keys(files).sort(),
+      skipped: [...plan.skipped].sort(),
       conflicts: [],
       pending,
-      diagnostics: [...preflightDiagnostics, ...pending],
+      diagnostics: [...preflightDiagnostics, ...planDiagnostics, ...pending],
+      language: plan.docsLanguage,
       normalize: null,
       ...(proposal === undefined ? {} : { ai: { applied: false, proposal } }),
     };
   }
 
-  const created: string[] = [];
-  const skipped: string[] = [];
-  for (const file of Object.keys(files).sort()) {
-    await writeIfMissing(layout.scopeRoot, file, files[file] ?? '', created, skipped);
+  for (const directory of plan.directories) {
+    await ensureDir(join(layout.scopeRoot, directory));
   }
-  await ensureDir(join(paths.agents, 'notes'));
+  const created: string[] = [];
+  const writeSkipped: string[] = [];
+  for (const file of Object.keys(files).sort()) {
+    await writeIfMissing(layout.scopeRoot, file, files[file] ?? '', created, writeSkipped);
+  }
+  const skipped = [...plan.skipped];
+  for (const path of writeSkipped) {
+    if (!skipped.includes(path)) {
+      skipped.push(path);
+    }
+  }
 
   if (pending.length > 0) {
     return {
@@ -720,7 +780,8 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       skipped,
       conflicts: [],
       pending,
-      diagnostics: [...preflightDiagnostics, ...pending],
+      diagnostics: [...preflightDiagnostics, ...planDiagnostics, ...pending],
+      language: plan.docsLanguage,
       normalize: null,
       ...(proposal === undefined ? {} : { ai: { applied: aiApplied, proposal } }),
     };
@@ -735,7 +796,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     suppressImports: true,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
-  const diagnostics = [...scan.diagnostics, ...normalize.diagnostics];
+  const diagnostics = [...scan.diagnostics, ...planDiagnostics, ...normalize.diagnostics];
   return {
     ok: normalize.ok,
     exitCode: normalize.exitCode,
@@ -748,6 +809,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     conflicts: [],
     pending: [],
     diagnostics,
+    language: plan.docsLanguage,
     normalize,
     ...(proposal === undefined ? {} : { ai: { applied: aiApplied, proposal } }),
   };

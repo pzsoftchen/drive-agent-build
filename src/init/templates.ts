@@ -7,11 +7,33 @@ function commandOrTodo(command: string | undefined): string {
   return command ?? 'TODO: add a command';
 }
 
-export function renderAgentsMd(scan: ScanResult, added?: string): string {
+export interface RenderAgentsMdOptions {
+  /**
+   * Project scope only: root AGENTS.md links the documentation scaffold. The
+   * core pack derives this from planner anchors, so a link is never added to a
+   * document that is not planned or already present.
+   */
+  documentation?: boolean;
+}
+
+const DOCUMENTATION_SECTION = `## Documentation
+
+- [docs/AGENTS.md](docs/AGENTS.md)
+- [docs/architecture.md](docs/architecture.md)
+`;
+
+export function renderAgentsMd(
+  scan: ScanResult,
+  added?: string,
+  options: RenderAgentsMdOptions = {},
+): string {
   const sources = scan.sourceDirs.length === 0 ? 'not detected' : scan.sourceDirs.join(', ');
   const addition = added === undefined || added.trim().length === 0
     ? ''
     : `\n${added.trim()}\n`;
+  const documentation = options.documentation === true
+    ? `\n${DOCUMENTATION_SECTION}`
+    : '';
   return `# ${scan.projectName}
 
 ## Project map
@@ -44,7 +66,7 @@ export function renderAgentsMd(scan: ScanResult, added?: string): string {
 3. Run the test command above and report the exact result.
 4. Run \`dab detect\` before handing off configuration changes.
 5. Update project documentation when a user-facing behavior changes.
-${addition}`;
+${documentation}${addition}`;
 }
 
 export function renderImplementerAgent(): string {
@@ -275,12 +297,14 @@ export function templateFiles(
   scan: ScanResult,
   scope: Scope,
   aiAddition?: string,
-  options: { profile?: 'generic' | 'feature' } = {},
+  options: { profile?: 'generic' | 'feature'; documentation?: boolean } = {},
 ): Record<string, string> {
   const agentsMd = scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
   const manifest = scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml';
   return {
-    [agentsMd]: renderAgentsMd(scan, aiAddition),
+    [agentsMd]: renderAgentsMd(scan, aiAddition, {
+      documentation: options.documentation === true,
+    }),
     [manifest]: renderDabYaml(scan, scope, { profile: options.profile ?? 'generic' }),
     '.agents/agents/implementer.md': renderImplementerAgent(),
     '.agents/agents/reviewer.md': renderReviewerAgent(),

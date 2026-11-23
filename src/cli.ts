@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
 import { ExitCode } from './core/exit-codes.ts';
 import { contractJson } from './core/json.ts';
+import { DAB_VERSION } from './core/version.ts';
 import { runDetect } from './commands/detect.ts';
 import { runInit } from './commands/init.ts';
 import { runNormalize } from './commands/normalize.ts';
@@ -14,25 +15,8 @@ import { runPolicyExplain } from './commands/policy-explain.ts';
 import { TARGET_PROVIDERS } from './model/schemas.ts';
 import type { TargetProvider } from './model/types.ts';
 
-function readProgramVersion(): string {
-  const parsed: unknown = JSON.parse(
-    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-  );
-  if (
-    typeof parsed !== 'object'
-    || parsed === null
-    || typeof (parsed as { version?: unknown }).version !== 'string'
-  ) {
-    throw new Error('package.json must declare a string version');
-  }
-  return (parsed as { version: string }).version;
-}
-
-let cachedVersion: string | undefined;
-
 export function programVersion(): string {
-  cachedVersion ??= readProgramVersion();
-  return cachedVersion;
+  return DAB_VERSION;
 }
 
 export interface CliContext {

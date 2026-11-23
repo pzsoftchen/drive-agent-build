@@ -39,6 +39,34 @@ async function packageJson(root: string, name = 'demo-app'): Promise<void> {
   );
 }
 
+function featureManifest(language: 'auto' | 'en' | 'zh'): string {
+  return `version: 2
+scope: project
+project:
+  id: demo-app
+  name: demo-app
+profile: feature
+docs:
+  language: ${language}
+targets:
+  - provider: claude-code
+    enabled: true
+    options:
+      minVersion: 2.1.277
+      instructions: symlink
+paths:
+  agents: .agents
+  claude: .claude
+`;
+}
+
+const PRACTICE_DOC_FILES = ['docs/AGENTS.md', 'docs/architecture.md'] as const;
+const PRACTICE_SKILL_FILES = [
+  '.agents/skills/dab-doc-writing/SKILL.md',
+  '.agents/skills/dab-architecture-writing/SKILL.md',
+  '.agents/skills/dab-decision-notes/SKILL.md',
+] as const;
+
 afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
@@ -60,6 +88,11 @@ describe('runInit', () => {
     const result = await initializeProject({ cwd: root, profile: 'feature' });
     expect(result.ok).toBe(true);
     expect((await loadProjectManifest(root, { scope: 'project' })).manifest.profile).toBe('feature');
+    expect(await readFile(join(root, 'dab.yaml'), 'utf8')).toContain('profile: feature');
+    expect(result.created).toEqual(expect.arrayContaining([
+      'docs/AGENTS.md',
+      '.agents/skills/dab-doc-writing/SKILL.md',
+    ]));
   });
 
   it('creates a full skeleton and normalized Claude Code outputs', async () => {
@@ -513,5 +546,190 @@ describe('runInit', () => {
     expect((await lstat(join(root, '.claude/skills/pdf-tools/SKILL.md'))).isFile()).toBe(true);
     expect(await readFile(join(root, '.claude/agents/extra.md'), 'utf8')).toBe(agent);
     expect(await lstatOrNull(join(root, '.dab'))).toBeNull();
+  });
+
+  it('creates single-language docs and authoring skills by default', async () => {
+    const root = await tempDir();
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.created).toEqual(expect.arrayContaining([
+      ...PRACTICE_DOC_FILES,
+      ...PRACTICE_SKILL_FILES,
+    ]));
+    expect(result.created).not.toContain('docs/AGENTS.zh.md');
+    expect(result.created).not.toContain('.agents/rules/docs-bilingual.md');
+    const agentsMd = await readFile(join(root, 'AGENTS.md'), 'utf8');
+    expect(agentsMd).toContain(
+      '## Documentation\n\n- [docs/AGENTS.md](docs/AGENTS.md)\n- [docs/architecture.md](docs/architecture.md)',
+    );
+    const skill = await readFile(join(root, PRACTICE_SKILL_FILES[0]), 'utf8');
+    expect(skill).toContain('<!-- dab-skill: dab-doc-writing@');
+    expect(['en', 'zh']).toContain(result.language.value);
+    expect((await lstat(join(root, '.claude/skills/dab-doc-writing'))).isSymbolicLink()).toBe(true);
+  });
+
+  it('adds Documentation links when docs exist or are planned', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, 'docs'), { recursive: true });
+    await writeFile(join(root, 'docs/AGENTS.md'), '# Authored docs\n');
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.created).not.toContain('docs/AGENTS.md');
+    expect(result.created).toContain('docs/architecture.md');
+    expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8')).toBe('# Authored docs\n');
+    const agentsMd = await readFile(join(root, 'AGENTS.md'), 'utf8');
+    expect(agentsMd).toContain('## Documentation');
+    expect(agentsMd).toContain('- [docs/architecture.md](docs/architecture.md)');
+  });
+
+  it('does not add the Documentation section when a bilingual rule policy-skips docs', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, '.agents/rules'), { recursive: true });
+    await writeFile(join(root, '.agents/rules/docs-bilingual.md'), 'paired docs');
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.created).not.toContain('docs/AGENTS.md');
+    expect(result.created).not.toContain('docs/architecture.md');
+    expect(result.created).toContain(PRACTICE_SKILL_FILES[0]);
+    expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+    expect(await readFile(join(root, 'AGENTS.md'), 'utf8')).not.toContain('## Documentation');
+    expect(await readFile(join(root, '.agents/rules/docs-bilingual.md'), 'utf8'))
+      .toBe('paired docs');
+    expect(result.diagnostics.map((item) => item.code))
+      .toContain('practice.docs-bilingual-policy');
+    // A docs policy skip never blocks authoring skills or Claude targets.
+    expect((await lstat(join(root, '.claude/CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    expect((await lstat(join(root, '.claude/skills/dab-doc-writing'))).isSymbolicLink()).toBe(true);
+  });
+
+  it('passes --ai proposals through the planner', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    const proposal = {
+      agentsMdAddition: '## AI rules\n\n- Prefer small diffs.\n',
+      agents: [
+        {
+          name: 'ai-helper',
+          description: 'Helps with scoped implementation work.',
+          body: 'You help with scoped implementation work.',
+        },
+      ],
+    };
+    const runner: CommandRunner = async () => ({
+      stdout: JSON.stringify({ result: JSON.stringify(proposal) }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const code = await runInit(
+      { cwd: root, ai: true, json: true, runner, confirm: async () => true },
+      capture().io,
+    );
+
+    expect(code).toBe(0);
+    expect(await lstatOrNull(join(root, '.agents/agents/ai-helper.md'))).not.toBeNull();
+    const agentsMd = await readFile(join(root, 'AGENTS.md'), 'utf8');
+    expect(agentsMd).toContain('## AI rules');
+    expect(agentsMd).toContain('## Documentation');
+    expect((await lstat(join(root, '.claude/agents/ai-helper.md'))).isSymbolicLink()).toBe(true);
+    expect(await readlink(join(root, '.claude/agents/ai-helper.md')))
+      .toContain('.agents/agents/ai-helper.md');
+  });
+
+  it('reports language in JSON and does not overwrite an existing manifest', async () => {
+    const root = await tempDir();
+    await writeFile(join(root, 'dab.yaml'), featureManifest('en'));
+    const captureResult = capture();
+
+    const code = await runInit(
+      { cwd: root, profile: 'generic', json: true },
+      captureResult.io,
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      language: { value: string; source: string };
+      created: string[];
+    };
+    expect(payload.language).toEqual({ value: 'en', source: 'config' });
+    expect(payload.created).not.toContain('dab.yaml');
+    const manifest = await loadProjectManifest(root);
+    expect(manifest.manifest.profile).toBe('feature');
+    expect(manifest.manifest.docs.language).toBe('en');
+    expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8'))
+      .toContain('# Documentation guide');
+  });
+
+  it('reports the resolved language in human output', async () => {
+    const root = await tempDir();
+    await writeFile(join(root, 'dab.yaml'), featureManifest('zh'));
+    const captureResult = capture();
+
+    const code = await runInit({ cwd: root }, captureResult.io);
+
+    expect(code).toBe(0);
+    expect(captureResult.stdout.join('')).toContain('Language: zh (source: config)');
+    expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8')).toContain('# 文档规范');
+  });
+
+  it('skips existing docs and authoring skills without overwriting them', async () => {
+    const root = await tempDir();
+    const authoredSkill = '---\nname: dab-doc-writing\ndescription: Custom.\n---\nCustom.\n';
+    await mkdir(join(root, 'docs'), { recursive: true });
+    await mkdir(join(root, '.agents/skills/dab-doc-writing'), { recursive: true });
+    await writeFile(join(root, 'docs/AGENTS.md'), '# Authored docs\n');
+    await writeFile(
+      join(root, '.agents/skills/dab-doc-writing/SKILL.md'),
+      authoredSkill,
+    );
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.created).not.toContain('docs/AGENTS.md');
+    expect(result.created).not.toContain('.agents/skills/dab-doc-writing/SKILL.md');
+    expect(result.created).toContain('docs/architecture.md');
+    expect(result.created).toContain('.agents/skills/dab-architecture-writing/SKILL.md');
+    expect(result.skipped).toContain('.agents/skills/dab-doc-writing');
+    expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8')).toBe('# Authored docs\n');
+    expect(await readFile(join(root, '.agents/skills/dab-doc-writing/SKILL.md'), 'utf8'))
+      .toBe(authoredSkill);
+  });
+
+  it('plans docs and skills without writing in --dry-run', async () => {
+    const root = await tempDir();
+
+    const result = await initializeProject({ cwd: root, dryRun: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.created).toEqual(expect.arrayContaining([
+      ...PRACTICE_DOC_FILES,
+      ...PRACTICE_SKILL_FILES,
+    ]));
+    expect(result.language.value).toMatch(/^(en|zh)$/);
+    expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+  });
+
+  it('blocks all writes on a planner path conflict', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, 'docs/AGENTS.md'), { recursive: true });
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.conflicts.some((item) => item.code === 'path.conflict')).toBe(true);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing'))).toBeNull();
   });
 });

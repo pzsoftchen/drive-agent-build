@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
-import { runInit } from '../../src/commands/init.ts';
+import { initializeProject, runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
@@ -174,6 +174,26 @@ describe('scope-aware init', () => {
     expect((await lstatOrNull(join(home, '.claude/agents/implementer.md')))?.isSymbolicLink())
       .toBe(true);
     expect(await readFile(join(home, '.agents/dab.yaml'), 'utf8')).toContain('scope: global');
+  });
+
+  it('does not scaffold docs or authoring skills in global scope', async () => {
+    const home = await tempDir('dab-home-init-');
+
+    const result = await initializeProject({
+      cwd: home,
+      path: '.agents',
+      home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.created.some((path) => path.startsWith('docs/'))).toBe(false);
+    expect(result.created.some((path) => path.startsWith('.agents/skills/dab-'))).toBe(false);
+    expect(result.language.value).toMatch(/^(en|zh)$/);
+    expect(await lstatOrNull(join(home, 'docs'))).toBeNull();
+    expect(await lstatOrNull(join(home, '.agents/skills/dab-doc-writing'))).toBeNull();
+    const agentsMd = await readFile(join(home, '.agents/AGENTS.md'), 'utf8');
+    expect(agentsMd).not.toContain('## Documentation');
   });
 
   it('leaves user-level settings and gitignore byte-identical in global scope', async () => {
