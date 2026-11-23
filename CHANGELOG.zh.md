@@ -2,6 +2,13 @@
 
 # 变更日志
 
+## 未发布
+
+- `dab detect` 为未初始化、partial 和已初始化的 project/global scope 输出只读 checklist，包含 `[OK]`、`[MISSING]`、`[WARN]`、`[ERROR]` 和 `[IMPORTABLE]` 状态、score 和 next actions；JSON 追加 `scope`、`root`、`phase`、`profile`、`checklist`、`score` 和 `nextActions`。
+- `dab normalize` 采用缺失的最小 source，并把物理 `.claude/agents` 和 `.claude/skills` 条目导入 `.agents`，将原文件备份到 `.dab/backups/` 后替换为逐项符号链接。非法 import 会阻止所有写入，`--fix` 仍只处理非 import 冲突。
+- Global scope 获得相同的 checklist 和 adoption/import 行为；`~/.claude/settings.json` 和 `$HOME/.gitignore` 保持只读，Global source 完全缺失时仍以 `dab init ~/.agents` 作为显式入口。
+- `dab init` 仍是一次性 full profile 初始化入口；已有项目使用 `dab detect` 和 `dab normalize`。
+
 ## 0.1.1 — 2026-11-23
 
 - 以 `@saydone/dab` 发布 CLI，并增加 GitHub Actions release workflow、npm provenance 和逐 tag 的 GitHub Release。

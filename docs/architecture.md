@@ -42,11 +42,35 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 - `dab init` refuses to create a source root inside an existing one, so a nested `.agents` tree is an error.
 - Project commands write only under the repository root; global commands write only under `$HOME`. A target path outside the scope root is an error.
 
+## Adoption phases
+
+`dab detect` and `dab normalize` resolve a phase before a manifest is required:
+
+| Phase | Markers |
+|---|---|
+| `initialized` | `dab.yaml` parses and `.agents/` exists. |
+| `partial` | Only one marker exists, or `dab.yaml` exists but cannot be parsed. |
+| `uninitialized` | Neither marker exists. |
+
+- A project root is the nearest ancestor with `dab.yaml` or `.agents/`; an uninitialized project uses the nearest `.git` ancestor, falling back to the current directory.
+- Global scope is selected only when the current directory is inside `~/.agents`. The root is `$HOME` and the source root is `~/.agents`; a completely missing `~/.agents` needs `dab init ~/.agents` first.
+- An invalid authored `dab.yaml` is reported as `[ERROR]` and is never overwritten. `normalize` stops with `config.invalid` and zero writes.
+- Adoption writes only missing minimal source files; existing authored files are never replaced.
+- `dab detect` is read-only in every phase. Uninitialized and partial scopes exit `2` with a checklist; initialized scopes keep the normal `0`/`3`/`4` exit codes and `--strict` semantics.
+
+## Detect checklist
+
+- `dab detect` groups entries as Instructions, Agents, Skills, Rules, Policy, Hooks, Memory, Notes, Generated target and Safety.
+- Statuses are `[OK]`, `[MISSING]`, `[WARN]`, `[ERROR]` and `[IMPORTABLE]`. `[IMPORTABLE]` means a physical `.claude/agents` or `.claude/skills` entry can be imported into `.agents`.
+- `score` counts `[OK]` entries over all entries. It is informational and never decides the exit code.
+- `nextActions` are the distinct `next` hints of non-OK entries; a blocked preflight, such as an invalid manifest or a `$HOME` collision, does not suggest `dab normalize`.
+- The JSON payload adds `scope`, `root`, `phase`, `profile`, `checklist`, `score` and `nextActions` while retaining `targets`, `diagnostics` and `summary`; `schemaVersion` stays `1`.
+
 ## Core loop
 
-1. `dab init` scans a repository and writes the authored skeleton for one scope.
-2. `dab normalize` resolves the scope root, prechecks every enabled target, and writes only when all prechecks pass.
-3. `dab detect` checks drift, ownership and scope without writing.
+1. `dab init` scans a repository and writes the full authored skeleton for one scope.
+2. `dab normalize` adopts missing minimal source, imports physical Claude agents and skills, then prechecks every enabled target and writes only when all prechecks pass.
+3. `dab detect` checks drift, ownership, phase and scope without writing.
 4. `dab policy explain --target <provider>` shows the effective result for one target.
 
 ## Targets and adapters
@@ -99,6 +123,17 @@ generated:
 - A configured target with no safe mapping fails with `target.unsupported`. One failing target blocks writes for every target, and `--dry-run` runs the same precheck and exit codes without writing.
 - A root `CLAUDE.md` is user-owned and is always a fatal conflict.
 
+## Normalize adoption and import
+
+- Adoption runs before source-root resolution. An uninitialized or partial scope gets the missing minimal source: `AGENTS.md`, `dab.yaml`, the project policy, the Claude Code policy and the memory index, plus empty agents, skills, rules, hooks and notes directories. It reuses the `init` renderers but creates no profile agents or skills.
+- Import is a controlled migration, not an unmanaged conflict: physical `.claude/agents/*.md` and `.claude/skills/<dir>/SKILL.md` entries are copied into `.agents`, backed up under `.dab/backups/<timestamp>/`, and replaced with per-entry symlinks. `--fix` is not required.
+- `.agents` is the source of truth. An existing source file or skill directory is never overwritten; differing `.claude` content produces a warning, and extra skill files stay in the backup.
+- Import preserves the `.claude` basename or directory name. The frontmatter `name` is the fact id; a mismatch warns but does not rename.
+- All-or-nothing gating covers adoption and import: any invalid candidate or unsafe path blocks every source and `.claude` write. After a later target preflight failure, `.claude` stays untouched; an idempotent source copy may already exist.
+- Imports run for initialized and uninitialized/partial scopes, in project and global scope. In global scope `.claude` entries link into `~/.agents`; `~/.claude/settings.json` and `$HOME/.gitignore` are never read or written.
+- Only agents and skills are imported in this phase. Rules, settings, hooks and instructions remain unmanaged or conflicting `.claude` content and need separate adoption.
+- Imports are idempotent. A run that imports new entries records their projections on the next run; rerunning `dab normalize` makes the generated record and `dab detect` converge.
+
 ## Claude Code instructions
 
 - `.claude/CLAUDE.md` is a symlink to the scope's instructions by default: `../AGENTS.md` in project scope and `../.agents/AGENTS.md` in global scope.
@@ -122,8 +157,9 @@ generated:
 - `src/adapter/types.ts` defines the target adapter contract.
 - `src/adapter/registry.ts` maps provider names to adapters; only `claude-code` is registered.
 - `src/adapter/claude-code/` compiles policy, renders settings and manages instruction and projection artifacts.
-- `src/detect/` contains drift and safety checks.
-- `src/init/` scans repositories and renders templates.
+- `src/adapter/claude-code/adoption.ts` plans and applies agent and skill imports, backups and per-entry symlinks.
+- `src/detect/` contains drift and safety checks, checklist rendering and the uninitialized preflight.
+- `src/init/` scans repositories, renders templates, resolves adoption phases and plans minimal source.
 - `src/docs/` runs the bilingual documentation gates.
 
 ## Generated outputs
@@ -132,7 +168,7 @@ generated:
 - `.claude/CLAUDE.md` is a symlink to the scope's instructions by default, with the generated import shim as an explicit fallback.
 - `.claude/agents/`, `.claude/skills/` and `.claude/rules/` contain per-entry symlinks.
 - `dab.yaml` stores `scope`, `targets` and per-target generated records with source hashes, target hashes and projection lists.
-- `.dab/backups/` stores originals before `--fix` adopts an unmanaged path.
+- `.dab/backups/` stores originals before `--fix` adopts an unmanaged path and before an import replaces a `.claude` entry.
 
 ## Frontmatter compatibility
 
@@ -147,6 +183,7 @@ generated:
 
 - Every command that supports `--json` includes `schemaVersion: 1` at the top level.
 - The version covers the top-level envelope and any nested provider payloads. Commands use different payload shapes (`targets`, `target`, `normalize`); nested payloads do not carry their own version.
+- `detect --json` adds `scope`, `root`, `phase`, `profile`, `checklist`, `score` and `nextActions`; `normalize --json` adds `scope` and `adoption` with source actions, imported entries and backups.
 - `normalize --json` includes an absolute `root`; `init --json` includes `root` (source root) and `scopeRoot` (base for created, skipped and nested normalize paths). All other JSON paths are relative to that base.
 - `--json` cannot be combined with `--help` or `--version`.
 - Releases may add fields; removing a field or changing its meaning requires a new schema version.
@@ -179,6 +216,8 @@ Every published product document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`.
 - Adapters map facts and parse provider options; they never own agent, skill or rule definitions.
 - Unsupported provider semantics fail loudly instead of silently widening permissions; one failing target blocks all writes.
 - DAB does not merge project and global scopes and does not adopt global settings in this phase.
+- DAB imports only `.claude/agents` and `.claude/skills` in this phase; rules, settings, hooks and instructions are not adopted.
+- Global imports write under `$HOME` but never manage `~/.claude/settings.json` or `$HOME/.gitignore`.
 - Path deny rules are tool-level guardrails, not a sandbox; `Bash`, `Grep`, `Glob`, `NotebookEdit` and wrapper commands can bypass them.
 - Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.
 - v0.1 has no eval loop; `docs/roadmap.md` carries evidence work.

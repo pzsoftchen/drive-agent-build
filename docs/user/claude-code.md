@@ -46,6 +46,16 @@ targets:
 - A physical file or directory at a projection target is a conflict even when recorded, and an unrecorded path that does not already match the expected artifact is unmanaged. `dab normalize --fix` backs the path up under `.dab/backups/` before replacing it; without `--fix`, `normalize` refuses to write.
 - `normalize` adopts and records an unrecorded symlink already pointing at the expected source, or an instruction artifact already matching the configured mode, without a rewrite. Identity checks use real paths, so a symlinked `.claude` directory that escapes the scope root fails instead of writing outside it.
 
+## Adoption and import
+
+- `dab normalize` copies physical `.claude/agents/*.md` files and `.claude/skills/<dir>/SKILL.md` directories into the authored `.agents` tree. Rules, `.claude/settings.json`, hooks and `CLAUDE.md` are not imported in this phase.
+- `.agents` is the source of truth. An existing source file or skill directory is never overwritten; when the `.claude` content differs, normalize warns and keeps the `.agents` copy.
+- The original `.claude` entry is backed up under `.dab/backups/<timestamp>/` and replaced with a per-entry symlink. The backup keeps extra skill files that are not merged into `.agents`.
+- Imports use the `.claude` basename or directory name. The frontmatter `name` remains the fact id; a mismatch warns but does not rename the entry.
+- Imports do not need `--fix`. A directory symlink at `.claude/agents` or `.claude/skills` is a conflict because DAB owns entries one by one.
+- Any invalid candidate blocks every write: no source adoption, imports or backups. A run that imports new entries records their projections on the next run, so rerun `dab normalize` to make `dab detect` clean.
+- Global scope uses the same rules under `$HOME`: physical entries under `$HOME/.claude` are imported into `~/.agents` and linked back. `~/.claude/settings.json` and `$HOME/.gitignore` stay read-only.
+
 ## Memory model
 
 - Shared team facts live in `.agents/memory/` and are reviewed in pull requests.
@@ -67,8 +77,9 @@ Project policy is compiled into `.claude/settings.json`. Project deny rules are 
 
 ## Troubleshooting
 
-1. Run `dab detect --json` and read the diagnostics by code.
-2. Run `dab normalize --dry-run` to inspect planned repairs.
-3. Run `dab normalize --fix` only after reviewing backup paths.
-4. Run `dab policy explain --target claude-code --agent <name>` to inspect effective permissions.
-5. Run `dab --help` for the command list.
+1. Run `dab detect --json` and read the diagnostics by code; `[IMPORTABLE]` entries identify `.claude` agents and skills that normalize will adopt.
+2. Run `dab normalize --dry-run` to inspect planned adoption, imports and repairs.
+3. Run `dab normalize` to adopt and import, and rerun it after an import to record the new projections.
+4. Run `dab normalize --fix` only after reviewing backup paths for non-import conflicts.
+5. Run `dab policy explain --target claude-code --agent <name>` to inspect effective permissions.
+6. Run `dab --help` for the command list.

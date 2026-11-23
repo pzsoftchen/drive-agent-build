@@ -2,6 +2,13 @@ English | [中文](CHANGELOG.zh.md)
 
 # Changelog
 
+## Unreleased
+
+- `dab detect` prints a read-only checklist for uninitialized, partial and initialized project and global scopes, with `[OK]`, `[MISSING]`, `[WARN]`, `[ERROR]` and `[IMPORTABLE]` states, a score and next actions; JSON adds `scope`, `root`, `phase`, `profile`, `checklist`, `score` and `nextActions`.
+- `dab normalize` adopts missing minimal source and imports physical `.claude/agents` and `.claude/skills` entries into `.agents`, backing up originals under `.dab/backups/` and replacing them with per-entry symlinks. Invalid imports block every write, and `--fix` still covers non-import conflicts only.
+- Global scope gets the same checklist and adoption/import behavior; `~/.claude/settings.json` and `$HOME/.gitignore` remain read-only and `dab init ~/.agents` is still the explicit entry point for a missing global source.
+- `dab init` remains the one-time full-profile initializer; existing projects use `dab detect` and `dab normalize`.
+
 ## 0.1.1 — 2026-11-23
 
 - Published the CLI as `@saydone/dab` with a GitHub Actions release workflow, npm provenance and a GitHub Release for each tag.
