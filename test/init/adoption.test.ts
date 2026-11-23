@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { resolveAdoptionRoot } from '../../src/init/adoption.ts';
+import { lstatOrNull } from '../../src/core/fs-atomic.ts';
+import {
+  minimalSourcePlan,
+  planSourceWrites,
+  resolveAdoptionRoot,
+  writeSourceFiles,
+} from '../../src/init/adoption.ts';
+import { scanProject } from '../../src/init/scanner.ts';
 import { populateProject } from '../helpers/initialized.ts';
-import { makeProject } from '../helpers/project.ts';
+import { makeProject, writeProjectFile } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
 const dirs: string[] = [];
@@ -122,5 +129,80 @@ paths:
 `);
     const result = await resolveAdoptionRoot({ cwd: join(home, '.agents'), home });
     expect(result).toMatchObject({ scope: 'global', phase: 'initialized', manifestValid: true });
+  });
+});
+
+describe('minimalSourcePlan', () => {
+  it('builds a project minimal source without default agents or skills', async () => {
+    const project = await projectFixture();
+    const scan = await scanProject(project.root);
+    const plan = minimalSourcePlan(scan, 'project');
+    expect(Object.keys(plan.files)).toEqual(expect.arrayContaining([
+      'AGENTS.md',
+      'dab.yaml',
+      '.agents/policies/project.yaml',
+      '.agents/adapters/claude-code.yaml',
+      '.agents/memory/INDEX.md',
+    ]));
+    expect(Object.keys(plan.files).some((file) => file.startsWith('.agents/agents/'))).toBe(false);
+    expect(Object.keys(plan.files).some((file) => file.startsWith('.agents/skills/'))).toBe(false);
+    expect(plan.directories).toEqual([
+      '.agents/agents',
+      '.agents/skills',
+      '.agents/notes',
+      '.agents/rules',
+      '.agents/hooks',
+    ]);
+    expect(plan.manifest.scope).toBe('project');
+    expect(plan.manifest.profile).toBe('feature');
+    expect(plan.manifest.paths).toEqual({ agents: '.agents', claude: '.claude' });
+  });
+
+  it('builds global minimal paths under .agents', async () => {
+    const home = await tempDir();
+    const scan = await scanProject(home);
+    const plan = minimalSourcePlan(scan, 'global');
+    expect(plan.files['.agents/AGENTS.md']).toBeDefined();
+    expect(plan.files['.agents/dab.yaml']).toBeDefined();
+    expect(plan.files['AGENTS.md']).toBeUndefined();
+    expect(plan.manifest.scope).toBe('global');
+  });
+});
+
+describe('writeSourceFiles', () => {
+  it('does not overwrite existing authored files', async () => {
+    const project = await projectFixture();
+    await writeProjectFile(project.root, 'AGENTS.md', 'keep me\n');
+    const scan = await scanProject(project.root);
+    const plan = minimalSourcePlan(scan, 'project');
+    const result = await writeSourceFiles(project.root, plan);
+    expect(result.skipped).toContain('AGENTS.md');
+    expect(result.created).toContain('dab.yaml');
+    expect(await readFile(join(project.root, 'AGENTS.md'), 'utf8')).toBe('keep me\n');
+    for (const directory of plan.directories) {
+      expect((await lstat(join(project.root, directory))).isDirectory()).toBe(true);
+    }
+    expect(await readFile(join(project.root, '.agents/memory/INDEX.md'), 'utf8'))
+      .toBe(plan.files['.agents/memory/INDEX.md']);
+  });
+
+  it('plans writes without touching the filesystem', async () => {
+    const project = await projectFixture();
+    const scan = await scanProject(project.root);
+    const plan = minimalSourcePlan(scan, 'project');
+    const planned = await planSourceWrites(project.root, plan);
+    expect(planned.create).toEqual(Object.keys(plan.files));
+    expect(planned.skip).toEqual([]);
+    expect(await lstatOrNull(join(project.root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('skips every file when the minimal source already exists', async () => {
+    const project = await projectFixture();
+    const scan = await scanProject(project.root);
+    const plan = minimalSourcePlan(scan, 'project');
+    await writeSourceFiles(project.root, plan);
+    const result = await writeSourceFiles(project.root, plan);
+    expect(result.created).toEqual([]);
+    expect(result.skipped).toEqual(Object.keys(plan.files));
   });
 });
