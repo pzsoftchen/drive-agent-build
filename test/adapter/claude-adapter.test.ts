@@ -1,4 +1,5 @@
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { claudeCodeAdapter } from '../../src/adapter/claude-code/adapter.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
@@ -84,6 +85,32 @@ describe('claudeCodeAdapter', () => {
       expect.objectContaining({ code: 'backend.missing', severity: 'warning' }),
     );
     expect(plan.generated.projections).toHaveLength(3);
+  });
+
+  it('does not plan a backup for a target the import step owns', async () => {
+    const project = await makeInitializedProject();
+    projects.push(project);
+    const { manifest, paths, target, facts } = await manifestAndFacts(project);
+    const agentTarget = join(project.root, '.claude/agents/reviewer.md');
+    await rm(agentTarget);
+    await writeFile(
+      agentTarget,
+      '---\nname: reviewer\ndescription: Physical.\n---\nPhysical.\n',
+    );
+
+    const plan = await claudeCodeAdapter.normalize({
+      paths,
+      manifest,
+      target,
+      facts,
+      fix: true,
+      dryRun: true,
+      runner: goodRunner,
+      importedTargets: ['.claude/agents/reviewer.md'],
+    });
+
+    expect(plan.diagnostics.map((item) => item.code)).not.toContain('projection.physical-copy');
+    expect(plan.actions.some((item) => item.includes('.claude/agents/reviewer.md'))).toBe(false);
   });
 
   it('returns per-fact statuses for detect', async () => {

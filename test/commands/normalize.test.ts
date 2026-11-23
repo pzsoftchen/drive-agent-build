@@ -334,6 +334,38 @@ describe('normalizeProject', () => {
     expect(await readFile(join(project.root, backup ?? ''), 'utf8')).toBe('physical copy\n');
   });
 
+  it('imports physical agent and skill copies with --fix', async () => {
+    const project = await projectFixture();
+    const agentTarget = join(project.root, '.claude/agents/reviewer.md');
+    await mkdir(dirname(agentTarget), { recursive: true });
+    await writeFile(
+      agentTarget,
+      '---\nname: reviewer\ndescription: Physical.\n---\nPhysical.\n',
+    );
+    const skillTarget = join(project.root, '.claude/skills/doc-sync');
+    await mkdir(skillTarget, { recursive: true });
+    await writeFile(
+      join(skillTarget, 'SKILL.md'),
+      '---\nname: doc-sync\ndescription: Physical.\n---\nPhysical.\n',
+    );
+
+    const fixed = await normalizeProject({
+      cwd: project.root,
+      fix: true,
+      now: new Date('2026-11-16T12:00:00Z'),
+    });
+
+    expect(fixed.ok).toBe(true);
+    expect(await readlink(agentTarget)).toBe('../../.agents/agents/reviewer.md');
+    expect(await readlink(skillTarget)).toBe('../../.agents/skills/doc-sync');
+    expect(fixed.adoption?.backups.some((item) => item.endsWith('.claude/agents/reviewer.md')))
+      .toBe(true);
+    expect(fixed.adoption?.backups.some((item) => item.endsWith('.claude/skills/doc-sync')))
+      .toBe(true);
+    expect(fixed.backups.some((item) => item.endsWith('.claude/agents/reviewer.md'))).toBe(false);
+    expect(fixed.backups.some((item) => item.endsWith('.claude/skills/doc-sync'))).toBe(false);
+  });
+
   it('blocks agent hooks that do not reference a managed project hook', async () => {
     const project = await projectFixture();
     await writeProjectFile(

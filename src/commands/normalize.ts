@@ -26,7 +26,6 @@ import type {
   TargetNormalizePlan,
   TargetSettingsPlan,
 } from '../adapter/types.ts';
-import type { ClaudeAdoptionEntry } from '../adapter/claude-code/adoption.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
 import { discoverProjections } from '../adapter/claude-code/projection.ts';
 import { checkClaudeCode } from '../adapter/claude-code/version.ts';
@@ -208,26 +207,6 @@ function adoptionExtras(
   adoption: NormalizeAdoptionResult | undefined,
 ): { adoption?: NormalizeAdoptionResult } {
   return adoption === undefined ? {} : { adoption };
-}
-
-/**
- * A physical `.claude/agents/<name>.md` or `.claude/skills/<name>` that the
- * import plan replaces with a symlink is not a normalized projection conflict:
- * the import resolves it. Every other projection conflict still blocks.
- */
-function withoutImportResolvedConflicts(
-  diagnostics: readonly Diagnostic[],
-  imports: readonly ClaudeAdoptionEntry[],
-): Diagnostic[] {
-  if (imports.length === 0) {
-    return [...diagnostics];
-  }
-  const sources = new Set(imports.map((entry) => entry.source));
-  return diagnostics.filter(
-    (item) => item.code !== 'projection.physical-copy'
-      || item.file === undefined
-      || !sources.has(item.file),
-  );
 }
 
 function backupRootFor(root: string, now: Date): string {
@@ -484,17 +463,17 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       fix: options.fix === true,
       dryRun: options.dryRun === true,
       runner,
+      // The import step owns these targets and replaces them after the
+      // preflight, so the adapter must not plan competing backup actions.
+      importedTargets: imports.map((entry) => entry.source),
       ...(options.now === undefined ? {} : { now: options.now }),
     });
     diagnostics.push(...plan.diagnostics);
     plans.push(plan);
   }
 
-  // Import targets that the plan replaces with a symlink are not conflicts; a
-  // blocked run still reports every diagnostic it found.
-  const blockingDiagnostics = withoutImportResolvedConflicts(diagnostics, imports);
-  if (hasErrors(blockingDiagnostics)) {
-    const backendError = blockingDiagnostics.some(
+  if (hasErrors(diagnostics)) {
+    const backendError = diagnostics.some(
       (item) => item.code === 'backend.version' && item.severity === 'error',
     );
     return blockedResult(root, scope, options, diagnostics, {
@@ -514,7 +493,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       exitCode: ExitCode.Ok,
       actions: targets.flatMap((item) => item.actions),
       targets,
-      diagnostics: sortDiagnostics(blockingDiagnostics),
+      diagnostics: sortDiagnostics(diagnostics),
       settings: topLevelSettings(targets),
       shimAction: compatShimAction(targets),
       backups: [],
@@ -534,25 +513,33 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       { ...preparation, sourcePlan: undefined },
       { dryRun: false, backupRoot },
     );
-    adoption = {
-      ...adoption,
-      imports,
-      // Apply returns absolute paths; NormalizeResult paths are root-relative.
-      backups: [
-        ...adoption.backups,
-        ...imported.backups.map((backup) => toPosix(relative(root, resolve(root, backup)))),
-      ],
-      diagnostics: [...adoption.diagnostics, ...imported.diagnostics],
-    };
+    // Apply returns absolute paths; NormalizeResult paths are root-relative.
+    const importedBackups = imported.backups.map(
+      (backup) => toPosix(relative(root, resolve(root, backup))),
+    );
     if (hasErrors(imported.diagnostics)) {
+      // Apply does not report per-entry success, so a failed run claims no
+      // imports; backups and diagnostics still describe what happened.
+      adoption = {
+        ...adoption,
+        imports: [],
+        backups: [...adoption.backups, ...importedBackups],
+        diagnostics: [...adoption.diagnostics, ...imported.diagnostics],
+      };
       return blockedResult(
         root,
         scope,
         options,
-        [...blockingDiagnostics, ...imported.diagnostics],
+        [...diagnostics, ...imported.diagnostics],
         { adoption },
       );
     }
+    adoption = {
+      ...adoption,
+      imports,
+      backups: [...adoption.backups, ...importedBackups],
+      diagnostics: [...adoption.diagnostics, ...imported.diagnostics],
+    };
   }
 
   const targets: TargetNormalizeResult[] = [];
@@ -583,7 +570,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     exitCode: ExitCode.Ok,
     actions: targets.flatMap((item) => item.actions),
     targets,
-    diagnostics: sortDiagnostics(dedupeDiagnostics(blockingDiagnostics)),
+    diagnostics: sortDiagnostics(dedupeDiagnostics(diagnostics)),
     settings: topLevelSettings(targets),
     shimAction: compatShimAction(targets),
     backups: claudeTargetResult(targets)?.backups ?? [],

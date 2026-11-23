@@ -19,10 +19,10 @@ import {
   resolveInside,
   toPosix,
 } from '../../core/paths.ts';
-import { validateAgentSource } from '../../model/agents.ts';
+import { discoverAgents, validateAgentSource } from '../../model/agents.ts';
 import { DiagnosticCodes } from '../../model/diagnostics-codes.ts';
 import type { Scope } from '../../model/scope.ts';
-import { validateSkillSource } from '../../model/skills.ts';
+import { discoverSkills, validateSkillSource } from '../../model/skills.ts';
 import type { ProjectManifest } from '../../model/types.ts';
 
 export interface ClaudeAdoptionEntry {
@@ -216,6 +216,16 @@ function unreadable(
   };
 }
 
+function skillSymlinkEscape(file: string): Diagnostic {
+  return {
+    code: AdoptionCodes.sourceSymlinkEscape,
+    severity: 'error',
+    message: `skill source contains a symlink that escapes the adoption root: ${file}`,
+    file,
+    hint: 'Remove the symlink or point it inside the adoption root before rerunning normalize.',
+  };
+}
+
 async function listFiles(dir: string, prefix = ''): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readDirOrEmpty(dir)) {
@@ -234,7 +244,10 @@ interface CandidatePlan {
   diagnostics: Diagnostic[];
 }
 
-async function planAgents(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
+async function planAgents(
+  input: ClaudeAdoptionInput,
+  authored: ReadonlyMap<string, string>,
+): Promise<CandidatePlan> {
   const sourceDir = join(input.claudeRoot, 'agents');
   const entries: ClaudeAdoptionEntry[] = [];
   const diagnostics: Diagnostic[] = [];
@@ -308,6 +321,18 @@ async function planAgents(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
     }
     names.set(validated.item.name, source);
 
+    // Copying a different `.claude` file into `.agents` must not introduce a
+    // name already used by an authored agent. The same file/target pair is the
+    // existing-entry case and stays importable.
+    const authoredFile = authored.get(validated.item.name);
+    if (authoredFile !== undefined && authoredFile !== target) {
+      diagnostics.push(
+        ...entryDiagnostics,
+        duplicateName('agent', validated.item.name, source, authoredFile),
+      );
+      continue;
+    }
+
     const targetAbs = resolveInside(input.root, target);
     const targetInfo = await lstatOrNull(targetAbs);
     let writeSource = true;
@@ -356,7 +381,10 @@ async function planAgents(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
   return { entries, diagnostics };
 }
 
-async function planSkills(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
+async function planSkills(
+  input: ClaudeAdoptionInput,
+  authored: ReadonlyMap<string, string>,
+): Promise<CandidatePlan> {
   const sourceDir = join(input.claudeRoot, 'skills');
   const entries: ClaudeAdoptionEntry[] = [];
   const diagnostics: Diagnostic[] = [];
@@ -426,6 +454,15 @@ async function planSkills(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
     }
     names.set(validated.item.name, source);
 
+    const authoredDir = authored.get(validated.item.name);
+    if (authoredDir !== undefined && authoredDir !== target) {
+      diagnostics.push(
+        ...entryDiagnostics,
+        duplicateName('skill', validated.item.name, source, authoredDir),
+      );
+      continue;
+    }
+
     const targetAbs = resolveInside(input.root, target);
     const targetInfo = await lstatOrNull(targetAbs);
     let writeSource = true;
@@ -487,6 +524,27 @@ async function planSkills(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
       }
     }
 
+    // A fresh skill directory is copied wholesale, so an escaping symlink is a
+    // plan error: the zero-write gate must see it before copying anything.
+    if (writeSource) {
+      try {
+        const escaping = await findEscapingSymlink(input.root, sourceAbs);
+        if (escaping !== undefined) {
+          diagnostics.push(
+            ...entryDiagnostics,
+            skillSymlinkEscape(relativePath(input.root, escaping)),
+          );
+          continue;
+        }
+      } catch (error) {
+        diagnostics.push(
+          ...entryDiagnostics,
+          unreadable(AdoptionCodes.sourceUnreadable, source, error),
+        );
+        continue;
+      }
+    }
+
     entries.push({
       kind: 'skill',
       name: validated.item.name,
@@ -501,6 +559,35 @@ async function planSkills(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
   return { entries, diagnostics };
 }
 
+interface AuthoredFacts {
+  agents: Map<string, string>;
+  skills: Map<string, string>;
+}
+
+/**
+ * Authored names already used under `.agents`. Only valid discovered items are
+ * indexed; their discovery diagnostics belong to the normalize pipeline.
+ */
+async function authoredFacts(input: ClaudeAdoptionInput): Promise<AuthoredFacts> {
+  const [agents, skills] = await Promise.all([
+    discoverAgents(input.root, input.agentsRoot),
+    discoverSkills(input.root, input.agentsRoot),
+  ]);
+  const agentNames = new Map<string, string>();
+  for (const item of agents.items) {
+    if (!agentNames.has(item.name)) {
+      agentNames.set(item.name, item.file);
+    }
+  }
+  const skillNames = new Map<string, string>();
+  for (const item of skills.items) {
+    if (!skillNames.has(item.name)) {
+      skillNames.set(item.name, item.dir);
+    }
+  }
+  return { agents: agentNames, skills: skillNames };
+}
+
 /**
  * Plan the import of physical `.claude/agents/*.md` files and
  * `.claude/skills/<dir>/SKILL.md` directories into the authored `.agents`
@@ -509,8 +596,9 @@ async function planSkills(input: ClaudeAdoptionInput): Promise<CandidatePlan> {
 export async function planClaudeAdoption(
   input: ClaudeAdoptionInput,
 ): Promise<ClaudeAdoptionPlan> {
-  const agents = await planAgents(input);
-  const skills = await planSkills(input);
+  const authored = await authoredFacts(input);
+  const agents = await planAgents(input, authored.agents);
+  const skills = await planSkills(input, authored.skills);
   const entries = [...agents.entries, ...skills.entries];
   return {
     entries,
@@ -770,13 +858,7 @@ async function applyAdoptionEntry(
     if (entry.kind === 'skill') {
       const escaping = await findEscapingSymlink(context.root, source.absolute);
       if (escaping !== undefined) {
-        const file = relativePath(context.root, escaping);
-        return applyDiagnostic(
-          AdoptionCodes.sourceSymlinkEscape,
-          file,
-          `skill source contains a symlink that escapes the adoption root: ${file}`,
-          'Remove the symlink or point it inside the adoption root before rerunning normalize.',
-        );
+        return skillSymlinkEscape(relativePath(context.root, escaping));
       }
       await copySkillDirectory(source.absolute, target.absolute);
     } else {

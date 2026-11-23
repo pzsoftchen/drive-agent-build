@@ -149,7 +149,10 @@ async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePl
     input.paths.root,
     discovered.projections,
     generatedRecord,
-    { fix: input.fix },
+    {
+      fix: input.fix,
+      importedTargets: new Set(input.importedTargets ?? []),
+    },
   );
 
   const backupTargets = new Set(

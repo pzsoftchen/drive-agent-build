@@ -201,7 +201,7 @@ export async function planProjectionActions(
   root: string,
   projections: readonly Projection[],
   generated?: GeneratedTarget,
-  options: { fix?: boolean } = {},
+  options: { fix?: boolean; importedTargets?: ReadonlySet<string> } = {},
 ): Promise<ProjectionPlan> {
   const actions: ProjectionAction[] = [];
   const conflicts: Diagnostic[] = [];
@@ -209,6 +209,7 @@ export async function planProjectionActions(
     (generated?.projections ?? []).map((projection) => [projection.target, projection]),
   );
   const expectedTargets = new Set(projections.map((projection) => projection.target));
+  const importedTargets = options.importedTargets ?? new Set<string>();
 
   for (const projection of projections) {
     let targetAbs: string;
@@ -229,6 +230,11 @@ export async function planProjectionActions(
 
     const actual = await lstatOrNull(targetAbs);
     const isManaged = managed.has(projection.target);
+    if (importedTargets.has(projection.target)) {
+      // The adoption import owns this entry: it backs the existing target up
+      // and installs the per-entry symlink after this plan is gated.
+      continue;
+    }
     if (actual === null) {
       actions.push({ type: 'create-link', projection, linkTarget });
       if (!isManaged) {
@@ -270,7 +276,7 @@ export async function planProjectionActions(
   }
 
   for (const [target, projection] of managed) {
-    if (expectedTargets.has(target)) {
+    if (expectedTargets.has(target) || importedTargets.has(target)) {
       continue;
     }
     let targetAbs: string;

@@ -59,6 +59,10 @@ function agentSource(name: string, description: string): string {
   return `---\nname: ${name}\ndescription: ${description}\n---\n${name}.\n`;
 }
 
+function skillSource(name: string, description: string): string {
+  return `---\nname: ${name}\ndescription: ${description}\n---\n${name}.\n`;
+}
+
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -457,5 +461,219 @@ describe('normalize import adoption', () => {
     expect(result.adoption?.backups).toEqual([]);
     expect(await lstatOrNull(join(project.root, '.agents/agents/extra.md'))).toBeNull();
     expect((await lstat(join(project.root, '.claude/agents/extra.md'))).isFile()).toBe(true);
+  });
+
+  it('writes nothing when a fresh skill symlink escapes the root', async () => {
+    const root = await tempDir('dab-adopt-import-escape-');
+    const outside = await tempDir('dab-adopt-escape-outside-');
+    await writeProjectFile(outside, 'secret.txt', 'secret\n');
+    await writeProjectFile(root, '.claude/agents/extra.md', agentSource('extra', 'Extra.'));
+    await writeProjectFile(root, '.claude/skills/bad/SKILL.md', skillSource('bad', 'Bad.'));
+    await symlink(outside, join(root, '.claude/skills/bad/leak'));
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map((item) => item.code))
+      .toContain('adoption.source-symlink-escape');
+    expect(result.adoption?.imports).toEqual([]);
+    expect(result.adoption?.backups).toEqual([]);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/agents/extra.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/skills/bad'))).toBeNull();
+    expect((await lstat(join(root, '.claude/agents/extra.md'))).isFile()).toBe(true);
+    expect((await lstat(join(root, '.claude/skills/bad'))).isDirectory()).toBe(true);
+    expect(await lstatOrNull(join(root, '.dab'))).toBeNull();
+  });
+
+  it('keeps .claude untouched when an initialized skill symlink escapes', async () => {
+    const project = await initializedProject();
+    const outside = await tempDir('dab-adopt-escape-outside-');
+    await writeProjectFile(outside, 'secret.txt', 'secret\n');
+    await writeFile(join(project.root, '.claude/agents/extra.md'), agentSource('extra', 'Extra.'));
+    await writeProjectFile(project.root, '.claude/skills/bad/SKILL.md', skillSource('bad', 'Bad.'));
+    await symlink(outside, join(project.root, '.claude/skills/bad/leak'));
+    const settingsBefore = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map((item) => item.code))
+      .toContain('adoption.source-symlink-escape');
+    expect(result.adoption?.imports).toEqual([]);
+    expect(result.adoption?.backups).toEqual([]);
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settingsBefore);
+    expect(await lstatOrNull(join(project.root, '.agents/agents/extra.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/bad'))).toBeNull();
+    expect((await lstat(join(project.root, '.claude/agents/extra.md'))).isFile()).toBe(true);
+  });
+
+  it('replaces a physical agent over an existing source with --fix', async () => {
+    const project = await initializedProject();
+    const target = join(project.root, '.claude/agents/reviewer.md');
+    const physical = agentSource('reviewer', 'Physical.');
+    await rm(target);
+    await writeFile(target, physical);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(await readlink(target)).toBe('../../.agents/agents/reviewer.md');
+    expect(await readFile(join(project.root, '.agents/agents/reviewer.md'), 'utf8'))
+      .toContain('description: Reviews changes.');
+    const backup = result.adoption?.backups.find(
+      (item) => item.endsWith('.claude/agents/reviewer.md'),
+    );
+    expect(backup).toMatch(/^\.dab\/backups\//);
+    expect(await readFile(join(project.root, backup ?? ''), 'utf8')).toBe(physical);
+    expect(result.backups.some((item) => item.endsWith('.claude/agents/reviewer.md')))
+      .toBe(false);
+  });
+
+  it('replaces a physical skill over an existing source with --fix', async () => {
+    const project = await initializedProject();
+    const target = join(project.root, '.claude/skills/doc-sync');
+    const physical = skillSource('doc-sync', 'Physical.');
+    await rm(target, { recursive: true });
+    await mkdir(target, { recursive: true });
+    await writeFile(join(target, 'SKILL.md'), physical);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readlink(target)).toBe('../../.agents/skills/doc-sync');
+    expect(await readFile(join(project.root, '.agents/skills/doc-sync/SKILL.md'), 'utf8'))
+      .toContain('description: Keeps docs paired.');
+    const backup = result.adoption?.backups.find(
+      (item) => item.endsWith('.claude/skills/doc-sync'),
+    );
+    expect(backup).toMatch(/^\.dab\/backups\//);
+    expect(await readFile(join(project.root, backup ?? '', 'SKILL.md'), 'utf8'))
+      .toBe(physical);
+    expect(result.backups.some((item) => item.endsWith('.claude/skills/doc-sync')))
+      .toBe(false);
+  });
+
+  it('imports physical global entries with --fix into a temp HOME', async () => {
+    const fixture = await globalFixture();
+    const home = fixture.home;
+    const settings = '{"permissions":{}}\n';
+    await writeProjectFile(home, '.claude/settings.json', settings);
+    await writeProjectFile(home, '.claude/agents/reviewer.md', agentSource('reviewer', 'Physical.'));
+    await writeProjectFile(
+      home,
+      '.claude/skills/doc-sync/SKILL.md',
+      skillSource('doc-sync', 'Physical.'),
+    );
+
+    const result = await normalizeProject({
+      cwd: join(home, '.agents'),
+      home,
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readlink(join(home, '.claude/agents/reviewer.md')))
+      .toBe('../../.agents/agents/reviewer.md');
+    expect(await readlink(join(home, '.claude/skills/doc-sync')))
+      .toBe('../../.agents/skills/doc-sync');
+    expect(await readFile(join(home, '.agents/agents/reviewer.md'), 'utf8'))
+      .toContain('description: Reviews changes.');
+    expect(await readFile(join(home, '.agents/skills/doc-sync/SKILL.md'), 'utf8'))
+      .toContain('description: Keeps docs paired.');
+    expect(await readFile(join(home, '.claude/settings.json'), 'utf8')).toBe(settings);
+    expect(await lstatOrNull(join(home, '.gitignore'))).toBeNull();
+  });
+
+  it('blocks an import that duplicates an authored agent name', async () => {
+    const project = await initializedProject();
+    await writeFile(
+      join(project.root, '.claude/agents/other-reviewer.md'),
+      agentSource('reviewer', 'Duplicate.'),
+    );
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.duplicate-name');
+    expect(await lstatOrNull(join(project.root, '.agents/agents/other-reviewer.md'))).toBeNull();
+    expect((await lstat(join(project.root, '.claude/agents/other-reviewer.md'))).isFile())
+      .toBe(true);
+    expect(result.adoption?.imports).toEqual([]);
+    expect(result.adoption?.backups).toEqual([]);
+  });
+
+  it('blocks an import that duplicates an authored skill name', async () => {
+    const project = await initializedProject();
+    await writeProjectFile(
+      project.root,
+      '.claude/skills/other-sync/SKILL.md',
+      skillSource('doc-sync', 'Duplicate.'),
+    );
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map((item) => item.code)).toContain('skill.duplicate-name');
+    expect(await lstatOrNull(join(project.root, '.agents/skills/other-sync'))).toBeNull();
+    expect(result.adoption?.imports).toEqual([]);
+  });
+
+  it('writes no source when a partial project imports a duplicate name', async () => {
+    const project = await projectFixture();
+    await writeProjectFile(
+      project.root,
+      '.agents/agents/reviewer.md',
+      agentSource('reviewer', 'Authored.'),
+    );
+    await writeProjectFile(
+      project.root,
+      '.claude/agents/other-reviewer.md',
+      agentSource('reviewer', 'Duplicate.'),
+    );
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.adoption?.phase).toBe('partial');
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.duplicate-name');
+    expect(await lstatOrNull(join(project.root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/agents/other-reviewer.md'))).toBeNull();
   });
 });

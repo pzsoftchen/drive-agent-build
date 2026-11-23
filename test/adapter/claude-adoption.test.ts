@@ -257,6 +257,88 @@ describe('planClaudeAdoption', () => {
     expect(result.diagnostics.filter((item) => item.severity === 'error')).toEqual([]);
   });
 
+  it('rejects an escaping skill symlink at plan time', async () => {
+    const fixture = await project();
+    const outside = await tempDir();
+    await writeProjectFile(outside, 'secret.txt', 'secret\n');
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await writeProjectFile(fixture.root, '.claude/skills/pdf-tools/nested/keep.txt', 'keep\n');
+    await symlink(outside, join(fixture.root, '.claude/skills/pdf-tools/nested/leak'));
+
+    const result = await plan(fixture);
+
+    expect(result.entries).toEqual([]);
+    expect(result.diagnostics.find((item) => item.code === 'adoption.source-symlink-escape'))
+      .toMatchObject({
+        severity: 'error',
+        file: '.claude/skills/pdf-tools/nested/leak',
+      });
+  });
+
+  it('plans a fresh skill with an internal symlink', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/pdf-tools/SKILL.md',
+      skill('pdf-tools', 'PDF.', 'PDF.'),
+    );
+    await writeProjectFile(fixture.root, '.claude/skills/pdf-tools/data.txt', 'data\n');
+    await symlink('data.txt', join(fixture.root, '.claude/skills/pdf-tools/helper.txt'));
+
+    const result = await plan(fixture);
+
+    expect(result.entries).toContainEqual(expect.objectContaining({
+      kind: 'skill',
+      target: '.agents/skills/pdf-tools',
+      writeSource: true,
+    }));
+    expect(result.diagnostics.filter((item) => item.severity === 'error')).toEqual([]);
+  });
+
+  it('rejects an agent whose name duplicates an authored file', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/agents/reviewer.md',
+      agent('reviewer', 'Authored.', 'Authored.'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.claude/agents/other.md',
+      agent('reviewer', 'Duplicate.', 'Duplicate.'),
+    );
+
+    const result = await plan(fixture);
+
+    expect(result.entries).toEqual([]);
+    expect(result.diagnostics.find((item) => item.code === 'agent.duplicate-name'))
+      .toMatchObject({ severity: 'error', file: '.claude/agents/other.md' });
+  });
+
+  it('rejects a skill whose name duplicates an authored skill', async () => {
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/skills/doc-sync/SKILL.md',
+      skill('doc-sync', 'Authored.', 'Authored.'),
+    );
+    await writeProjectFile(
+      fixture.root,
+      '.claude/skills/other-sync/SKILL.md',
+      skill('doc-sync', 'Duplicate.', 'Duplicate.'),
+    );
+
+    const result = await plan(fixture);
+
+    expect(result.entries).toEqual([]);
+    expect(result.diagnostics.find((item) => item.code === 'skill.duplicate-name'))
+      .toMatchObject({ severity: 'error', file: '.claude/skills/other-sync' });
+  });
+
   it('rejects duplicate frontmatter names across candidates', async () => {
     const fixture = await project();
     await writeProjectFile(
@@ -437,7 +519,7 @@ describe('applyClaudeAdoption', () => {
       .toMatchObject({ severity: 'error', file: '.agents/agents/reviewer.md' });
   });
 
-  it('rejects a skill symlink that escapes the root without copying', async () => {
+  it('rejects a skill symlink that appears after planning without copying', async () => {
     const fixture = await project();
     const outside = await tempDir();
     await writeProjectFile(outside, 'secret.txt', 'secret\n');
@@ -447,8 +529,9 @@ describe('applyClaudeAdoption', () => {
       skill('pdf-tools', 'PDF.', 'PDF.'),
     );
     await writeProjectFile(fixture.root, '.claude/skills/pdf-tools/nested/keep.txt', 'keep\n');
-    await symlink(outside, join(fixture.root, '.claude/skills/pdf-tools/nested/leak'));
     const claudePlan = await plan(fixture);
+    // A stale plan must still reject an escaping link that appeared afterwards.
+    await symlink(outside, join(fixture.root, '.claude/skills/pdf-tools/nested/leak'));
 
     const applied = await apply(fixture, claudePlan);
 
@@ -461,7 +544,7 @@ describe('applyClaudeAdoption', () => {
       .toMatchObject({ severity: 'error', file: '.claude/skills/pdf-tools/nested/leak' });
   });
 
-  it('rejects a chained symlink that escapes through a symlink and dot-dot', async () => {
+  it('rejects a chained symlink that appears after planning', async () => {
     const fixture = await project();
     await writeProjectFile(
       fixture.root,
@@ -473,8 +556,9 @@ describe('applyClaudeAdoption', () => {
       join(fixture.root, '.claude/agents'),
       join(fixture.root, '.claude/skills/pdf-tools/s'),
     );
-    await symlink('s/../../../etc/passwd', join(fixture.root, '.claude/skills/pdf-tools/t'));
     const claudePlan = await plan(fixture);
+    // `s/..` expands through the in-root symlink; the remaining `..` escapes.
+    await symlink('s/../../../etc/passwd', join(fixture.root, '.claude/skills/pdf-tools/t'));
 
     const applied = await apply(fixture, claudePlan);
 
