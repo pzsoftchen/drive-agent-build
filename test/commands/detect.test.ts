@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path';
 import { detectProject, runDetect } from '../../src/commands/detect.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
+import { DAB_VERSION } from '../../src/core/version.ts';
+import {
+  AUTHORING_SKILL_NAMES,
+  renderAuthoringSkill,
+} from '../../src/init/practice-authoring.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
 import { populateProject } from '../helpers/initialized.ts';
 import { makeInitializedProject } from '../helpers/initialized.ts';
@@ -28,6 +33,63 @@ const goodRunner: CommandRunner = async () => ({
 const missingRunner: CommandRunner = async () => {
   throw new Error('ENOENT');
 };
+
+const cleanDocumentation = {
+  'docs/AGENTS.md': '# Documentation guide\n\nOne place per fact. Write in English only.\n',
+  'docs/architecture.md': `# Architecture
+
+## Project facts
+
+- Project: Demo
+
+## System purpose
+
+DAB verifies the practice layer.
+
+## Composition
+
+One module.
+
+## Runtime flow
+
+Detect reads authored files.
+
+## Module boundaries
+
+Single module.
+
+## Extension points
+
+None.
+
+## Invariants
+
+Tests pass.
+
+## Verification
+
+Run pnpm test.
+`,
+} as const;
+
+/**
+ * A practice-complete project: clean docs and current authoring skills with
+ * projection records. Tests that observe unrelated warnings need this state so
+ * the practice warnings do not decide their exit code.
+ */
+async function completePractice(project: ProjectFixture): Promise<void> {
+  for (const [path, content] of Object.entries(cleanDocumentation)) {
+    await writeProjectFile(project.root, path, content);
+  }
+  for (const name of AUTHORING_SKILL_NAMES) {
+    await writeProjectFile(
+      project.root,
+      `.agents/skills/${name}/SKILL.md`,
+      renderAuthoringSkill(name, DAB_VERSION),
+    );
+  }
+  await normalizeProject({ cwd: project.root, runner: goodRunner });
+}
 
 const oldRunner: CommandRunner = async () => ({
   stdout: '2.1.100 (Claude Code)\n',
@@ -80,6 +142,7 @@ describe('detectProject', () => {
 
   it('warns but does not fail when Claude Code is missing', async () => {
     const project = await initialized();
+    await completePractice(project);
     const result = await detectProject(detectOptions(project, missingRunner));
     const strict = await detectProject({
       ...detectOptions(project, missingRunner),
@@ -486,10 +549,22 @@ describe('runDetect', () => {
     expect(payload.checklist).toEqual(expect.arrayContaining([
       expect.objectContaining({ group: 'Instructions', label: 'AGENTS.md', status: 'ok' }),
       expect.objectContaining({ group: 'Agents', label: 'reviewer', status: 'ok' }),
+      expect.objectContaining({
+        group: 'Documentation',
+        label: 'docs/AGENTS.md',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+      expect.objectContaining({
+        group: 'Skills',
+        label: 'dab-architecture-writing',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
     ]));
     expect(payload.score.ok).toBeGreaterThan(0);
     expect(payload.score.total).toBeGreaterThanOrEqual(payload.score.ok);
-    expect(payload.nextActions).toEqual([]);
+    expect(payload.nextActions).toEqual(['dab normalize']);
 
     await writeProjectFile(project.root, 'CLAUDE.md', '# user\n');
     const failing: string[] = [];
@@ -557,8 +632,36 @@ describe('runDetect', () => {
     expect(text).toContain('score:');
   });
 
+  it('reports missing practice docs and skills in initialized projects', async () => {
+    const project = await initialized();
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'practice.docs-missing', severity: 'warning' }),
+      expect.objectContaining({ code: 'practice.skill-missing', severity: 'warning' }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Documentation',
+        label: 'docs/AGENTS.md',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+      expect.objectContaining({
+        group: 'Skills',
+        label: 'dab-architecture-writing',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(3);
+  });
+
   it('maps initialized diagnostics into checklist entries', async () => {
     const project = await initialized();
+    await completePractice(project);
     await writeProjectFile(project.root, 'CLAUDE.md', '# user instructions\n');
 
     const result = await detectProject(detectOptions(project));

@@ -49,6 +49,7 @@ describe('buildChecklist', () => {
       { group: 'Agents', label: 'agent-a', status: 'ok' },
       { group: 'Skills', label: 'skill-a', status: 'ok' },
       { group: 'Instructions', label: 'AGENTS.md', status: 'ok' },
+      { group: 'Documentation', label: 'docs/AGENTS.md', status: 'ok' },
       { group: 'Generated target', label: '.claude', status: 'ok' },
     ];
     const checklist = buildChecklist({
@@ -60,6 +61,7 @@ describe('buildChecklist', () => {
 
     expect(checklist.entries.map((entry) => entry.label)).toEqual([
       'AGENTS.md',
+      'docs/AGENTS.md',
       'agent-a',
       'skill-b',
       'skill-a',
@@ -70,6 +72,7 @@ describe('buildChecklist', () => {
       'agent-a',
       'skill-a',
       'AGENTS.md',
+      'docs/AGENTS.md',
       '.claude',
     ]);
   });

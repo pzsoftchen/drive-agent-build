@@ -38,6 +38,7 @@ export interface ChecklistInput {
  */
 const GROUP_ORDER: readonly string[] = [
   'Instructions',
+  'Documentation',
   'Agents',
   'Skills',
   'Rules',

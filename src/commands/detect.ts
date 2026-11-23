@@ -10,6 +10,7 @@ import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
 import { contractJson } from '../core/json.ts';
+import { DAB_VERSION } from '../core/version.ts';
 import {
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
@@ -40,6 +41,11 @@ import {
   type ChecklistEntry,
   type ChecklistStatus,
 } from '../detect/checklist.ts';
+import {
+  checkPracticePackages,
+  isAuthoringSkillName,
+  PRACTICE_NON_STRICT_WARNING_CODES,
+} from '../detect/practice.ts';
 import { preflightProject, type PreflightResult } from '../detect/preflight.ts';
 import { resolveAdoptionRoot, type AdoptionPhase } from '../init/adoption.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
@@ -228,7 +234,9 @@ function nextFromHint(hint: string | undefined): string | undefined {
 
 function diagnosticEntries(diagnostics: readonly Diagnostic[]): ChecklistEntry[] {
   return diagnostics
-    .filter((item) => !REPRESENTED_CODES.has(item.code))
+    // Practice diagnostics are represented by the practice entries built from
+    // the same check results. Mapping them again would duplicate the report.
+    .filter((item) => !REPRESENTED_CODES.has(item.code) && !item.code.startsWith('practice.'))
     .map((diagnostic) => {
       const next = nextFromHint(diagnostic.hint);
       return {
@@ -383,7 +391,9 @@ function buildResult(input: {
   );
   const warningFailure = input.strict === true
     && diagnostics.some(
-      (item) => item.severity === 'warning' && !ENVIRONMENT_WARNING_CODES.has(item.code),
+      (item) => item.severity === 'warning'
+        && !ENVIRONMENT_WARNING_CODES.has(item.code)
+        && !PRACTICE_NON_STRICT_WARNING_CODES.has(item.code),
     );
   const exitCode = backendError
     ? ExitCode.Backend
@@ -489,6 +499,18 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     throw error;
   }
 
+  // Practice entries own the Documentation group and the dab-* authoring skill
+  // entries in Skills. They run after the source-root safety checks so detect
+  // never plans through an escaping or disjoint authored tree.
+  const practice = await checkPracticePackages(
+    root,
+    sourceRoot.scope,
+    loaded.manifest,
+    paths,
+    DAB_VERSION,
+  );
+  diagnostics.push(...practice.diagnostics);
+
   // Imports run on every normalize, including initialized scopes. Detect runs
   // the same read-only plan so an importable physical entry is reported as
   // [IMPORTABLE] instead of as an unmanaged or physical-copy projection.
@@ -572,9 +594,18 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     profile,
     entries: [
       ...await inventoryEntries(root, paths, diagnostics),
+      ...practice.entries,
       ...importPlan.entries.map((entry) => importEntry(entry)),
       ...targets.flatMap((outcome) =>
-        outcome.statuses.map((status) => statusEntry(status, diagnostics))),
+        outcome.statuses
+          // The practice entries above report dab-* authoring skills with
+          // their version state; the target status would duplicate the label.
+          .filter((status) => !(
+            sourceRoot.scope === 'project'
+            && status.kind === 'skill'
+            && isAuthoringSkillName(status.name)
+          ))
+          .map((status) => statusEntry(status, diagnostics))),
       ...diagnosticEntries(diagnostics),
     ],
     strict: options.strict === true,

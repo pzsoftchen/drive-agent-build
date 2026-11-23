@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { runDetect } from '../../src/commands/detect.ts';
+import { detectProject, runDetect } from '../../src/commands/detect.ts';
 import { preflightProject } from '../../src/detect/preflight.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
@@ -245,9 +245,64 @@ describe('detect preflight', () => {
       expect.objectContaining({ group: 'Generated target', label: 'dab.yaml', status: 'error' }),
     ]));
     expect(payload.nextActions).not.toContain('dab normalize');
+    const documentation = payload.checklist.find((item) => item.group === 'Documentation');
+    expect(documentation).toBeDefined();
+    expect(documentation?.next).toBeUndefined();
 
     expect(await readFile(join(project.root, 'dab.yaml'), 'utf8')).toBe(manifest);
     expect(await lstatOrNull(join(project.root, '.agents/policies/project.yaml'))).toBeNull();
+  });
+
+  it('shows Documentation and authoring skill entries before initialization', async () => {
+    const root = await tempDir();
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Documentation', status: 'missing', next: 'dab normalize' }),
+      expect.objectContaining({
+        group: 'Skills',
+        label: 'dab-architecture-writing',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect(
+      result.checklist.find((entry) => entry.group === 'Documentation')?.detail,
+    ).toContain('Language:');
+  });
+
+  it('uses the manifest profile and docs language for partial practice entries', async () => {
+    const root = await tempDir();
+    await writeProjectFile(
+      root,
+      'dab.yaml',
+      `version: 2
+scope: project
+project:
+  id: demo
+  name: Demo
+profile: generic
+docs:
+  language: zh
+targets:
+  - provider: claude-code
+    enabled: true
+paths:
+  agents: .agents
+  claude: .claude
+`,
+    );
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    const documentation = result.checklist.filter((entry) => entry.group === 'Documentation');
+    expect(documentation.length).toBeGreaterThan(0);
+    expect(documentation.every(
+      (entry) => entry.detail?.includes('Language: zh (source: config)'),
+    )).toBe(true);
+    expect(documentation.every((entry) => entry.next === 'dab normalize')).toBe(true);
   });
 
   it('refuses to suggest project writes at $HOME when ~/.agents is the global source', async () => {
@@ -310,6 +365,9 @@ describe('detect preflight', () => {
     // Global scope never suggests writing the user-owned settings or gitignore.
     expect(payload.checklist.some((item) => item.label === '.claude/settings.json')).toBe(false);
     expect(payload.checklist.some((item) => item.label === '.gitignore')).toBe(false);
+    // Global scope owns neither project docs nor authoring skills.
+    expect(payload.checklist.some((item) => item.group === 'Documentation')).toBe(false);
+    expect(payload.checklist.some((item) => item.label === 'dab-architecture-writing')).toBe(false);
 
     expect(await readFile(settings, 'utf8')).toBe(settingsContent);
     expect(await readFile(gitignore, 'utf8')).toBe(gitignoreContent);

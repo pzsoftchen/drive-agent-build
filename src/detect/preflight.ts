@@ -4,6 +4,7 @@ import type { Diagnostic } from '../core/diagnostics.ts';
 import { DabError } from '../core/errors.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
+import { DAB_VERSION } from '../core/version.ts';
 import {
   planClaudeAdoption,
   type ClaudeAdoptionEntry,
@@ -17,10 +18,11 @@ import {
 } from '../init/adoption.ts';
 import { scanProject } from '../init/scanner.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
-import type { ProjectPaths } from '../model/types.ts';
+import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
 import type { SourceRoot } from '../model/scope.ts';
 import { checkInstructionEnvironment, checkSecrets } from './checks.ts';
 import type { ChecklistEntry } from './checklist.ts';
+import { preflightPractice } from './practice.ts';
 
 export interface PreflightResult {
   sourceRoot: SourceRoot;
@@ -288,11 +290,13 @@ export async function preflightProject(
 
   let manifest = sourcePlan.manifest;
   let manifestValid = false;
+  let validManifest: ProjectManifest | undefined;
   if (hasManifest) {
     try {
       const loaded = await loadProjectManifest(adoption.root, { scope: adoption.scope });
       manifest = loaded.manifest;
       manifestValid = true;
+      validManifest = loaded.manifest;
     } catch (error) {
       if (!(error instanceof DabError)) {
         throw error;
@@ -324,6 +328,19 @@ export async function preflightProject(
     manifestValid,
     claudePlan,
   });
+
+  const practice = await preflightPractice({
+    root: adoption.root,
+    scope: adoption.scope,
+    scan,
+    // An authored manifest that cannot be parsed must be fixed first; a scope
+    // without a manifest can still adopt through `dab normalize`.
+    suppressNext: hasManifest && !manifestValid,
+    version: DAB_VERSION,
+    ...(validManifest === undefined ? {} : { manifest: validManifest }),
+  });
+  diagnostics.push(...practice.diagnostics);
+  entries.push(...practice.entries);
 
   return {
     sourceRoot,
