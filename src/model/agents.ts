@@ -218,6 +218,130 @@ function validateAgentHooks(
   return { items, diagnostics };
 }
 
+export interface AgentSourceResult {
+  item?: AgentDefinition;
+  diagnostics: Diagnostic[];
+}
+
+async function parseAgentSource(root: string, absolute: string): Promise<AgentSourceResult> {
+  const file = toPosix(relative(root, absolute));
+  const diagnostics: Diagnostic[] = [];
+
+  let parsed;
+  try {
+    parsed = parseFrontmatter(await readTextFile(absolute), file);
+  } catch (error) {
+    diagnostics.push({
+      code: DiagnosticCodes.agentInvalidFrontmatter,
+      severity: 'error',
+      message: `invalid agent frontmatter: ${error instanceof Error ? error.message : String(error)}`,
+      file,
+      line: 1,
+    });
+    return { diagnostics };
+  }
+
+  if (Object.keys(parsed.data).length === 0) {
+    diagnostics.push({
+      code: DiagnosticCodes.agentInvalidFrontmatter,
+      severity: 'error',
+      message: 'agent file is missing YAML frontmatter',
+      file,
+      line: 1,
+    });
+    return { diagnostics };
+  }
+
+  const validated = AgentFrontmatterSchema.safeParse(parsed.data);
+  if (!validated.success) {
+    diagnostics.push({
+      code: DiagnosticCodes.agentInvalidFrontmatter,
+      severity: 'error',
+      message: `invalid agent frontmatter: ${zodMessage(validated.error)}`,
+      file,
+      line: 1,
+    });
+    return { diagnostics };
+  }
+
+  const data = validated.data;
+  const unknown = unknownFrontmatterDiagnostic(
+    'agent',
+    data.name,
+    AGENT_FRONTMATTER_FIELDS,
+    parsed.data,
+    file,
+  );
+  if (unknown !== undefined) {
+    diagnostics.push(unknown);
+  }
+  if (data.memory === 'project') {
+    diagnostics.push({
+      code: DiagnosticCodes.agentMemoryProject,
+      severity: 'error',
+      message: `agent ${data.name} uses memory: project, which creates a second team memory store`,
+      file,
+      line: 1,
+      hint: 'Use memory: user or memory: local, and put shared knowledge in .agents/memory/.',
+    });
+  }
+  if (data.permissionMode === 'auto' || data.permissionMode === 'bypassPermissions') {
+    diagnostics.push({
+      code: DiagnosticCodes.agentPermissionMode,
+      severity: 'error',
+      message: `agent ${data.name} uses unsupported permissionMode: ${data.permissionMode}`,
+      file,
+      line: 1,
+      hint: 'v0.1 allows default, manual, plan, acceptEdits and dontAsk for role definitions.',
+    });
+  }
+
+  const hooks = validateAgentHooks(data.hooks, data.name, file);
+  diagnostics.push(...hooks.diagnostics);
+  const tools = parseToolsSpec(data.tools, data.name, file);
+  diagnostics.push(...tools.diagnostics);
+  const toolsList = tools.spec.mode === 'list' ? tools.spec.tools : [];
+  const disallowedTools = normalizeToolList(data.disallowedTools);
+  const invalidDisallowed = disallowedTools.filter(invalidToolToken);
+  if (invalidDisallowed.length > 0) {
+    diagnostics.push(
+      invalidToolTokenDiagnostic(data.name, 'disallowedTools', invalidDisallowed, file),
+    );
+  }
+  return {
+    item: {
+      file,
+      name: data.name,
+      description: data.description,
+      tools: toolsList,
+      toolsSpec: tools.spec,
+      disallowedTools,
+      ...(data.model === undefined ? {} : { model: data.model }),
+      ...(data.permissionMode === undefined ? {} : { permissionMode: data.permissionMode }),
+      ...(data.memory === undefined ? {} : { memory: data.memory }),
+      hooks: hooks.items,
+      body: parsed.body,
+      frontmatter: data,
+    },
+    diagnostics,
+  };
+}
+
+/**
+ * Validate one agent file for adoption. Returns an item only when the source has
+ * no error diagnostics; warnings (such as unknown frontmatter) are preserved.
+ */
+export async function validateAgentSource(
+  root: string,
+  file: string,
+): Promise<AgentSourceResult> {
+  const result = await parseAgentSource(root, file);
+  if (result.diagnostics.some((item) => item.severity === 'error')) {
+    return { diagnostics: result.diagnostics };
+  }
+  return result;
+}
+
 export async function discoverAgents(
   root: string,
   agentsDir: string,
@@ -256,114 +380,24 @@ export async function discoverAgents(
       continue;
     }
 
-    let parsed;
-    try {
-      parsed = parseFrontmatter(await readTextFile(absolute), file);
-    } catch (error) {
-      diagnostics.push({
-        code: DiagnosticCodes.agentInvalidFrontmatter,
-        severity: 'error',
-        message: `invalid agent frontmatter: ${error instanceof Error ? error.message : String(error)}`,
-        file,
-        line: 1,
-      });
+    const source = await parseAgentSource(root, absolute);
+    diagnostics.push(...source.diagnostics);
+    if (source.item === undefined) {
       continue;
     }
-
-    if (Object.keys(parsed.data).length === 0) {
-      diagnostics.push({
-        code: DiagnosticCodes.agentInvalidFrontmatter,
-        severity: 'error',
-        message: 'agent file is missing YAML frontmatter',
-        file,
-        line: 1,
-      });
-      continue;
-    }
-
-    const validated = AgentFrontmatterSchema.safeParse(parsed.data);
-    if (!validated.success) {
-      diagnostics.push({
-        code: DiagnosticCodes.agentInvalidFrontmatter,
-        severity: 'error',
-        message: `invalid agent frontmatter: ${zodMessage(validated.error)}`,
-        file,
-        line: 1,
-      });
-      continue;
-    }
-
-    const data = validated.data;
-    const unknown = unknownFrontmatterDiagnostic(
-      'agent',
-      data.name,
-      AGENT_FRONTMATTER_FIELDS,
-      parsed.data,
-      file,
-    );
-    if (unknown !== undefined) {
-      diagnostics.push(unknown);
-    }
-    if (data.memory === 'project') {
-      diagnostics.push({
-        code: DiagnosticCodes.agentMemoryProject,
-        severity: 'error',
-        message: `agent ${data.name} uses memory: project, which creates a second team memory store`,
-        file,
-        line: 1,
-        hint: 'Use memory: user or memory: local, and put shared knowledge in .agents/memory/.',
-      });
-    }
-    if (data.permissionMode === 'auto' || data.permissionMode === 'bypassPermissions') {
-      diagnostics.push({
-        code: DiagnosticCodes.agentPermissionMode,
-        severity: 'error',
-        message: `agent ${data.name} uses unsupported permissionMode: ${data.permissionMode}`,
-        file,
-        line: 1,
-        hint: 'v0.1 allows default, manual, plan, acceptEdits and dontAsk for role definitions.',
-      });
-    }
-
-    const existing = names.get(data.name);
+    const existing = names.get(source.item.name);
     if (existing !== undefined) {
       diagnostics.push({
         code: DiagnosticCodes.agentDuplicateName,
         severity: 'error',
-        message: `duplicate agent name ${data.name}`,
-        file,
+        message: `duplicate agent name ${source.item.name}`,
+        file: source.item.file,
         hint: `The name is already used by ${existing}.`,
       });
     } else {
-      names.set(data.name, file);
+      names.set(source.item.name, source.item.file);
     }
-
-    const hooks = validateAgentHooks(data.hooks, data.name, file);
-    diagnostics.push(...hooks.diagnostics);
-    const tools = parseToolsSpec(data.tools, data.name, file);
-    diagnostics.push(...tools.diagnostics);
-    const toolsList = tools.spec.mode === 'list' ? tools.spec.tools : [];
-    const disallowedTools = normalizeToolList(data.disallowedTools);
-    const invalidDisallowed = disallowedTools.filter(invalidToolToken);
-    if (invalidDisallowed.length > 0) {
-      diagnostics.push(
-        invalidToolTokenDiagnostic(data.name, 'disallowedTools', invalidDisallowed, file),
-      );
-    }
-    items.push({
-      file,
-      name: data.name,
-      description: data.description,
-      tools: toolsList,
-      toolsSpec: tools.spec,
-      disallowedTools,
-      ...(data.model === undefined ? {} : { model: data.model }),
-      ...(data.permissionMode === undefined ? {} : { permissionMode: data.permissionMode }),
-      ...(data.memory === undefined ? {} : { memory: data.memory }),
-      hooks: hooks.items,
-      body: parsed.body,
-      frontmatter: data,
-    });
+    items.push(source.item);
   }
 
   return { items, diagnostics };
