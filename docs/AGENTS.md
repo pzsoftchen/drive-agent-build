@@ -15,7 +15,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - [docs/user/cli.md](user/cli.md) — CLI commands, flags, output contracts and exit codes. Paired.
 - [docs/user/claude-code.md](user/claude-code.md) — Claude Code integration behavior. Paired.
 - `docs/i18n/` — terminology and style rules, maintained directly in both languages and excluded from the pairing gate.
-- [docs/superpowers/README.md](superpowers/README.md) — Chinese-only specs and plans for the superpowers workflow; pairing-exempt but still covered by link and wrap checks.
+- [docs/superpowers/README.md](superpowers/README.md) — Chinese-only specs and plans for the superpowers workflow; [.agents/rules/docs-bilingual.md](../.agents/rules/docs-bilingual.md) exempts them from pairing while link and wrap checks still apply.
 - `.agents/notes/` — decision records; write them with the [notes guide](../.agents/notes/AGENTS.md).
 - `.agents/skills/` — agent skills, including the `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` authoring skills.
 
@@ -40,6 +40,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - Use relative links to files that exist. Never use absolute links or link to an example that is not in the repository.
 - State each rule and fact once; link to the owner instead of copying it.
 - Prefer concrete identifiers, paths and commands over adjectives.
+- Agent instructions, skills and roles are English single-source and covered by link, wrap and configured budget gates.
 
 ## Slop checklist
 

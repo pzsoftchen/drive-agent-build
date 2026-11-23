@@ -55,7 +55,12 @@ import {
   resolveDocsLanguage,
   type DocsLanguageResolution,
 } from '../init/docs-language.ts';
-import { PRACTICE_PACKS, planAuthoredScaffold } from '../init/practice.ts';
+import {
+  PRACTICE_PACKS,
+  planAuthoredScaffold,
+  type AuthoredScaffoldPlan,
+} from '../init/practice.ts';
+import { AUTHORING_SKILL_NAMES } from '../init/practice-authoring.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import {
   renderAgentFromProposal,
@@ -149,6 +154,49 @@ function pendingDiagnostic(item: Diagnostic): Diagnostic {
       .filter((value): value is string => value !== undefined && value.length > 0)
       .join(' '),
   };
+}
+
+interface PendingSkillImportPlan {
+  files: Record<string, string>;
+  directories: string[];
+  diagnostics: Diagnostic[];
+}
+
+/**
+ * Init never imports Claude entries. When only `.claude/skills/dab-<name>`
+ * exists, writing the authoring template would collide with the physical entry
+ * that normalize owns, so drop the template and report an import pending.
+ */
+async function pendingSkillImports(
+  root: string,
+  plan: AuthoredScaffoldPlan,
+): Promise<PendingSkillImportPlan> {
+  const files = { ...plan.files };
+  const directories = [...plan.directories];
+  const diagnostics: Diagnostic[] = [];
+  for (const name of AUTHORING_SKILL_NAMES) {
+    const source = `.agents/skills/${name}`;
+    if ((await lstatOrNull(join(root, source))) !== null) {
+      continue;
+    }
+    const target = `.claude/skills/${name}`;
+    if ((await lstatOrNull(join(root, target))) === null) {
+      continue;
+    }
+    delete files[`${source}/SKILL.md`];
+    const index = directories.indexOf(source);
+    if (index !== -1) {
+      directories.splice(index, 1);
+    }
+    diagnostics.push({
+      code: 'practice.skill-import-pending',
+      severity: 'warning',
+      message: 'existing Claude skill is not imported by init',
+      file: target,
+      hint: 'Run dab normalize to import the existing skill into .agents.',
+    });
+  }
+  return { files, directories, diagnostics };
 }
 
 function manifestConflict(): Diagnostic {
@@ -474,7 +522,12 @@ function formatInit(result: InitResult): string {
       lines.push(`  ${item.file ?? '-'} ${item.code} ${item.message}`);
     }
     lines.push('next: dab normalize --dry-run');
-    lines.push('next: dab normalize --fix');
+    if (result.pending.some((item) => item.code !== 'practice.skill-import-pending')) {
+      lines.push('next: dab normalize --fix');
+    }
+    if (result.pending.some((item) => item.code === 'practice.skill-import-pending')) {
+      lines.push('next: dab normalize');
+    }
   }
   const pendingKeys = new Set(
     result.pending.map((item) => `${item.code}|${item.file ?? ''}|${item.line ?? ''}`),
@@ -715,7 +768,8 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     );
   }
 
-  const files = plan.files;
+  const skillImports = await pendingSkillImports(layout.scopeRoot, plan);
+  const files = skillImports.files;
   const targets = targetMap(existingProjections);
   for (const agent of proposal?.agents ?? []) {
     targets.set(`.claude/agents/${agent.name}.md`, `.agents/agents/${agent.name}.md`);
@@ -737,7 +791,10 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       dryRun,
     );
   }
-  const pending = generated.pending.map(pendingDiagnostic);
+  const pending = [
+    ...generated.pending.map(pendingDiagnostic),
+    ...skillImports.diagnostics,
+  ];
 
   if (dryRun) {
     return {
@@ -758,7 +815,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     };
   }
 
-  for (const directory of plan.directories) {
+  for (const directory of skillImports.directories) {
     await ensureDir(join(layout.scopeRoot, directory));
   }
   const created: string[] = [];

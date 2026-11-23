@@ -6,6 +6,7 @@
 
 - `dab init` 默认写入 `profile: generic` 和 `docs.language: auto`。`--profile generic|feature` 选择 manifest profile；`feature` 是行为相同的兼容别名。`docs.language` 接受 `auto`、`en` 或 `zh`；`auto` 从项目内容和 locale 解析，并在人类输出和 JSON 中报告 `{ value, source }`。
 - `dab init` 和 `dab normalize` 生成单语 `docs/AGENTS.md` 和 `docs/architecture.md`，不生成 `.zh.md` 或 `.i18n.yaml` 配对，并安装 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes` authoring skills。已有 docs 和 skill 目录永不被覆盖，已安装的 `dab-*` skills 也永不自动更新。
+- `dab init` 现在会把已有的物理 `.claude/skills/dab-*` 条目标记为 pending，跳过对应的 authoring 模板，并把 import 留给 `dab normalize`；它从不写入或替换该物理 skill。
 - Generic skeleton 不再生成 `.agents/rules/docs-bilingual.md`；已有的 authored 规则会保留，并以 `practice.docs-bilingual-policy` 对单语 docs 做 policy skip。Authoring skills 和 target 写入继续。
 - `dab normalize` 在 target planning 之前为未初始化、partial 和已初始化 project scope 补齐缺失的实践文件。`--json` 为 project scope 追加 `practices`，包含 `profile`、`mode`、`language`、`created`、`skipped`、`policySkipped`、`directories`、`skills` 和 `diagnostics`；被阻断和 dry run 的运行保留计划字段，global scope 省略该对象。
 - `dab detect` 增加 `Documentation` 组和 `Skills` 中的 authoring skill 条目，检查链接、行首 TODO 标记、空架构章节和 skill 版本标记。缺失的实践文件、TODO、空章节和落后 skills 会让 `--strict` 失败；双语 policy skip 和未加版本标记的保留 skills 保持信息性。

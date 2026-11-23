@@ -13,7 +13,7 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 - Profiles select practice packs. `generic` is the default, `feature` remains a compatibility alias with the same behavior, and the production registry composes `core`, `documentation` and `authoring`. Documentation and authoring packs are project-scope only.
 - One shared `planAuthoredScaffold` serves `init` (`full`) and `normalize` (`adoption` for uninitialized or partial scopes, `converge` for initialized scopes). Packs declare targets, the planner stats them and builds anchors from existing plus planned paths, and only missing files are rendered.
 - The documentation pack owns exactly `docs/AGENTS.md` and `docs/architecture.md`. Generated docs use one language determined by `docs.language` (`auto`, `en` or `zh`) and never create `.zh.md` or `.i18n.yaml` pairs. `auto` samples existing docs, root `AGENTS.md`, `README.md`, the `package.json` description and the locale, then defaults to `en`; the `{ value, source }` resolution is reported.
-- The authoring pack installs `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` under `.agents/skills/`. Each skill is an authored copy with a `dab-skill: <name>@<version>` marker. DAB skips an existing skill directory and never updates an installed skill.
+- The authoring pack installs `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` under `.agents/skills/`. Each skill is an authored copy with a `dab-skill: <name>@<version>` marker. DAB skips an existing skill directory and never updates an installed skill; a physical `.claude/skills/dab-<name>` entry with no authored source is left pending by `init` and imported by `normalize`.
 - An existing `.agents/rules/docs-bilingual.md` is project policy: it is preserved, documentation targets are policy-skipped with `practice.docs-bilingual-policy`, and authoring skills and target writes continue.
 - `dab detect` runs the same packs read-only. It adds a `Documentation` group and authoring entries in `Skills`, checks links, line-start `TODO:` or `TODO(owner):` markers, empty architecture sections and version markers, and treats policy skips and unversioned authored skills as non-strict warnings.
 - DAB dogfoods the layer: its own `docs/AGENTS.md` guide and `dab-*` skills are authored files checked by `dab detect`, while its existing bilingual rule keeps its product docs paired.
@@ -34,13 +34,14 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 
 - Existing v0.1.1 projects with `.agents/rules/docs-bilingual.md` do not receive generated docs. They get `practice.docs-bilingual-policy` warnings and still receive authoring skills; deleting the rule or waiting for a bilingual pack is the migration path.
 - Installed `dab-*` skills are authored copies. A DAB version bump leaves them stale until a person or agent reviews and merges the new text; `dab detect` reports the stale marker but never overwrites the skill.
+- A physical `.claude/skills/dab-*` entry is not duplicated: `init` reports it pending, and `dab normalize` imports it before later runs project it.
 - `feature` manifests receive the same practice behavior as `generic`, so a normalize can add docs and skills that did not exist before. `--dry-run` and the `practices` JSON expose the plan first.
 - New generic projects no longer get the bilingual rule. DAB itself keeps the rule, so its own documentation pack is policy-skipped while other projects get single-language docs; project rules win.
 - The detect score includes practice entries, and `--strict` fails on missing or stale practice content except the two non-strict policy and preserved warnings.
 
 ## Verification
 
-- `pnpm test`: 59 test files, 605 tests pass.
+- `pnpm test`: 59 test files, 608 tests pass.
 - `pnpm typecheck`: no errors.
 - `pnpm doc-sync`: pairing, links, wrap, budgets and Agent Note checks pass.
 - `pnpm build`: TypeScript compiles.

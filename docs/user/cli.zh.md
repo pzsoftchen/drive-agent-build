@@ -62,12 +62,12 @@ Global 布局：
 
 - `dab init ~/.agents` 初始化 global scope：编写源位于 `~/.agents/`，投影位于 `$HOME` 下。
 - `dab init path` 把 `path` 作为确切的 source root，并在缺失时创建它。它拒绝在已有 source root 内部创建 source root。
-- 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。未受管的 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
+- 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。非 import 的未受管 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
 - Init 从不导入现有 `.claude/agents` 或 `.claude/skills` 条目，也不会为它们创建 adoption 备份。Import 是 `dab normalize` 的职责。
 - 生成的 manifest 是 v2，包含 `scope`、`profile`、`docs.language`、`targets` 和 `instructions: symlink`。`--profile` 接受 `generic`（默认）或 `feature`；`feature` 是行为相同的兼容别名，且从不覆盖已有的 authored manifest。
 - `docs.language` 控制项目文档语言：`auto`（默认）、`en` 或 `zh`。`auto` 依次采样现有的 `docs/AGENTS.md`、`docs/architecture.md`、根 `AGENTS.md`、`README.md`、`package.json` description，然后读取 locale；没有任何信号时使用 `en`。Init 输出 `Language: <value> (source: <source>)`，JSON 追加 `language: { value, source }`。
 - Init 写入两个单语文件 `docs/AGENTS.md` 和 `docs/architecture.md`，不生成 `.zh.md` 或 `.i18n.yaml` 配对。`docs/AGENTS.md` 是 AGENTS 文件，继续豁免配对。已有文档永不被覆盖。
-- Init 安装 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes` skills，位于 `.agents/skills/` 下。已存在的 skill 目录会保留，并报告为 skipped。
+- Init 安装 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes` skills，位于 `.agents/skills/` 下。已存在的 skill 目录会保留，并报告为 skipped。当只有 `.claude/skills/dab-<name>` 存在时，init 跳过对应的 authoring 模板，以 `practice.skill-import-pending` 报告为 pending，并把 import 留给 `dab normalize`；它从不写入或替换物理条目。
 - Generic skeleton 不生成 `.agents/rules/docs-bilingual.md`；已有的 authored 规则会保留。当该规则存在时，documentation pack 以 `practice.docs-bilingual-policy` 被 policy skip：init 不创建 docs，但在其他方面安全时仍安装 authoring skills 并写入 target 输出。
 - JSON 输出包含 `root`（source root）和 `scopeRoot`（路径基准）；`created`、`skipped` 以及嵌套 normalize 路径都相对于 `scopeRoot`。
 - `--dry-run` 预览编写文件写入和 pending 冲突，不写入任何内容。`--ai` 让 Claude Code 生成提案，确认后才写入；提案通过内置 profile 相同的 authored scaffold planner 渲染，且 `--ai` 不能与 `--dry-run` 同时使用。
@@ -148,7 +148,7 @@ dab detect [--strict] [--json]
 
 只读运行。它会在需要 manifest 之前解析 scope 和 adoption phase，因此未初始化或 partial scope 会返回 checklist，而不是 source-root 错误。随后它校验 scope、启用的 target adapter、Claude Code 版本、祖先指令文件、指令产物、投影、settings、策略、hooks、记忆、敏感信息、文档实践、AGENTS.md 大小和链接。
 
-人类输出先打印 `dab detect`，再打印 `Scope`、`Root` 和 `Profile`，按 Instructions、Documentation、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组，然后打印 `score: <ok>/<total> (<percent>%)`，并为每个不同的下一步输出一行 `next:`。
+人类输出先打印 `dab detect`，再打印 `Scope`、`Root` 和 `Profile`，按 Instructions、Documentation、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组，然后打印 `score: <ok>/<total> (<percent>%)`，并为每个不同的下一步输出一行 `next:`。下面的示例取自由当前模板生成的项目。
 
 ```text
 dab detect

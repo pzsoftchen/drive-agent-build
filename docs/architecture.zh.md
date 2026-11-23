@@ -76,7 +76,7 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 - Documentation pack 拥有 `docs/AGENTS.md` 和 `docs/architecture.md`。它只写一种语言，从不创建 `.zh.md` 或 `.i18n.yaml` 配对；`docs/AGENTS.md` 是 AGENTS 文件，继续豁免配对。
 - `docs.language` 为 `auto`、`en` 或 `zh`。`auto` 采样现有的 `docs/AGENTS.md`、`docs/architecture.md`、根 `AGENTS.md`、`README.md`、`package.json` description 和 locale，然后默认 `en`。解析结果携带 `{ value, source }`，并由 `init`、`normalize` 和 `detect` 报告。
 - `.agents/rules/docs-bilingual.md` 是项目政策信号，不是错误：documentation targets 被 policy skip，规则本身保留。Authoring skills 和 target 写入继续。
-- Authoring pack 拥有 `.agents/skills/dab-doc-writing`、`.agents/skills/dab-architecture-writing` 和 `.agents/skills/dab-decision-notes`。已存在的 skill 目录会保留。每个渲染 body 都带 `dab-skill: <name>@<version>` 标记；DAB 从不自动更新已安装 skill，而是报告落后标记。
+- Authoring pack 拥有 `.agents/skills/dab-doc-writing`、`.agents/skills/dab-architecture-writing` 和 `.agents/skills/dab-decision-notes`。已存在的 skill 目录会保留。当只有物理 `.claude/skills/dab-*` 条目存在时，`init` 丢弃对应模板并把 import 报告为 pending，由 `normalize` 执行。每个渲染 body 都带 `dab-skill: <name>@<version>` 标记；DAB 从不自动更新已安装 skill，而是报告落后标记。
 - `normalize` 在 target planning 之前规划 practice 写入，因此新文件会在同一次运行中被投影。Practice 错误阻止所有写入，包括 `.claude`；policy skip 不会。
 - `detect` 只读运行相同的 packs。它在 Instructions 之后增加 `Documentation` 组，并在 `Skills` 中增加 authoring 条目，检查两个文档文件中的链接、行首 `TODO:` 或 `TODO(owner):` 标记、空架构章节和 skill 版本标记。
 - `normalize --json` 为 project scope 增加 `practices`，包含 `profile`、`mode`、`language`、`created`、`skipped`、`policySkipped`、`directories`、`skills` 和 `diagnostics`；global scope 省略它。`detect --json` 通过 `checklist` 在既有 `schemaVersion: 1` 下携带新条目。

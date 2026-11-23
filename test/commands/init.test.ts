@@ -707,6 +707,81 @@ describe('runInit', () => {
       .toBe(authoredSkill);
   });
 
+  it('leaves a physical .claude authoring skill pending instead of scaffolding it', async () => {
+    const root = await tempDir();
+    const physical = '---\nname: dab-doc-writing\ndescription: Existing physical skill.\n---\n# Existing\n';
+    await mkdir(join(root, '.claude/skills/dab-doc-writing'), { recursive: true });
+    await writeFile(join(root, '.claude/skills/dab-doc-writing/SKILL.md'), physical);
+
+    const preview = await initializeProject({ cwd: root, dryRun: true });
+
+    expect(preview.pending).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-import-pending',
+        file: '.claude/skills/dab-doc-writing',
+      }),
+    ]));
+    expect(preview.created).not.toContain('.agents/skills/dab-doc-writing/SKILL.md');
+    expect(preview.created).toContain('.agents/skills/dab-architecture-writing/SKILL.md');
+    expect(await readFile(join(root, '.claude/skills/dab-doc-writing/SKILL.md'), 'utf8'))
+      .toBe(physical);
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing'))).toBeNull();
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.normalize).toBeNull();
+    expect(result.pending).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-import-pending',
+        file: '.claude/skills/dab-doc-writing',
+      }),
+    ]));
+    expect(result.created).not.toContain('.agents/skills/dab-doc-writing/SKILL.md');
+    expect(result.created).toContain('.agents/skills/dab-architecture-writing/SKILL.md');
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing/SKILL.md'))).toBeNull();
+    expect(await readFile(join(root, '.claude/skills/dab-doc-writing/SKILL.md'), 'utf8'))
+      .toBe(physical);
+  });
+
+  it('reports a physical authoring skill import pending without suggesting --fix', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, '.claude/skills/dab-decision-notes'), { recursive: true });
+    await writeFile(
+      join(root, '.claude/skills/dab-decision-notes/SKILL.md'),
+      '---\nname: dab-decision-notes\ndescription: Existing.\n---\n# Existing\n',
+    );
+    const captureResult = capture();
+
+    const code = await runInit({ cwd: root }, captureResult.io);
+
+    const output = captureResult.stdout.join('');
+    expect(code).toBe(0);
+    expect(output).toContain('practice.skill-import-pending');
+    expect(output).toContain('next: dab normalize\n');
+    expect(output).not.toContain('next: dab normalize --fix');
+  });
+
+  it('keeps authored and physical skill trees untouched when both exist', async () => {
+    const root = await tempDir();
+    const authored = '---\nname: dab-doc-writing\ndescription: Authored.\n---\n# Authored\n';
+    const physical = '---\nname: dab-doc-writing\ndescription: Physical.\n---\n# Physical\n';
+    await mkdir(join(root, '.agents/skills/dab-doc-writing'), { recursive: true });
+    await mkdir(join(root, '.claude/skills/dab-doc-writing'), { recursive: true });
+    await writeFile(join(root, '.agents/skills/dab-doc-writing/SKILL.md'), authored);
+    await writeFile(join(root, '.claude/skills/dab-doc-writing/SKILL.md'), physical);
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.created).not.toContain('.agents/skills/dab-doc-writing/SKILL.md');
+    expect(result.skipped).toContain('.agents/skills/dab-doc-writing');
+    expect(result.pending.some((item) => item.code === 'practice.skill-import-pending')).toBe(false);
+    expect(await readFile(join(root, '.agents/skills/dab-doc-writing/SKILL.md'), 'utf8'))
+      .toBe(authored);
+    expect(await readFile(join(root, '.claude/skills/dab-doc-writing/SKILL.md'), 'utf8'))
+      .toBe(physical);
+  });
+
   it('plans docs and skills without writing in --dry-run', async () => {
     const root = await tempDir();
 

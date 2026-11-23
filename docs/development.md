@@ -41,7 +41,7 @@ Tests use temporary repositories and real files. They cover normal paths, confli
 
 ## Documentation
 
-Documentation tiers, placement, writing and verification rules live in [docs/AGENTS.md](AGENTS.md).
+Documentation workflow: [docs/AGENTS.md](AGENTS.md).
 
 ## Release
 

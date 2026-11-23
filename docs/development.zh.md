@@ -41,7 +41,7 @@ pnpm test
 
 ## 文档
 
-文档层级、放置、写作和验证规则见 [docs/AGENTS.md](AGENTS.md)。
+文档流程：[docs/AGENTS.md](AGENTS.md)。
 
 ## 发布
 
