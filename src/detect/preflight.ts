@@ -91,7 +91,32 @@ async function projectHomeCollision(
 }
 
 async function exists(root: string, path: string): Promise<boolean> {
-  return (await lstatOrNull(join(root, path))) !== null;
+  try {
+    return (await lstatOrNull(join(root, path))) !== null;
+  } catch (error) {
+    // A directory path occupied by a regular file reports ENOTDIR. The practice
+    // checks report the governed path error; preflight stays read-only instead
+    // of turning the state into an internal error.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOTDIR' || code === 'EACCES' || code === 'EPERM') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Authored skill discovery reports ENOTDIR when `.agents/skills` is a regular
+ * file. The practice checks govern that path; other path errors keep failing
+ * loud so preflight never hides an unrelated filesystem problem.
+ */
+function isBrokenDefaultSkillsParent(error: unknown, root: string): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code !== 'ENOTDIR' && code !== 'EACCES' && code !== 'EPERM') {
+    return false;
+  }
+  const path = (error as NodeJS.ErrnoException).path;
+  return path !== undefined && resolve(path) === join(root, '.agents/skills');
 }
 
 async function existenceEntry(input: {
@@ -306,29 +331,6 @@ export async function preflightProject(
   }
 
   const paths = resolveProjectPaths(adoption.root, manifest);
-  const claudePlan = await planClaudeAdoption({
-    root: adoption.root,
-    scope: adoption.scope,
-    agentsRoot: paths.agents,
-    claudeRoot: paths.claude,
-    manifest,
-  });
-  diagnostics.push(...claudePlan.diagnostics);
-  diagnostics.push(
-    ...await checkInstructionEnvironment(adoption.root, home, adoption.scope),
-  );
-  diagnostics.push(...await checkSecrets(adoption.root, paths));
-
-  const entries = await plannedEntries({
-    root: adoption.root,
-    scope: adoption.scope,
-    paths,
-    manifestPath,
-    hasManifest,
-    manifestValid,
-    claudePlan,
-  });
-
   const practice = await preflightPractice({
     root: adoption.root,
     scope: adoption.scope,
@@ -339,6 +341,50 @@ export async function preflightProject(
     version: DAB_VERSION,
     ...(validManifest === undefined ? {} : { manifest: validManifest }),
   });
+
+  // Import planning discovers authored skills. When `.agents/skills` is a
+  // regular file the discovery read raises ENOTDIR (not ENOENT); the practice
+  // checks already report that path, so the import plan is empty instead of
+  // turning preflight into an internal error. Other errors still fail loud.
+  let claudePlan: ClaudeAdoptionPlan = { entries: [], diagnostics: [] };
+  try {
+    claudePlan = await planClaudeAdoption({
+      root: adoption.root,
+      scope: adoption.scope,
+      agentsRoot: paths.agents,
+      claudeRoot: paths.claude,
+      manifest,
+    });
+  } catch (error) {
+    if (!isBrokenDefaultSkillsParent(error, adoption.root)) {
+      throw error;
+    }
+  }
+  diagnostics.push(...claudePlan.diagnostics);
+  diagnostics.push(
+    ...await checkInstructionEnvironment(adoption.root, home, adoption.scope),
+  );
+  diagnostics.push(...await checkSecrets(adoption.root, paths));
+
+  // A practice path error owns its path. Do not also show the generic
+  // "missing directory -> dab normalize" entry for the same conflicting path.
+  const governed = new Set(
+    practice.diagnostics
+      .filter(
+        (item) => item.code === 'practice.docs-path' || item.code === 'practice.skill-path',
+      )
+      .flatMap((item) => (item.file === undefined ? [] : [item.file])),
+  );
+  const entries = (await plannedEntries({
+    root: adoption.root,
+    scope: adoption.scope,
+    paths,
+    manifestPath,
+    hasManifest,
+    manifestValid,
+    claudePlan,
+  })).filter((entry) => !governed.has(entry.label.replace(/\/$/, '')));
+
   diagnostics.push(...practice.diagnostics);
   entries.push(...practice.entries);
 

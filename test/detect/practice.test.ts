@@ -288,6 +288,36 @@ See [missing](nope.md).
     expect((await detect(project, true)).exitCode).toBe(3);
   });
 
+  it('governs a broken link whose parent component is a file', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await writeProjectFile(
+      project.root,
+      'docs/AGENTS.md',
+      `${CLEAN_DOCS_AGENTS}
+See [nested](architecture.md/child.md).
+`,
+    );
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.docs-link',
+        severity: 'error',
+        file: 'docs/AGENTS.md',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Documentation',
+        label: 'docs/AGENTS.md',
+        status: 'error',
+      }),
+    ]));
+  });
+
   it('reports practice path conflicts as blocking errors', async () => {
     const project = await initializedProject();
     await completePractice(project);

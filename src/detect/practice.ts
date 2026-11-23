@@ -1,14 +1,22 @@
-import { realpath, stat } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
+import { lstat, realpath, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { DabError } from '../core/errors.ts';
-import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
+import { readTextFile } from '../core/fs-atomic.ts';
 import { assertParentInsideRoot, isPathInside } from '../core/paths.ts';
 import { scanMarkdown, slugifyHeading } from '../docs/markdown.ts';
-import type { DocsLanguageResolution } from '../init/docs-language.ts';
+import {
+  resolveDocsLanguage,
+  type DocsLanguageResolution,
+} from '../init/docs-language.ts';
 import { AUTHORING_SKILL_NAMES, authoringPack } from '../init/practice-authoring.ts';
 import { documentationPack } from '../init/practice-docs.ts';
-import { planAuthoredScaffold, type AuthoredScaffoldPlan } from '../init/practice.ts';
+import {
+  planAuthoredScaffold,
+  type AuthoredScaffoldPlan,
+  type PracticePack,
+} from '../init/practice.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import type { Scope } from '../model/scope.ts';
 import { validateSkillSource } from '../model/skills.ts';
@@ -109,7 +117,10 @@ function docsDetail(language: DocsLanguageResolution, extra?: string): string {
  * Run the shared authored planner with only the practice packs. The planner is
  * read-only; detect never plans core scaffolding or Claude target output.
  */
-async function planPractice(input: PracticePlanInput): Promise<AuthoredScaffoldPlan> {
+async function planPractice(
+  input: PracticePlanInput,
+  packs: readonly PracticePack[],
+): Promise<AuthoredScaffoldPlan> {
   return planAuthoredScaffold({
     root: input.root,
     scope: input.scope,
@@ -119,7 +130,137 @@ async function planPractice(input: PracticePlanInput): Promise<AuthoredScaffoldP
     version: input.version,
     env: process.env,
     ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
-  }, [documentationPack, authoringPack]);
+  }, packs);
+}
+
+function practiceLanguage(
+  root: string,
+  manifest: ProjectManifest | undefined,
+): Promise<DocsLanguageResolution> {
+  return resolveDocsLanguage({
+    root,
+    configured: manifest?.docs.language ?? 'auto',
+    env: process.env,
+  });
+}
+
+type PathProblem = 'parent-not-directory' | 'access-denied' | 'symlink-loop';
+
+function pathProblemFrom(error: unknown): PathProblem | undefined {
+  switch ((error as NodeJS.ErrnoException).code) {
+    case 'ENOTDIR':
+      return 'parent-not-directory';
+    case 'EACCES':
+    case 'EPERM':
+      return 'access-denied';
+    case 'ELOOP':
+      return 'symlink-loop';
+    default:
+      return undefined;
+  }
+}
+
+function problemMessage(path: string, problem: PathProblem): string {
+  switch (problem) {
+    case 'parent-not-directory':
+      return `${path}: a parent component is not a directory`;
+    case 'access-denied':
+      return `${path}: path cannot be accessed`;
+    case 'symlink-loop':
+      return `${path}: path contains a symlink loop`;
+  }
+}
+
+interface PracticeLstat {
+  info: Stats | null;
+  problem?: PathProblem;
+}
+
+/** lstat that turns path-state errors into a governed problem instead of throwing. */
+async function practiceLstat(absolute: string): Promise<PracticeLstat> {
+  try {
+    return { info: await lstat(absolute) };
+  } catch (error) {
+    const problem = pathProblemFrom(error);
+    if (problem !== undefined) {
+      return { info: null, problem };
+    }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { info: null };
+    }
+    throw error;
+  }
+}
+
+/** stat (following links) used only for parent-directory probes. */
+async function practiceStat(absolute: string): Promise<PracticeLstat> {
+  try {
+    return { info: await stat(absolute) };
+  } catch (error) {
+    const problem = pathProblemFrom(error);
+    if (problem !== undefined) {
+      return { info: null, problem };
+    }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { info: null };
+    }
+    throw error;
+  }
+}
+
+interface PracticeParentProblem {
+  path: string;
+  message: string;
+}
+
+interface PracticeParentProblems {
+  docs?: PracticeParentProblem;
+  skills?: PracticeParentProblem;
+}
+
+/**
+ * The planner stats pack-owned parents: the bilingual rule under `.agents/rules`
+ * and each skill directory under `.agents/skills`. A regular file at either
+ * parent makes those stats throw ENOTDIR, so probe the parents first and skip
+ * only the affected pack.
+ */
+async function practiceParentProblems(root: string): Promise<PracticeParentProblems> {
+  const problems: PracticeParentProblems = {};
+  for (const [path, key] of [
+    ['.agents/rules', 'docs'],
+    ['.agents/skills', 'skills'],
+  ] as const) {
+    const result = await practiceStat(join(root, path));
+    if (result.problem !== undefined) {
+      problems[key] = { path, message: problemMessage(path, result.problem) };
+    } else if (result.info !== null && !result.info.isDirectory()) {
+      problems[key] = { path, message: `${path} is not a directory` };
+    }
+  }
+  return problems;
+}
+
+function addParentProblem(
+  collector: PracticeCollector,
+  language: DocsLanguageResolution,
+  group: 'docs' | 'skills',
+  problem: PracticeParentProblem,
+): void {
+  const docs = group === 'docs';
+  collector.addDiagnostic({
+    code: docs ? 'practice.docs-path' : 'practice.skill-path',
+    severity: 'error',
+    message: problem.message,
+    file: problem.path,
+    hint: 'Resolve the path conflict manually; DAB never writes through it.',
+  });
+  collector.addEntry({
+    group: docs ? 'Documentation' : 'Skills',
+    label: problem.path,
+    status: 'error',
+    detail: docs ? docsDetail(language, problem.message) : problem.message,
+    next: MANUAL_PATH_NEXT,
+  });
 }
 
 class PracticeCollector {
@@ -197,10 +338,6 @@ function reportPlanConflicts(
   return conflicted;
 }
 
-async function exists(root: string, path: string): Promise<boolean> {
-  return (await lstatOrNull(join(root, path))) !== null;
-}
-
 /**
  * Returns a path problem when the documentation entry is not a regular file
  * that resolves inside the repository. A missing file is handled by the
@@ -208,7 +345,11 @@ async function exists(root: string, path: string): Promise<boolean> {
  */
 async function docPathProblem(root: string, file: string): Promise<string | undefined> {
   const absolute = join(root, file);
-  const info = await lstatOrNull(absolute);
+  const result = await practiceLstat(absolute);
+  if (result.problem !== undefined) {
+    return problemMessage(file, result.problem);
+  }
+  const info = result.info;
   if (info === null) {
     return undefined;
   }
@@ -232,6 +373,10 @@ async function docPathProblem(root: string, file: string): Promise<string | unde
       ? undefined
       : `documentation path is not a regular file: ${file}`;
   } catch (error) {
+    const problem = pathProblemFrom(error);
+    if (problem !== undefined) {
+      return problemMessage(file, problem);
+    }
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return `documentation path is a dangling symlink: ${file}`;
     }
@@ -247,7 +392,11 @@ type SkillDirectoryState =
 async function skillDirectoryState(root: string, name: string): Promise<SkillDirectoryState> {
   const directory = skillDirectory(name);
   const absolute = join(root, directory);
-  const info = await lstatOrNull(absolute);
+  const result = await practiceLstat(absolute);
+  if (result.problem !== undefined) {
+    return { kind: 'conflict', message: problemMessage(directory, result.problem) };
+  }
+  const info = result.info;
   if (info === null) {
     return { kind: 'missing' };
   }
@@ -287,7 +436,11 @@ async function skillFileState(
 ): Promise<SkillFileState> {
   const file = skillFile(name);
   const absolute = join(root, file);
-  const info = await lstatOrNull(absolute);
+  const result = await practiceLstat(absolute);
+  if (result.problem !== undefined) {
+    return { kind: 'conflict', message: problemMessage(file, result.problem) };
+  }
+  const info = result.info;
   if (info === null) {
     return { kind: 'missing' };
   }
@@ -304,6 +457,10 @@ async function skillFileState(
         return { kind: 'conflict', message: `skill file is not a regular file: ${file}` };
       }
     } catch (error) {
+      const problem = pathProblemFrom(error);
+      if (problem !== undefined) {
+        return { kind: 'conflict', message: problemMessage(file, problem) };
+      }
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return { kind: 'conflict', message: `skill file is a dangling symlink: ${file}` };
       }
@@ -430,7 +587,16 @@ async function linkDiagnostics(
       diagnostics.push(linkError(link.line, `link escapes the repository: ${link.target}`));
       continue;
     }
-    if ((await lstatOrNull(target)) === null) {
+    // A path whose parent is a regular file raises ENOTDIR rather than ENOENT.
+    // It is a broken link, not an internal error.
+    const targetState = await practiceLstat(target);
+    if (targetState.problem !== undefined) {
+      diagnostics.push(
+        linkError(link.line, `link target cannot be resolved (${targetState.problem}): ${link.target}`),
+      );
+      continue;
+    }
+    if (targetState.info === null) {
       diagnostics.push(linkError(link.line, `link target does not exist: ${link.target}`));
       continue;
     }
@@ -668,18 +834,38 @@ export async function checkPracticePackages(
   }
 
   const scan = await scanProject(root);
-  const plan = await planPractice({ root, scope, scan, manifest, mode: 'converge', version });
+  const problems = await practiceParentProblems(root);
+  const packs: PracticePack[] = [];
+  if (problems.docs === undefined) {
+    packs.push(documentationPack);
+  }
+  if (problems.skills === undefined) {
+    packs.push(authoringPack);
+  }
+  const plan = packs.length === 0
+    ? undefined
+    : await planPractice({ root, scope, scan, manifest, mode: 'converge', version }, packs);
   const collector = new PracticeCollector();
-  const conflicted = reportPlanConflicts(plan, collector);
-  const language = plan.docsLanguage;
-  const policySkipped = new Set(plan.policySkipped);
+  const conflicted = plan === undefined ? new Set<string>() : reportPlanConflicts(plan, collector);
+  const language = plan?.docsLanguage ?? await practiceLanguage(root, manifest);
+  const policySkipped = new Set(plan?.policySkipped ?? []);
+  if (problems.docs !== undefined) {
+    addParentProblem(collector, language, 'docs', problems.docs);
+  }
+  if (problems.skills !== undefined) {
+    addParentProblem(collector, language, 'skills', problems.skills);
+  }
 
-  for (const file of PRACTICE_DOC_FILES) {
+  for (const file of problems.docs === undefined ? PRACTICE_DOC_FILES : []) {
     if (conflicted.has(file)) {
       continue;
     }
-    const info = await lstatOrNull(join(root, file));
-    if (info === null) {
+    const state = await practiceLstat(join(root, file));
+    if (state.problem !== undefined) {
+      addDocsPath(collector, language, file, problemMessage(file, state.problem), MANUAL_PATH_NEXT);
+      continue;
+    }
+    if (state.info === null) {
       if (policySkipped.has(file)) {
         addPolicySkip(collector, language, file, POLICY_NEXT);
       } else {
@@ -784,7 +970,7 @@ export async function checkPracticePackages(
     }
   }
 
-  for (const name of AUTHORING_SKILL_NAMES) {
+  for (const name of problems.skills === undefined ? AUTHORING_SKILL_NAMES : []) {
     const directory = skillDirectory(name);
     if (conflicted.has(directory) || conflicted.has(skillFile(name))) {
       continue;
@@ -859,25 +1045,46 @@ export async function preflightPractice(input: {
     return { entries: [], diagnostics: [] };
   }
 
-  const plan = await planPractice({
-    root: input.root,
-    scope: input.scope,
-    scan: input.scan,
-    mode: 'adoption',
-    version: input.version,
-    ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
-  });
+  const problems = await practiceParentProblems(input.root);
+  const packs: PracticePack[] = [];
+  if (problems.docs === undefined) {
+    packs.push(documentationPack);
+  }
+  if (problems.skills === undefined) {
+    packs.push(authoringPack);
+  }
+  const plan = packs.length === 0
+    ? undefined
+    : await planPractice({
+      root: input.root,
+      scope: input.scope,
+      scan: input.scan,
+      mode: 'adoption',
+      version: input.version,
+      ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
+    }, packs);
   const collector = new PracticeCollector();
-  const conflicted = reportPlanConflicts(plan, collector);
-  const language = plan.docsLanguage;
-  const policySkipped = new Set(plan.policySkipped);
+  const conflicted = plan === undefined ? new Set<string>() : reportPlanConflicts(plan, collector);
+  const language = plan?.docsLanguage ?? await practiceLanguage(input.root, input.manifest);
+  const policySkipped = new Set(plan?.policySkipped ?? []);
+  if (problems.docs !== undefined) {
+    addParentProblem(collector, language, 'docs', problems.docs);
+  }
+  if (problems.skills !== undefined) {
+    addParentProblem(collector, language, 'skills', problems.skills);
+  }
   const next = input.suppressNext ? undefined : NORMALIZE_NEXT;
 
-  for (const file of PRACTICE_DOC_FILES) {
+  for (const file of problems.docs === undefined ? PRACTICE_DOC_FILES : []) {
     if (conflicted.has(file)) {
       continue;
     }
-    if (await exists(input.root, file)) {
+    const state = await practiceLstat(join(input.root, file));
+    if (state.problem !== undefined) {
+      addDocsPath(collector, language, file, problemMessage(file, state.problem), MANUAL_PATH_NEXT);
+      continue;
+    }
+    if (state.info !== null) {
       collector.addEntry({
         group: 'Documentation',
         label: file,
@@ -900,7 +1107,7 @@ export async function preflightPractice(input: {
     addDocsMissing(collector, language, file, next, false);
   }
 
-  for (const name of AUTHORING_SKILL_NAMES) {
+  for (const name of problems.skills === undefined ? AUTHORING_SKILL_NAMES : []) {
     const directory = skillDirectory(name);
     if (conflicted.has(directory) || conflicted.has(skillFile(name))) {
       continue;

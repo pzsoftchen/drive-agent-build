@@ -253,6 +253,60 @@ describe('detect preflight', () => {
     expect(await lstatOrNull(join(project.root, '.agents/policies/project.yaml'))).toBeNull();
   });
 
+  it('governs a regular file at the rules path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/rules', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.docs-path',
+        severity: 'error',
+        file: '.agents/rules',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Documentation',
+        status: 'error',
+        next: 'resolve the path conflict manually',
+      }),
+    ]));
+    expect(result.checklist.some(
+      (item) => item.group === 'Documentation' && item.status === 'missing',
+    )).toBe(false);
+  });
+
+  it('governs a regular file at the skills path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/skills', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-path',
+        severity: 'error',
+        file: '.agents/skills',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Skills',
+        status: 'error',
+        next: 'resolve the path conflict manually',
+      }),
+    ]));
+    expect(result.checklist.some(
+      (item) => item.group === 'Skills' && item.status === 'missing',
+    )).toBe(false);
+  });
+
   it('shows Documentation and authoring skill entries before initialization', async () => {
     const root = await tempDir();
 
