@@ -1,24 +1,26 @@
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import {
-  formatDiagnostics,
   hasErrors,
   sortDiagnostics,
   type Diagnostic,
 } from '../core/diagnostics.ts';
 import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
+import { lstatOrNull } from '../core/fs-atomic.ts';
 import { contractJson } from '../core/json.ts';
 import {
   assertRealPathInsideRoot,
   assertRealPathsDisjoint,
+  toPosix,
 } from '../core/paths.ts';
 import { assertSupportedPlatform } from '../core/platform.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
 import type {
   TargetDetectOutcome,
   TargetFactKind,
+  TargetFactStatus,
 } from '../adapter/types.ts';
 import {
   checkAgentHooks,
@@ -28,6 +30,14 @@ import {
   checkMemory,
   checkSecrets,
 } from '../detect/checks.ts';
+import {
+  buildChecklist,
+  formatChecklist,
+  type ChecklistEntry,
+  type ChecklistStatus,
+} from '../detect/checklist.ts';
+import { preflightProject, type PreflightResult } from '../detect/preflight.ts';
+import { resolveAdoptionRoot, type AdoptionPhase } from '../init/adoption.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
 import {
   getEnabledTargets,
@@ -35,8 +45,8 @@ import {
   loadProjectManifest,
   resolveProjectPaths,
 } from '../model/project-manifest.ts';
-import { resolveSourceRoot } from '../model/scope.ts';
-import type { TargetProvider } from '../model/types.ts';
+import type { Scope, SourceRoot } from '../model/scope.ts';
+import type { ProjectPaths } from '../model/types.ts';
 
 export interface DetectOptions {
   cwd: string;
@@ -58,6 +68,13 @@ export interface DetectResult {
     warnings: number;
     info: number;
   };
+  scope: Scope;
+  root: string;
+  phase: AdoptionPhase;
+  checklist: ChecklistEntry[];
+  score: { ok: number; total: number; percent: number };
+  nextActions: string[];
+  profile?: string;
 }
 
 export interface DetectIO {
@@ -93,41 +110,325 @@ function dedupe(diagnostics: readonly Diagnostic[]): Diagnostic[] {
 
 const ENVIRONMENT_WARNING_CODES = new Set(['backend.missing']);
 
-function buildResult(
+const GROUP_BY_KIND: Record<TargetFactKind, string> = {
+  instructions: 'Instructions',
+  agent: 'Agents',
+  skill: 'Skills',
+  rule: 'Rules',
+  policy: 'Policy',
+  hook: 'Hooks',
+};
+
+const INSTRUCTION_OUTPUT = '.claude/CLAUDE.md';
+
+const SAFETY_CODE_PREFIXES = ['secret.', 'path.', 'scan.', 'backend.'] as const;
+
+const CODE_GROUP_PREFIXES: ReadonlyArray<readonly [string, string]> = [
+  ['claude-md.', 'Instructions'],
+  ['agents-md.', 'Instructions'],
+  ['agent.', 'Agents'],
+  ['skill.', 'Skills'],
+  ['rule.', 'Rules'],
+  ['policy.', 'Policy'],
+  ['hook.', 'Hooks'],
+  ['memory.', 'Memory'],
+  ['generated.', 'Generated target'],
+  ['claude-settings.', 'Generated target'],
+  ['target.', 'Generated target'],
+  ['config.', 'Generated target'],
+];
+
+/**
+ * Codes that already have a dedicated checklist entry built by the phase
+ * pipeline; mapping them again would duplicate the same problem.
+ */
+const REPRESENTED_CODES = new Set(['agents-md.missing', 'config.source-root-nested']);
+
+function groupForFile(file: string): string | undefined {
+  if (
+    file === 'AGENTS.md'
+    || file === '.agents/AGENTS.md'
+    || file === 'CLAUDE.md'
+    || file === 'CLAUDE.local.md'
+    || file === INSTRUCTION_OUTPUT
+  ) {
+    return 'Instructions';
+  }
+  if (file === 'dab.yaml' || file === '.agents/dab.yaml' || file === '.claude/settings.json') {
+    return 'Generated target';
+  }
+  for (const [prefix, group] of [
+    ['.agents/agents/', 'Agents'],
+    ['.claude/agents/', 'Agents'],
+    ['.agents/skills/', 'Skills'],
+    ['.claude/skills/', 'Skills'],
+    ['.agents/rules/', 'Rules'],
+    ['.claude/rules/', 'Rules'],
+    ['.agents/policies/', 'Policy'],
+    ['.agents/adapters/', 'Policy'],
+    ['.agents/hooks/', 'Hooks'],
+    ['.agents/memory/', 'Memory'],
+    ['.agents/notes/', 'Notes'],
+  ] as const) {
+    if (file.startsWith(prefix)) {
+      return group;
+    }
+  }
+  return undefined;
+}
+
+function diagnosticGroup(diagnostic: Diagnostic): string {
+  if (SAFETY_CODE_PREFIXES.some((prefix) => diagnostic.code.startsWith(prefix))) {
+    return 'Safety';
+  }
+  if (diagnostic.file !== undefined) {
+    const byFile = groupForFile(diagnostic.file);
+    if (byFile !== undefined) {
+      return byFile;
+    }
+  }
+  for (const [prefix, group] of CODE_GROUP_PREFIXES) {
+    if (diagnostic.code.startsWith(prefix)) {
+      return group;
+    }
+  }
+  return 'Safety';
+}
+
+function diagnosticStatus(diagnostic: Diagnostic): ChecklistStatus {
+  switch (diagnostic.severity) {
+    case 'error':
+      return 'error';
+    case 'warning':
+      return 'warn';
+    case 'info':
+      return 'ok';
+  }
+}
+
+function nextFromHint(hint: string | undefined): string | undefined {
+  if (hint === undefined) {
+    return undefined;
+  }
+  if (hint.includes('dab normalize')) {
+    return 'dab normalize';
+  }
+  if (hint.includes('dab init')) {
+    return 'dab init';
+  }
+  if (/\bnormalize\b/.test(hint)) {
+    return 'dab normalize';
+  }
+  return undefined;
+}
+
+function diagnosticEntries(diagnostics: readonly Diagnostic[]): ChecklistEntry[] {
+  return diagnostics
+    .filter((item) => !REPRESENTED_CODES.has(item.code))
+    .map((diagnostic) => {
+      const next = nextFromHint(diagnostic.hint);
+      return {
+        group: diagnosticGroup(diagnostic),
+        label: diagnostic.file ?? diagnostic.code,
+        status: diagnosticStatus(diagnostic),
+        detail: diagnostic.message,
+        ...(next === undefined ? {} : { next }),
+      };
+    });
+}
+
+function statusEntry(
+  status: TargetFactStatus,
   diagnostics: readonly Diagnostic[],
-  targets: TargetDetectOutcome[] = [],
-  strict = false,
-): DetectResult {
-  const sorted = sortDiagnostics(dedupe(diagnostics));
-  const backendError = sorted.some(
+): ChecklistEntry {
+  const group = GROUP_BY_KIND[status.kind];
+  const label = status.kind === 'instructions' ? INSTRUCTION_OUTPUT : status.name;
+  const entry = {
+    group,
+    label,
+    ...(status.detail === undefined ? {} : { detail: status.detail }),
+  };
+  switch (status.status) {
+    case 'native':
+    case 'mapped':
+    case 'generated': {
+      if (status.kind === 'instructions') {
+        const related = diagnostics.filter(
+          (item) => item.file === INSTRUCTION_OUTPUT && item.severity !== 'info',
+        );
+        if (related.some((item) => item.severity === 'error')) {
+          return { ...entry, status: 'error' };
+        }
+        if (related.length > 0) {
+          return { ...entry, status: 'warn' };
+        }
+      }
+      return { ...entry, status: 'ok' };
+    }
+    case 'unsupported':
+      return { ...entry, status: 'warn' };
+    case 'not-applicable':
+      return { ...entry, status: 'ok' };
+    case 'missing':
+      return { ...entry, status: 'missing', next: 'dab normalize' };
+  }
+}
+
+async function exists(root: string, path: string): Promise<boolean> {
+  return (await lstatOrNull(join(root, path))) !== null;
+}
+
+function relativePath(root: string, absolute: string): string {
+  return toPosix(relative(root, absolute));
+}
+
+/**
+ * Positively reports authored sources that exist. Missing sources are left to
+ * their owning diagnostics so the health entry is not duplicated.
+ */
+async function inventoryEntries(
+  root: string,
+  paths: ProjectPaths,
+  diagnostics: readonly Diagnostic[],
+): Promise<ChecklistEntry[]> {
+  const entries: ChecklistEntry[] = [];
+  const instructions = relativePath(root, paths.instructions);
+  entries.push(await exists(root, instructions)
+    ? { group: 'Instructions', label: instructions, status: 'ok' }
+    : { group: 'Instructions', label: instructions, status: 'missing', next: 'dab init' });
+
+  const memoryIndex = relativePath(root, join(paths.agents, 'memory/INDEX.md'));
+  if (await exists(root, memoryIndex)) {
+    entries.push({ group: 'Memory', label: memoryIndex, status: 'ok' });
+  }
+
+  const notes = `${relativePath(root, join(paths.agents, 'notes'))}/`;
+  if (await exists(root, notes)) {
+    entries.push({ group: 'Notes', label: notes, status: 'ok' });
+  }
+
+  if (paths.scope === 'project') {
+    const settings = relativePath(root, join(paths.claude, 'settings.json'));
+    const problem = diagnostics.some(
+      (item) => item.file === settings && item.severity !== 'info',
+    );
+    if (!problem && await exists(root, settings)) {
+      entries.push({ group: 'Generated target', label: settings, status: 'ok' });
+    }
+  }
+  return entries;
+}
+
+function assembleResult(input: {
+  diagnostics: readonly Diagnostic[];
+  targets: TargetDetectOutcome[];
+  scope: Scope;
+  root: string;
+  phase: AdoptionPhase;
+  profile?: string;
+  entries: ChecklistEntry[];
+  exitCode: ExitCode;
+}): DetectResult {
+  const diagnostics = sortDiagnostics(dedupe(input.diagnostics));
+  const checklist = buildChecklist({
+    scope: input.scope,
+    root: input.root,
+    phase: input.phase,
+    ...(input.profile === undefined ? {} : { profile: input.profile }),
+    entries: input.entries,
+  });
+  return {
+    ok: input.exitCode === ExitCode.Ok,
+    exitCode: input.exitCode,
+    diagnostics,
+    targets: input.targets,
+    summary: summarize(diagnostics),
+    scope: input.scope,
+    root: input.root,
+    phase: input.phase,
+    checklist: checklist.entries,
+    score: checklist.score,
+    nextActions: checklist.nextActions,
+    ...(input.profile === undefined ? {} : { profile: input.profile }),
+  };
+}
+
+function buildResult(input: {
+  diagnostics: readonly Diagnostic[];
+  targets?: TargetDetectOutcome[];
+  scope: Scope;
+  root: string;
+  phase: AdoptionPhase;
+  profile?: string;
+  entries: ChecklistEntry[];
+  strict?: boolean;
+}): DetectResult {
+  const diagnostics = sortDiagnostics(dedupe(input.diagnostics));
+  const backendError = diagnostics.some(
     (item) => item.code === 'backend.version' && item.severity === 'error',
   );
-  const warningFailure = strict
-    && sorted.some(
+  const warningFailure = input.strict === true
+    && diagnostics.some(
       (item) => item.severity === 'warning' && !ENVIRONMENT_WARNING_CODES.has(item.code),
     );
   const exitCode = backendError
     ? ExitCode.Backend
-    : hasErrors(sorted) || warningFailure
+    : hasErrors(diagnostics) || warningFailure
       ? ExitCode.Validation
       : ExitCode.Ok;
-  return {
-    ok: exitCode === ExitCode.Ok,
+  return assembleResult({
+    diagnostics,
+    targets: input.targets ?? [],
+    scope: input.scope,
+    root: input.root,
+    phase: input.phase,
+    ...(input.profile === undefined ? {} : { profile: input.profile }),
+    entries: input.entries,
     exitCode,
-    diagnostics: sorted,
-    targets,
-    summary: summarize(sorted),
-  };
+  });
+}
+
+function preflightResult(preflight: PreflightResult): DetectResult {
+  return assembleResult({
+    diagnostics: preflight.diagnostics,
+    targets: [],
+    scope: preflight.sourceRoot.scope,
+    root: preflight.sourceRoot.root,
+    phase: preflight.phase,
+    ...(preflight.profile === undefined ? {} : { profile: preflight.profile }),
+    entries: [
+      ...preflight.entries,
+      ...diagnosticEntries(preflight.diagnostics),
+    ],
+    // Uninitialized and partial scopes keep the former config-error exit code.
+    exitCode: ExitCode.Usage,
+  });
 }
 
 export async function detectProject(options: DetectOptions): Promise<DetectResult> {
   assertSupportedPlatform(options.platform);
-  const home = options.home ?? homedir();
-  const sourceRoot = await resolveSourceRoot({ cwd: resolve(options.cwd), home });
+  const home = resolve(options.home ?? homedir());
+  const cwd = resolve(options.cwd);
+  // Adoption resolves the phase before any manifest is required, so a missing
+  // or partial source root becomes a read-only checklist instead of an error.
+  const adoption = await resolveAdoptionRoot({ cwd, home });
+
+  if (adoption.phase !== 'initialized') {
+    return preflightResult(await preflightProject({ cwd, home }));
+  }
+
+  const sourceRoot: SourceRoot = {
+    scope: adoption.scope,
+    root: adoption.root,
+    sourceRoot: adoption.sourceRoot,
+    manifest: adoption.manifestPath,
+    instructions: adoption.instructionsPath,
+  };
   const root = sourceRoot.root;
   const loaded = await loadProjectManifest(root, { scope: sourceRoot.scope });
   const paths = resolveProjectPaths(root, loaded.manifest);
   const enabledTargets = getEnabledTargets(loaded.manifest);
+  const profile = loaded.manifest.profile;
   const diagnostics: Diagnostic[] = [];
 
   try {
@@ -157,7 +458,19 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
         message: error.message,
         file: 'dab.yaml',
       });
-      return buildResult(diagnostics, [], options.strict === true);
+      return buildResult({
+        diagnostics,
+        targets: [],
+        scope: sourceRoot.scope,
+        root,
+        phase: adoption.phase,
+        profile,
+        entries: [
+          ...await inventoryEntries(root, paths, diagnostics),
+          ...diagnosticEntries(diagnostics),
+        ],
+        strict: options.strict === true,
+      });
     }
     throw error;
   }
@@ -222,53 +535,32 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     }
   }
 
-  return buildResult(diagnostics, targets, options.strict === true);
-}
-
-const TARGET_LABELS: Record<TargetProvider, string> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  dsh: 'dsh',
-};
-
-const STATUS_KIND_ORDER: readonly TargetFactKind[] = [
-  'agent',
-  'skill',
-  'rule',
-  'instructions',
-  'policy',
-  'hook',
-];
-
-function formatStatuses(targets: readonly TargetDetectOutcome[]): string[] {
-  const lines: string[] = [];
-  for (const target of targets) {
-    const statuses = [...target.statuses].sort(
-      (left, right) =>
-        STATUS_KIND_ORDER.indexOf(left.kind) - STATUS_KIND_ORDER.indexOf(right.kind),
-    );
-    for (const status of statuses) {
-      lines.push(
-        `${status.kind} ${status.name}: ${TARGET_LABELS[target.provider]}=${status.status}`,
-      );
-    }
-  }
-  return lines;
+  return buildResult({
+    diagnostics,
+    targets,
+    scope: sourceRoot.scope,
+    root,
+    phase: adoption.phase,
+    profile,
+    entries: [
+      ...await inventoryEntries(root, paths, diagnostics),
+      ...targets.flatMap((outcome) =>
+        outcome.statuses.map((status) => statusEntry(status, diagnostics))),
+      ...diagnosticEntries(diagnostics),
+    ],
+    strict: options.strict === true,
+  });
 }
 
 function formatHuman(result: DetectResult): string {
-  const lines = ['dab detect'];
-  const diagnostics = formatDiagnostics(result.diagnostics);
-  if (diagnostics.length > 0) {
-    lines.push(diagnostics.trimEnd());
-  } else {
-    lines.push('No issues found.');
-  }
-  lines.push(...formatStatuses(result.targets));
-  lines.push(
-    `Errors: ${result.summary.errors}, warnings: ${result.summary.warnings}, info: ${result.summary.info}`,
-  );
-  return `${lines.join('\n')}\n`;
+  const checklist = buildChecklist({
+    scope: result.scope,
+    root: result.root,
+    phase: result.phase,
+    ...(result.profile === undefined ? {} : { profile: result.profile }),
+    entries: result.checklist,
+  });
+  return `dab detect\n${formatChecklist(checklist)}`;
 }
 
 export async function runDetect(options: DetectOptions, io: DetectIO): Promise<number> {

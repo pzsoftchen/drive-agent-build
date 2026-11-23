@@ -389,6 +389,12 @@ describe('runDetect', () => {
       diagnostics: unknown[];
       targets: Array<{ provider: string; statuses: unknown[] }>;
       summary: { errors: number; warnings: number };
+      scope: string;
+      root: string;
+      phase: string;
+      checklist: Array<{ group: string; label: string; status: string; next?: string }>;
+      score: { ok: number; total: number; percent: number };
+      nextActions: string[];
     };
     expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(true);
@@ -397,6 +403,16 @@ describe('runDetect', () => {
     expect(payload.targets.map((item) => item.provider)).toEqual(['claude-code']);
     expect(payload.targets[0]?.statuses.length).toBeGreaterThan(0);
     expect(payload.summary.errors).toBe(0);
+    expect(payload.scope).toBe('project');
+    expect(payload.root).toBe(project.root);
+    expect(payload.phase).toBe('initialized');
+    expect(payload.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Instructions', label: 'AGENTS.md', status: 'ok' }),
+      expect.objectContaining({ group: 'Agents', label: 'reviewer', status: 'ok' }),
+    ]));
+    expect(payload.score.ok).toBeGreaterThan(0);
+    expect(payload.score.total).toBeGreaterThanOrEqual(payload.score.ok);
+    expect(payload.nextActions).toEqual([]);
 
     await writeProjectFile(project.root, 'CLAUDE.md', '# user\n');
     const failing: string[] = [];
@@ -408,22 +424,100 @@ describe('runDetect', () => {
     expect((JSON.parse(failing.join('')) as { ok: boolean }).ok).toBe(false);
   });
 
-  it('returns config exit code 2 for a missing manifest', async () => {
+  it('returns config exit code 2 with a partial preflight checklist', async () => {
     const project = await makeProject();
     projects.push(project);
     const stdout: string[] = [];
     const code = await runDetect(
-      { cwd: project.root, json: true, runner: goodRunner },
+      {
+        cwd: project.root,
+        home: dirname(project.root),
+        json: true,
+        runner: goodRunner,
+      },
       { stdout: (value) => stdout.push(value), stderr: () => undefined },
     );
 
     expect(code).toBe(2);
     const payload = JSON.parse(stdout.join('')) as {
       schemaVersion: number;
-      error: { code: string };
+      ok: boolean;
+      scope: string;
+      root: string;
+      phase: string;
+      checklist: Array<{ label: string; status: string }>;
+      score: { total: number };
+      error?: { code: string };
     };
     expect(payload.schemaVersion).toBe(1);
-    expect(payload.error.code).toBe('config.missing');
+    expect(payload.ok).toBe(false);
+    expect(payload.scope).toBe('project');
+    expect(payload.root).toBe(project.root);
+    expect(payload.phase).toBe('partial');
+    expect(payload.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'dab.yaml', status: 'missing' }),
+    ]));
+    expect(payload.score.total).toBeGreaterThan(0);
+    expect(payload.error).toBeUndefined();
+  });
+
+  it('prints a checklist in human output', async () => {
+    const project = await initialized();
+    const stdout: string[] = [];
+    const code = await runDetect(
+      detectOptions(project),
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(0);
+    const text = stdout.join('');
+    expect(text).toContain('dab detect');
+    expect(text).toContain('Scope: project');
+    expect(text).toContain(`Root: ${project.root}`);
+    expect(text).toContain('Profile: feature');
+    expect(text).toContain('Instructions');
+    expect(text).toContain('[OK] AGENTS.md');
+    expect(text).toContain('score:');
+  });
+
+  it('maps initialized diagnostics into checklist entries', async () => {
+    const project = await initialized();
+    await writeProjectFile(project.root, 'CLAUDE.md', '# user instructions\n');
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(3);
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Instructions', label: 'CLAUDE.md', status: 'error' }),
+    ]));
+    expect(result.nextActions).toEqual([]);
+  });
+
+  it('reports a global checklist without writing settings or gitignore', async () => {
+    const home = await makeGlobalFixture();
+    homes.push(home.home);
+    await normalizeProject({ cwd: home.agents, home: home.home, runner: goodRunner });
+    const settings = join(home.home, '.claude/settings.json');
+    const settingsContent = '{"permissions":{"allow":["Bash(echo)"]}}\n';
+    await writeFile(settings, settingsContent);
+    const gitignore = join(home.home, '.gitignore');
+    const gitignoreContent = 'node_modules\n';
+    await writeFile(gitignore, gitignoreContent);
+
+    const result = await detectProject({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+
+    expect(result.scope).toBe('global');
+    expect(result.root).toBe(home.home);
+    expect(result.phase).toBe('initialized');
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Agents', label: 'reviewer', status: 'ok' }),
+    ]));
+    expect(await readFile(settings, 'utf8')).toBe(settingsContent);
+    expect(await readFile(gitignore, 'utf8')).toBe(gitignoreContent);
   });
 
   it('rejects Windows with a versioned JSON error', async () => {
