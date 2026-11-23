@@ -10,12 +10,13 @@ DAB is the long-term direction. The product roadmap follows DAD first: prove rel
 - Generated output: `.claude/`.
 - Commands: `dab init`, `dab detect`, `dab normalize`, `dab policy explain`.
 - Bilingual documentation gates.
-- Status: implemented on `main`; pending a tagged release.
+- Status: released as `v0.1.1` on 2026-11-23.
+- Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)
 
 ## v0.1.x DAD Foundation
 
-- Scope roots, v2 manifests, target adapters, ownership and failure semantics are implemented on `main`; pending release.
-- Symlink-first Claude Code instructions, per-entry projections and project settings are implemented on `main`; pending release.
+- Scope roots, v2 manifests, target adapters, ownership and failure semantics are released in `v0.1.1`.
+- Symlink-first Claude Code instructions, per-entry projections and project settings are released in `v0.1.1`.
 - Project and global scopes remain independent; DAB provides no `dab global` command and never merges scopes.
 - Codex and DSH adapters are deferred until the DAD task loop is measured.
 

@@ -2,7 +2,7 @@
 
 # 变更日志
 
-## 0.1.1 — 2026-11-19
+## 0.1.1 — 2026-11-23
 
 - 以 `@saydone/dab` 发布 CLI，并增加 GitHub Actions release workflow、npm provenance 和逐 tag 的 GitHub Release。
 - `schemaVersion: 1` 已加入每个 `--json` 结果，并拒绝 `--json` 与 `--help` 或 `--version` 组合使用。

@@ -2,7 +2,7 @@ English | [中文](CHANGELOG.zh.md)
 
 # Changelog
 
-## 0.1.1 — 2026-11-19
+## 0.1.1 — 2026-11-23
 
 - Published the CLI as `@saydone/dab` with a GitHub Actions release workflow, npm provenance and a GitHub Release for each tag.
 - Added `schemaVersion: 1` to every `--json` result and rejected `--json` with `--help` or `--version`.
