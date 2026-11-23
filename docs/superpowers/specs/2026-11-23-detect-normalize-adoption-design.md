@@ -2,7 +2,7 @@
 
 ## 状态
 
-已批准。设计分支：`design/detect-normalize-adoption`。实现计划待编写。
+已批准。实现计划：[2026-11-23-detect-normalize-adoption.md](../plans/2026-11-23-detect-normalize-adoption.md)。
 
 ## 背景
 
