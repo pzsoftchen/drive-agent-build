@@ -11,8 +11,11 @@ import {
   renderAuthoringSkill,
 } from '../../src/init/practice-authoring.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
-import { populateProject } from '../helpers/initialized.ts';
-import { makeInitializedProject } from '../helpers/initialized.ts';
+import {
+  makeInitializedProject,
+  populateProject,
+  syncGeneratedProjections,
+} from '../helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
@@ -86,7 +89,7 @@ async function completePractice(project: ProjectFixture): Promise<void> {
     await writeProjectFile(
       project.root,
       `.agents/skills/${name}/SKILL.md`,
-      renderAuthoringSkill(name, DAB_VERSION),
+      await renderAuthoringSkill(name, DAB_VERSION),
     );
   }
   await normalizeProject({ cwd: project.root, runner: goodRunner });
@@ -719,6 +722,41 @@ describe('runDetect', () => {
       }),
     ]));
     expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(3);
+  });
+
+  it('keeps modified managed skills non-strict while stale skills fail strict', async () => {
+    const project = await initialized();
+    await completePractice(project);
+    const skillFile = '.agents/skills/dab-doc-writing/SKILL.md';
+    const modified = `${await renderAuthoringSkill('dab-doc-writing', DAB_VERSION)}\nLocal note.\n`;
+    await writeProjectFile(project.root, skillFile, modified);
+    await syncGeneratedProjections(project.root);
+
+    const modifiedResult = await detectProject(detectOptions(project));
+    expect(modifiedResult.exitCode).toBe(0);
+    expect(modifiedResult.diagnostics.map((item) => item.code)).toContain(
+      'practice.skill-modified',
+    );
+    expect(modifiedResult.diagnostics.map((item) => item.code)).not.toContain(
+      'generated.manifest-stale',
+    );
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(0);
+    expect(await readFile(join(project.root, skillFile), 'utf8')).toBe(modified);
+
+    const stale = await renderAuthoringSkill('dab-doc-writing', '0.0.0');
+    await writeProjectFile(project.root, skillFile, stale);
+    await syncGeneratedProjections(project.root);
+
+    const staleResult = await detectProject(detectOptions(project));
+    expect(staleResult.diagnostics.map((item) => item.code)).toContain(
+      'practice.skill-stale',
+    );
+    // Only the stale state drives the strict failure in this fixture.
+    expect(staleResult.diagnostics.map((item) => item.code)).not.toContain(
+      'generated.manifest-stale',
+    );
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(3);
+    expect(await readFile(join(project.root, skillFile), 'utf8')).toBe(stale);
   });
 
   it('maps initialized diagnostics into checklist entries', async () => {

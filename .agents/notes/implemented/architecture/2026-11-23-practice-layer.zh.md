@@ -13,7 +13,7 @@ DAB v0.1.1 只治理配置，却没有生成让项目的 agent 工作保持可�
 - Profile 选择实践包。`generic` 是默认值，`feature` 保留为行为相同的兼容别名，生产注册表组合 `core`、`documentation` 和 `authoring`。Documentation 和 authoring packs 只在 project scope 运行。
 - 一个共享的 `planAuthoredScaffold` 服务 `init`（`full`）和 `normalize`（未初始化或 partial scope 用 `adoption`，已初始化 scope 用 `converge`）。Pack 声明 targets，planner 对它们做 stat，并用现有路径和计划路径构建 anchors，只渲染缺失文件。存在的根 `AGENTS.md`，或 global `.agents/AGENTS.md`，只作为 anchor，不会被规划或写入，因此 converge 只在它存在时才从生成的 docs 链接它。
 - Documentation pack 只拥有 `docs/AGENTS.md` 和 `docs/architecture.md`。生成的 docs 使用由 `docs.language`（`auto`、`en` 或 `zh`）决定的单一语言，从不创建 `.zh.md` 或 `.i18n.yaml` 配对。`auto` 采样现有 docs、根 `AGENTS.md`、`README.md`、`package.json` description 和 locale，然后默认 `en`；`{ value, source }` 解析结果会被报告。
-- Authoring pack 安装 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes`，位于 `.agents/skills/` 下。每个 skill 都是带 `dab-skill: <name>@<version>` 标记的 authored 副本。DAB 跳过已存在的 skill 目录，且从不更新已安装 skill；没有 authored source 的物理 `.claude/skills/dab-<name>` 条目由 `init` 保持 pending，并由 `normalize` 导入。
+- Authoring pack 安装 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes`，位于 `.agents/skills/` 下。每个 skill 都是带受管 `dab-skill` 标记的 authored 副本。脚手架跳过已存在的 skill 目录；受管更新、保留的分叉以及 marker/hash 算法属于 [Managed authoring skills](2026-11-24-managed-skills.zh.md)。没有 authored source 的物理 `.claude/skills/dab-<name>` 条目由 `init` 保持 pending，并由 `normalize` 导入。
 - 已有的 `.agents/rules/docs-bilingual.md` 是项目政策：规则保留，缺失的 documentation targets 以 `practice.docs-bilingual-policy` 被 policy skip，已有 docs 作为 skipped 保留，authoring skills 和 target 写入继续。
 - `dab detect` 只读运行相同的 packs。它增加 `Documentation` 组和 `Skills` 中的 authoring 条目。Preflight（未初始化和 partial scope）只报告存在性、policy skip、语言和路径状态；在已初始化 scope 中，内容检查覆盖链接、行首 `TODO:` 或 `TODO(owner):` 标记、空架构章节和版本标记。Policy skip 和未加版本标记的 authored skills 是 non-strict warning。
 - DAB dogfood 该层：自身的 `docs/AGENTS.md` 指南和 `dab-*` skills 是由 `dab detect` 检查的 authored 文件，同时已有的双语规则继续让产品 docs 保持配对。
@@ -34,7 +34,7 @@ DAB v0.1.1 只治理配置，却没有生成让项目的 agent 工作保持可�
 ## Consequences
 
 - 带 `.agents/rules/docs-bilingual.md` 的存量 v0.1.1 项目不会获得生成的缺失 docs；已有 docs 作为 `skipped` 保留。缺失 docs 会收到 `practice.docs-bilingual-policy` warning，项目仍获得 authoring skills；迁移路径是删除该规则或等待 bilingual pack。
-- 已安装的 `dab-*` skills 是 authored 副本。DAB 版本升级后它们会保持落后，直到人或 agent 审阅并合入新文本；`dab detect` 报告落后标记，但从不覆盖 skill。
+- 已安装的 `dab-*` skills 是 authored 副本。DAB 版本升级会更新未修改副本，并保留 modified、newer、legacy 或 unversioned 分叉；`dab detect` 报告对应状态。[Managed authoring skills](2026-11-24-managed-skills.zh.md) 拥有更新算法。
 - 可导入的物理 `.claude/skills/dab-*` 目录不会被重复创建：`init` 将其报告为 pending，`dab normalize` 导入后，后续运行会把它投影。非目录条目以 warning pending 报告为 `practice.skill-import-conflict`，不提供 import 提示，init 从不写入或替换它。
 - `feature` manifest 获得与 `generic` 相同的实践行为，因此一次 normalize 可能新增此前不存在的 docs 和 skills。`--dry-run` 和 `practices` JSON 会先展示计划。
 - 新的 generic 项目不再获得双语规则。DAB 自身保留该规则，因此自己的 documentation pack 被 policy skip，而其他项目获得单语 docs；项目规则优先。

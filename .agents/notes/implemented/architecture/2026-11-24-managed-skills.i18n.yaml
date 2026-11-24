@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-24-managed-skills.md
+translation: .agents/notes/implemented/architecture/2026-11-24-managed-skills.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: f4430920e112e6e6d016cc088e3cf1ed6d03f36e50f7ac35e14a9584a3673b8a
+    translation: c8117840bd496bc8393c4dce201a14932e4c1c64d766eaa53a0b1e2c1d76036e
+  - index: 2
+    level: 2
+    source: 692847b4269e338374513624e8e3fee5c7756415b84c4c5598083bd539fa91a1
+    translation: 6674c6db00eb10b28a1ce89f25580b05e369d57b2a9982f53ee5deba8155295e
+  - index: 3
+    level: 2
+    source: a1a6cbc817fbd41fcbc9e4bd9297b000ec30a0a3c65d3ffa1e28a2a0f860d9b7
+    translation: 14f4f996a2db2f93a7bed77829081bed25afeac9838109763245c1ddad496fba
+  - index: 4
+    level: 2
+    source: d6d80d48831ecda233cc74d18a7da568a087c1a9746d09f0092fcc474e0b3f2b
+    translation: 4def36cf54f48031e9bff9e614079f3edb8894d1a3a3029f281ae684c73eafb9
+  - index: 5
+    level: 2
+    source: d8aeb01499e019c4a4dcff11c315d96c123a721f54956437f2b258fa3221eb20
+    translation: 08c9f0ca2bd204d554592fa0d2609f1b315c2c80a45fa0a1a7bfdb7571e0d3d3
+  - index: 6
+    level: 2
+    source: c696220ea86b80001b8bea6f2f5cd95186cf8910d5f1347ec7a7e4a02f4adb45
+    translation: ad066a5fdc07cc9dc04e9574624379673630d1eb9cfe88779d573ce32ed76f77
+  - index: 7
+    level: 2
+    source: ec6b3e8a6129136926b5a6cc0bbf517857f034730dea2d06ca1528e957cd4945
+    translation: a687e6299a8553512fa04d678000d2d108f72c67cb73e9aa330aa3f7b5663178

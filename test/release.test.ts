@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { AUTHORING_SKILL_NAMES } from '../src/init/practice-authoring.ts';
 
 const root = process.cwd();
 
 describe('release metadata', () => {
+  it('ships the canonical authoring skill templates in the package', async () => {
+    const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as {
+      files?: string[];
+    };
+
+    expect(pkg.files).toContain('skills');
+    for (const name of AUTHORING_SKILL_NAMES) {
+      const text = await readFile(join(root, 'skills', name, 'SKILL.md'), 'utf8');
+      expect(text).toContain(`name: ${name}`);
+      expect(text).not.toContain('<!-- dab-skill:');
+    }
+  });
+
   it('declares the v0.1 package contract', async () => {
     const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as {
       name: string;

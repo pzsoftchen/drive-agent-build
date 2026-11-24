@@ -17,6 +17,7 @@ DAB is conceptually a driving system for Builder-directed agent work. This repos
 | Project instructions | `AGENTS.md` | `.claude/CLAUDE.md` symlink or generated shim |
 | Roles | `.agents/agents/` | `.claude/agents/` symlinks |
 | Skills | `.agents/skills/` | `.claude/skills/` symlinks |
+| Authoring skill templates | `skills/` in the DAB package | Copies under `.agents/skills/dab-*` |
 | Rules | `.agents/rules/` | `.claude/rules/` symlinks |
 | Shared safety policy | `.agents/policies/project.yaml` | `.claude/settings.json` |
 | Claude Code policy | `.agents/adapters/claude-code.yaml` | `.claude/settings.json` |
@@ -73,21 +74,45 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 
 - `profile` selects the practices that `init` and `normalize` scaffold. `generic` is the default; `feature` is a compatibility alias with the same behavior, and an authored manifest wins over the CLI flag.
 - A practice pack declares candidate paths in `targets()`, rendered content in `files()` and, when needed, owned directories or `skipChildrenWhenExists`. The production registry composes `core`, `documentation` and `authoring`; the documentation and authoring packs run in project scope only.
-- `planAuthoredScaffold` is the single authored-file planner behind `init` and `normalize`. `init` uses `full`, `normalize` uses `adoption` for uninitialized or partial scopes and `converge` for initialized scopes. It stats candidates, builds anchors from existing plus planned paths and renders only missing files, so existing authored files are never overwritten. An existing root `AGENTS.md` (or global `.agents/AGENTS.md`) is an anchor without being planned or written, so converge links it from generated docs only when present. Existing targets are validated before they are preserved: a documentation file must be a regular readable file or an in-root symlink to one, and a skill directory must be a real directory or an in-root symlink to a directory with read and search permission. Escaping links, special files and unreadable files or directories are governed errors before any write.
+- `planAuthoredScaffold` is the single authored-file planner behind `init` and `normalize`. `init` uses `full`, `normalize` uses `adoption` for uninitialized or partial scopes and `converge` for initialized scopes. It stats candidates, builds anchors from existing plus planned paths and renders only missing files, so the planner never overwrites an existing authored file. An existing root `AGENTS.md` (or global `.agents/AGENTS.md`) is an anchor without being planned or written, so converge links it from generated docs only when present. Existing targets are validated before they are preserved: a documentation file must be a regular readable file or an in-root symlink to one, and a skill directory must be a real directory or an in-root symlink to a directory with read and search permission. Escaping links, special files and unreadable files or directories are governed errors before any write.
 - The documentation pack owns `docs/AGENTS.md` and `docs/architecture.md`. It writes one language and never creates `.zh.md` or `.i18n.yaml` pairs; `docs/AGENTS.md` is an AGENTS file and stays pairing-exempt.
 - `docs.language` is `auto`, `en` or `zh`. `auto` samples existing `docs/AGENTS.md`, `docs/architecture.md`, root `AGENTS.md`, `README.md`, the `package.json` description and the locale, then defaults to `en`. The resolution carries `{ value, source }` and is reported by `init`, `normalize` and `detect`.
 - `.agents/rules/docs-bilingual.md` is a project policy signal, not an error: missing documentation targets are policy-skipped and the rule is preserved. Existing docs are preserved as skipped, so a dangling docs path cannot block skills or target writes.
 - Hooks and shared memory are advanced, opt-in capabilities. `init` and normalize adoption do not create `.agents/hooks/` or `.agents/memory/`; existing hooks are validated by `init`, `normalize` and `detect` and compiled where applicable, while existing memory files are preserved by `init` and `normalize` and validated by `init` and `detect`.
-- The authoring pack owns `.agents/skills/dab-doc-writing`, `.agents/skills/dab-architecture-writing` and `.agents/skills/dab-decision-notes`. An existing skill directory is preserved. When only an importable physical `.claude/skills/dab-*` directory exists, `init` drops its template and reports the import pending, which `normalize` performs. A non-directory entry is reported as a warning pending with `practice.skill-import-conflict` and no import hint. Each rendered body carries a `dab-skill: <name>@<version>` marker; DAB never updates an installed skill automatically and reports a stale marker instead.
+- The authoring pack owns `.agents/skills/dab-doc-writing`, `.agents/skills/dab-architecture-writing` and `.agents/skills/dab-decision-notes`. Existing skill directories are preserved by scaffolding. When only an importable physical `.claude/skills/dab-*` directory exists, `init` drops its template and reports the import pending, which `normalize` performs. A non-directory entry is reported as a warning pending with `practice.skill-import-conflict` and no import hint. Canonical template bodies live in `skills/<name>/SKILL.md` in the installed package; the marker and managed update flow are described under Managed authoring skills.
 - A regular file at `.agents/rules` or `.agents/skills` is a governed path error: `normalize` and `detect` report `practice.docs-path` or `practice.skill-path`, `init` reports `path.conflict`, and no practice write runs. Only the exact practice parent may collapse its fact set to empty; a nested unreadable skill directory is reported per skill as `skill.unreadable` while sibling skills stay discoverable and projectable. A regular file, dangling link, denied access or symlink loop at `.agents/agents`, `.agents/hooks`, `.agents/memory`, `.agents/notes`, `.agents/policies` or `.agents/adapters` is a governed `path.conflict` in `init`, `normalize` and `detect`; project and global runs block before writes or discovery. A source parent without read and search permission is the same governed conflict; the best-effort secret scan may skip an unreadable subtree, so the parent probe, not the scan, owns access errors.
 - `normalize` plans practice writes before target planning so new files are projected in the same run. A practice error blocks every write, including `.claude`; a policy skip does not.
-- `detect` runs the same packs read-only. It adds a `Documentation` group after Instructions and authoring entries to `Skills`. Preflight (uninitialized and partial scopes) reports presence, policy skips, language and path state only; on initialized scopes, content checks cover links in the two documentation files, line-start `TODO:` or `TODO(owner):` markers, empty architecture sections and skill version markers.
+- `detect` runs the same packs read-only. It adds a `Documentation` group after Instructions and authoring entries to `Skills`. Preflight (uninitialized and partial scopes) reports presence, policy skips, language and path state only; on initialized scopes, content checks cover links in the two documentation files, line-start `TODO:` or `TODO(owner):` markers, empty architecture sections and managed skill states.
 - `normalize --json` adds project-scope `practices` with `profile`, `mode`, `language`, `created`, `skipped`, `policySkipped`, `directories`, `skills` and `diagnostics`; `policySkipped` lists only missing docs skipped by the bilingual rule, while existing docs are reported as `skipped`; global scope omits it. `detect --json` carries the new entries in `checklist` under the existing `schemaVersion: 1`.
+
+## Managed authoring skills
+
+- Canonical templates live at `skills/<name>/SKILL.md` in the DAB repository and installed package; `package.json` publishes `skills`. `init` and `normalize` load them from the package root, so no network, `npx skills` or external installer participates.
+- An installed copy at `.agents/skills/<name>/SKILL.md` carries `<!-- dab-skill: <name>@<version> sha256=<hex> -->` after its frontmatter. `version` is the DAB package version that rendered the copy, and `sha256` is the hash of the UTF-8 body after the marker line is removed.
+- `normalize` plans every `dab-*` skill before target planning. A missing file is created; a matching hash with an equal version is skipped; a matching hash with a strictly older version is rewritten atomically with the current template and marker; a legacy marker without a hash is migrated when the marker-stripped body is byte-identical to the current template. A modified body, a newer or unparseable version, a differing legacy body, a missing marker and a marker naming another skill are preserved with diagnostics. A path that is not a regular file, escapes the root or cannot be read is a blocking `practice.skill-path` error. A symlink at the skill file itself is such an error even when it resolves inside the root; the containing skill directory may be an in-root symlink.
+- Before each managed write, `normalize` re-reads the target and verifies the planned marker, version and body hash. A target that changed, disappeared or appeared after planning is preserved with a `practice.skill-concurrent-change` warning instead of being written; a missing skill uses an exclusive create, so a concurrently created file is never replaced.
+- Managed updates require stable numeric versions. A prerelease DAB version such as `0.1.3-beta.1` cannot be compared, so installed skills are preserved and are not updated automatically; a skill created by a prerelease carries a marker that later stable releases also preserve.
+- Updates are only for `dab-*` skills. User-defined skills are never touched. Managed updates create no `.dab/backups/` entry, and a modified file is never overwritten or backed up; the installed package and git history are the record. `init` installs missing skills only.
+- CRLF matters: legacy migration and modified detection compare bytes, so a body that differs only by CRLF line endings is preserved.
+- `detect` maps managed state to the Skills group:
+
+| State | Diagnostic | `--strict` |
+|---|---|---|
+| current | none | passes |
+| stale | `practice.skill-stale` | fails |
+| newer or uncomparable | `practice.skill-newer` | passes |
+| modified | `practice.skill-modified` | passes |
+| legacy, migratable | `practice.skill-legacy` info | passes |
+| legacy, differing body | `practice.skill-legacy` warning | passes |
+| unversioned or marker mismatch | `practice.skill-unversioned` or `practice.skill-marker-mismatch` | passes |
+| path or read error | `practice.skill-path` | fails |
+
+- `normalize --json` adds `practices.skills.updated`, `migrated`, `modified`, `newer`, `legacy`, `unversioned`, `markerMismatch` and `concurrent` as additive fields under `schemaVersion: 1`; human output uses `update skill`, `migrate skill` and `skip skill ... (...)` actions.
 
 ## Core loop
 
 1. `dab init` scans a repository and writes the full authored skeleton for one scope.
-2. `dab normalize` adopts missing minimal source, imports physical Claude agents and skills and fills missing practice files, then prechecks every enabled target and writes target output only when all prechecks pass.
+2. `dab normalize` adopts missing minimal source, imports physical Claude agents and skills, fills missing practice files and updates unmodified managed authoring skills, then prechecks every enabled target and writes target output only when all prechecks pass.
 3. `dab detect` checks drift, ownership, phase and scope without writing.
 4. `dab policy explain --target <provider>` shows the effective result for one target.
 
@@ -148,7 +173,7 @@ generated:
 
 - Adoption runs before source-root resolution. An uninitialized or partial scope gets the missing minimal source: `AGENTS.md`, `dab.yaml`, the project policy and the Claude Code policy, plus empty agents, skills, rules and notes directories. Hooks and shared memory are not adopted; existing hooks and memory files remain in place and keep their existing validation. Adoption reuses the `init` renderers but creates no profile agents or core skills; the namespaced `dab-*` authoring skills are the exception.
 - Import is a controlled migration, not an unmanaged conflict: physical `.claude/agents/*.md` and `.claude/skills/<dir>/SKILL.md` entries are copied into `.agents`, backed up under `.dab/backups/<timestamp>/`, and replaced with per-entry symlinks. `--fix` is not required.
-- `.agents` is the source of truth. An existing source file or skill directory is never overwritten; differing `.claude` content produces a warning. A first import copies the whole skill directory, including extra files; when `.agents/skills/<name>` already exists, extra skill files stay in the backup.
+- During import, `.agents` is the source of truth: an existing source file or skill directory is never overwritten; differing `.claude` content produces a warning. A first import copies the whole skill directory, including extra files; when `.agents/skills/<name>` already exists, extra skill files stay in the backup.
 - Import preserves the `.claude` basename or directory name. The frontmatter `name` is the fact id; a mismatch warns but does not rename.
 - All-or-nothing gating covers adoption and import: any invalid candidate or unsafe path blocks every source and `.claude` write. After a later target preflight failure, `.claude` stays untouched; an idempotent source copy may already exist.
 - Imports run for initialized and uninitialized/partial scopes, in project and global scope. In global scope `.claude` entries link into `~/.agents`; `~/.claude/settings.json` and `$HOME/.gitignore` are never read or written.
@@ -184,6 +209,9 @@ generated:
 - `src/detect/` contains drift and safety checks, checklist rendering, the uninitialized preflight and practice checks.
 - `src/init/` scans repositories, renders templates, resolves adoption phases and plans minimal source.
 - `src/init/practice.ts` owns the authored scaffold planner and pack registry; `practice-docs.ts` and `practice-authoring.ts` render the documentation and authoring packs, and `docs-language.ts` resolves `docs.language`.
+- `src/core/skill-marker.ts` parses, inserts and removes the managed skill marker and hashes the marker-stripped body.
+- `src/init/skill-templates.ts` loads canonical templates from the packaged `skills/` directory; `src/init/managed-skills.ts` classifies installed authoring skills and applies managed creates, updates and migrations.
+- `skills/` holds the canonical authoring-skill templates published with the package.
 - `src/docs/` runs the bilingual documentation gates.
 
 ## Generated outputs
@@ -192,7 +220,7 @@ generated:
 - `.claude/CLAUDE.md` is a symlink to the scope's instructions by default, with the generated import shim as an explicit fallback.
 - `.claude/agents/`, `.claude/skills/` and `.claude/rules/` contain per-entry symlinks.
 - `docs/AGENTS.md` and `docs/architecture.md` are authored project documentation; DAB creates a missing skeleton once and never overwrites it.
-- `.agents/skills/dab-*` are authored authoring skills with a version marker, projected as `.claude/skills/` symlinks.
+- `.agents/skills/dab-*` are managed authoring copies with a version/hash marker, projected as `.claude/skills/` symlinks.
 - `dab.yaml` stores `scope`, `targets` and per-target generated records with source hashes, target hashes and projection lists.
 - `.dab/backups/` stores originals before `--fix` adopts an unmanaged path and before an import replaces a `.claude` entry.
 
@@ -243,7 +271,7 @@ Every published product document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`.
 - Unsupported provider semantics fail loudly instead of silently widening permissions; one failing target blocks all writes.
 - DAB does not merge project and global scopes and does not adopt global settings in this phase.
 - DAB imports only `.claude/agents` and `.claude/skills` in this phase; rules, settings, hooks and instructions are not adopted.
-- DAB never overwrites authored docs or skill directories and never updates installed `dab-*` skills; a stale marker is a warning for manual review.
+- DAB never overwrites authored docs or modified managed skills; `normalize` updates an unmodified older `dab-*` skill, while modified, newer and legacy forks are preserved.
 - DAB does not run an agent or LLM to fill documentation content; `normalize` scaffolds skeletons and `detect` checks structure.
 - Global imports write under `$HOME` but never manage `~/.claude/settings.json` or `$HOME/.gitignore`.
 - Path deny rules are tool-level guardrails, not a sandbox; `Bash`, `Grep`, `Glob`, `NotebookEdit` and wrapper commands can bypass them.

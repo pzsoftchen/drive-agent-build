@@ -39,6 +39,38 @@ export async function readTextFile(filePath: string, maxBytes = 1_048_576): Prom
   return readFile(filePath, 'utf8');
 }
 
+/**
+ * Create a file only when it does not exist. `wx` makes the check and the
+ * create one filesystem operation, so an authored file that appears between
+ * planning and writing is never replaced. Returns false when the path exists.
+ */
+export async function writeFileIfAbsent(
+  filePath: string,
+  data: string,
+  mode = 0o644,
+): Promise<boolean> {
+  await ensureDir(dirname(filePath));
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(filePath, 'wx', mode);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      return false;
+    }
+    throw error;
+  }
+  try {
+    await handle.writeFile(data);
+    await handle.sync();
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(filePath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  await handle.close();
+  return true;
+}
+
 export async function writeFileAtomic(
   filePath: string,
   data: string | Buffer,

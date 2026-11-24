@@ -6,11 +6,17 @@ import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
+import { DAB_VERSION } from '../../src/core/version.ts';
+import {
+  loadAuthoringSkillTemplate,
+  renderAuthoringSkill,
+} from '../../src/init/skill-templates.ts';
 import {
   getGeneratedTarget,
   loadProjectManifest,
 } from '../../src/model/project-manifest.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
+import { makeInitializedProject } from '../helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
@@ -783,5 +789,182 @@ Unsafe.
     expect(payload.settings.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(payload.backups).toEqual([]);
     expect(payload.gitignore).toEqual({ changed: true, path: '.gitignore' });
+  });
+});
+
+describe('normalize managed skill reporting', () => {
+  const docWriting = 'dab-doc-writing' as const;
+  const architecture = 'dab-architecture-writing' as const;
+  const decisionNotes = 'dab-decision-notes' as const;
+
+  function managedFile(name: string): string {
+    return `.agents/skills/${name}/SKILL.md`;
+  }
+
+  async function initializedFixture(): Promise<ProjectFixture> {
+    const project = await makeInitializedProject();
+    projects.push(project);
+    return project;
+  }
+
+  it('exposes additive managed skill fields with schemaVersion 1', async () => {
+    const project = await projectFixture();
+    const file = managedFile(docWriting);
+    await writeProjectFile(
+      project.root,
+      file,
+      await renderAuthoringSkill(docWriting, '0.1.0'),
+    );
+    const stdout: string[] = [];
+
+    const code = await runNormalize(
+      { cwd: project.root, json: true, runner: goodRunner },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(stdout.join('')) as {
+      schemaVersion: number;
+      actions: string[];
+      practices?: {
+        skills: {
+          created: string[];
+          skipped: string[];
+          updated: string[];
+          migrated: string[];
+          modified: string[];
+          newer: string[];
+          legacy: string[];
+          unversioned: string[];
+          markerMismatch: string[];
+        };
+      };
+    };
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.practices?.skills.updated).toEqual([file]);
+    expect(payload.practices?.skills.created).toHaveLength(2);
+    expect(payload.practices?.skills.migrated).toEqual([]);
+    expect(payload.practices?.skills.modified).toEqual([]);
+    expect(payload.practices?.skills.newer).toEqual([]);
+    expect(payload.practices?.skills.legacy).toEqual([]);
+    expect(payload.practices?.skills.unversioned).toEqual([]);
+    expect(payload.practices?.skills.markerMismatch).toEqual([]);
+    // The existing directory skip stays reported alongside the managed update.
+    expect(payload.practices?.skills.skipped)
+      .toContain('.agents/skills/dab-doc-writing');
+    expect(payload.actions).toContain(`update skill ${file}`);
+  });
+
+  it('prints update and skip reasons in human output', async () => {
+    const project = await initializedFixture();
+    const staleFile = managedFile(docWriting);
+    const modifiedFile = managedFile(architecture);
+    await writeProjectFile(
+      project.root,
+      staleFile,
+      await renderAuthoringSkill(docWriting, '0.1.0'),
+    );
+    const modified = `${await renderAuthoringSkill(architecture, DAB_VERSION)}\nLocal note.\n`;
+    await writeProjectFile(project.root, modifiedFile, modified);
+    const stdout: string[] = [];
+
+    const code = await runNormalize(
+      { cwd: project.root, home: dirname(project.root), runner: goodRunner },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(0);
+    const output = stdout.join('');
+    expect(output).toContain(`update skill ${staleFile}`);
+    expect(output).toContain(`skip skill ${modifiedFile} (modified)`);
+    expect(output).not.toContain('skip skill .agents/skills/dab-decision-notes/SKILL.md');
+    expect(await readFile(join(project.root, modifiedFile), 'utf8')).toBe(modified);
+  });
+
+  it('prints each untouched skill once and hides a directory skip for a written child', async () => {
+    const project = await initializedFixture();
+    const staleFile = managedFile(docWriting);
+    await writeProjectFile(
+      project.root,
+      staleFile,
+      await renderAuthoringSkill(docWriting, '0.1.0'),
+    );
+    for (const name of [architecture, decisionNotes]) {
+      await writeProjectFile(
+        project.root,
+        managedFile(name),
+        await renderAuthoringSkill(name, DAB_VERSION),
+      );
+    }
+    const stdout: string[] = [];
+
+    const code = await runNormalize(
+      { cwd: project.root, home: dirname(project.root), runner: goodRunner },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(0);
+    const output = stdout.join('');
+    expect(output).toMatch(/^ {2}update skill \.agents\/skills\/dab-doc-writing\/SKILL\.md$/m);
+    expect(output).not.toMatch(/^ {2}skip \.agents\/skills\/dab-doc-writing$/m);
+    expect(output).not.toMatch(
+      /^ {2}skip \.agents\/skills\/dab-doc-writing\/SKILL\.md$/m,
+    );
+    for (const name of [architecture, decisionNotes]) {
+      expect(
+        output.match(new RegExp(`^ {2}skip \\.agents/skills/${name}$`, 'gm')),
+      ).toHaveLength(1);
+      expect(output).not.toMatch(
+        new RegExp(`^ {2}skip \\.agents/skills/${name}/SKILL\\.md$`, 'm'),
+      );
+    }
+  });
+
+  it('reports an unversioned skill without overwriting it', async () => {
+    const project = await initializedFixture();
+    const file = managedFile(docWriting);
+    const body = await loadAuthoringSkillTemplate(docWriting);
+    await writeProjectFile(project.root, file, body);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.skills.unversioned).toEqual([file]);
+    expect(result.practices?.skills.updated).toEqual([]);
+    expect(result.practices?.skills.skipped).toContain(file);
+    expect(result.adoption?.sourceActions).toContain(`skip skill ${file} (unversioned)`);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-unversioned',
+        severity: 'warning',
+        file,
+      }),
+    ]));
+    expect(await readFile(join(project.root, file), 'utf8')).toBe(body);
+  });
+
+  it('prints a managed-created skill once in human output', async () => {
+    const project = await initializedFixture();
+    const file = managedFile(docWriting);
+    await mkdir(join(project.root, '.agents/skills', docWriting), { recursive: true });
+    const stdout: string[] = [];
+
+    const code = await runNormalize(
+      { cwd: project.root, home: dirname(project.root), runner: goodRunner },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(0);
+    const output = stdout.join('');
+    expect(output.match(
+      /create skill \.agents\/skills\/dab-doc-writing\/SKILL\.md/g,
+    )).toHaveLength(1);
+    expect(output).not.toContain(`  create ${file}`);
+    expect(output).not.toMatch(/^ {2}skip \.agents\/skills\/dab-doc-writing$/m);
+    expect(await lstatOrNull(join(project.root, file))).not.toBeNull();
   });
 });

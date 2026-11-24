@@ -918,6 +918,8 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     // Init keeps its existing behavior on an existing `.claude` tree: imports
     // are normalize's job, so init never migrates or backs up entries.
     suppressImports: true,
+    // Init installs missing skills only; managed updates belong to normalize.
+    suppressManagedSkills: true,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
   // The nested normalize re-plans the same practice policy skips, so merge with

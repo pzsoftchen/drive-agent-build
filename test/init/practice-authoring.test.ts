@@ -70,7 +70,7 @@ describe('renderAuthoringSkill', () => {
     const plan = await planPack({ mode: 'converge', version: '9.9.9' });
     for (const name of AUTHORING_SKILL_NAMES) {
       const file = skillFile(name);
-      expect(plan.files[file]).toContain(`<!-- dab-skill: ${name}@9.9.9 -->`);
+      expect(plan.files[file]).toContain(`<!-- dab-skill: ${name}@9.9.9 sha256=`);
       const dir = join(root, '.agents/skills', name);
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, 'SKILL.md'), plan.files[file]!);
@@ -80,8 +80,8 @@ describe('renderAuthoringSkill', () => {
     }
   });
 
-  it('requires evidence, TODO(owner), project commands and docs fallback', () => {
-    const text = renderAuthoringSkill('dab-architecture-writing', '1.0.0');
+  it('requires evidence, TODO(owner), project commands and docs fallback', async () => {
+    const text = await renderAuthoringSkill('dab-architecture-writing', '1.0.0');
     expect(text).toContain('TODO(owner): question');
     expect(text).toContain('root `AGENTS.md`');
     expect(text).toContain('`docs/AGENTS.md` exists');
@@ -89,11 +89,15 @@ describe('renderAuthoringSkill', () => {
     expect(text).toContain('does not invent');
   });
 
-  it('ships the same required sections and contract in every skill', () => {
+  it('ships the same required sections and contract in every skill', async () => {
     for (const name of AUTHORING_SKILL_NAMES) {
-      const text = renderAuthoringSkill(name, '1.0.0');
-      expect(text).toMatch(new RegExp(`^---\\nname: ${name}\\ndescription: .+\\n---\\n`));
-      expect(text).toContain(`<!-- dab-skill: ${name}@1.0.0 -->`);
+      const text = await renderAuthoringSkill(name, '1.0.0');
+      expect(text).toMatch(
+        new RegExp(
+          `^---\\nname: ${name}\\ndescription: .+\\n---\\n`
+          + `<!-- dab-skill: ${name}@1\\.0\\.0 sha256=[0-9a-f]{64} -->\\n# `,
+        ),
+      );
       for (const heading of SKILL_SECTIONS) {
         expect(text).toContain(heading);
       }
@@ -105,17 +109,17 @@ describe('renderAuthoringSkill', () => {
     }
   });
 
-  it('keeps commands generic instead of hardcoding a package manager or test framework', () => {
+  it('keeps commands generic instead of hardcoding a package manager or test framework', async () => {
     for (const name of AUTHORING_SKILL_NAMES) {
-      const text = renderAuthoringSkill(name, '1.0.0');
+      const text = await renderAuthoringSkill(name, '1.0.0');
       expect(text).not.toMatch(/\b(?:npm|pnpm|yarn|bun)\b/);
       expect(text).not.toMatch(/\b(?:vitest|jest|mocha|pytest)\b/);
       expect(text).not.toMatch(/deepseek-harness|\bdsh\b/i);
     }
   });
 
-  it('dab-doc-writing covers placement, fact-check, slop audit and single language', () => {
-    const text = renderAuthoringSkill('dab-doc-writing', '1.0.0');
+  it('dab-doc-writing covers placement, fact-check, slop audit and single language', async () => {
+    const text = await renderAuthoringSkill('dab-doc-writing', '1.0.0');
     expect(text).toContain('Placement');
     expect(text).toContain('one home');
     expect(text).toContain('Fact-check');
@@ -125,8 +129,8 @@ describe('renderAuthoringSkill', () => {
     expect(text).not.toContain('.zh.md');
   });
 
-  it('dab-architecture-writing covers inventory, composition, runtime and seams', () => {
-    const text = renderAuthoringSkill('dab-architecture-writing', '1.0.0');
+  it('dab-architecture-writing covers inventory, composition, runtime and seams', async () => {
+    const text = await renderAuthoringSkill('dab-architecture-writing', '1.0.0');
     expect(text).toContain('Top-level inventory');
     expect(text).toContain('Composition');
     expect(text).toContain('Runtime flow');
@@ -136,8 +140,8 @@ describe('renderAuthoringSkill', () => {
     expect(text).toContain('Fill TODOs');
   });
 
-  it('dab-decision-notes covers statuses, consequences and supersession without archiving', () => {
-    const text = renderAuthoringSkill('dab-decision-notes', '1.0.0');
+  it('dab-decision-notes covers statuses, consequences and supersession without archiving', async () => {
+    const text = await renderAuthoringSkill('dab-decision-notes', '1.0.0');
     expect(text).toContain('When to write');
     expect(text).toContain('proposed');
     expect(text).toContain('implemented');

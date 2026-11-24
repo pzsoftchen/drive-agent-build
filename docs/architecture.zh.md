@@ -17,6 +17,7 @@ DAB 在产品概念上是驾驶系统，用来驾驶由构建者主导的 Agent 
 | 项目指令 | `AGENTS.md` | `.claude/CLAUDE.md` 符号链接或生成垫片 |
 | 角色 | `.agents/agents/` | `.claude/agents/` 符号链接 |
 | Skills | `.agents/skills/` | `.claude/skills/` 符号链接 |
+| Authoring skill 模板 | DAB 包内的 `skills/` | `.agents/skills/dab-*` 下的副本 |
 | 规则 | `.agents/rules/` | `.claude/rules/` 符号链接 |
 | 共享安全策略 | `.agents/policies/project.yaml` | `.claude/settings.json` |
 | Claude Code 策略 | `.agents/adapters/claude-code.yaml` | `.claude/settings.json` |
@@ -73,21 +74,45 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 - `profile` 选择 `init` 和 `normalize` 生成的实践。`generic` 是默认值；`feature` 是行为相同的兼容别名，已有的 authored manifest 优先于 CLI flag。
 - Practice pack 在 `targets()` 中声明候选路径，在 `files()` 中声明渲染内容，并按需声明自有目录或 `skipChildrenWhenExists`。生产注册表组合 `core`、`documentation` 和 `authoring`；documentation 和 authoring pack 只在 project scope 运行。
-- `planAuthoredScaffold` 是 `init` 和 `normalize` 背后唯一的 authored 文件规划器。`init` 使用 `full`，`normalize` 对未初始化或 partial scope 使用 `adoption`，对已初始化 scope 使用 `converge`。它 stat 候选路径，用现有路径和计划路径构建 anchors，并且只渲染缺失文件，因此现有 authored 文件永不被覆盖。存在的根 `AGENTS.md`（或 global `.agents/AGENTS.md`）只作为 anchor，不会被规划或写入，因此 converge 只在它存在时才从生成的 docs 链接它。现有 target 在保留前会先校验：documentation 文件必须是可读的普通文件或指向仓库内普通文件的符号链接，skill 目录必须是真实目录或指向仓库内具备读与搜索权限目录的符号链接。逃逸链接、特殊文件以及不可读的文件或目录在任何写入前都是受治理的错误。
+- `planAuthoredScaffold` 是 `init` 和 `normalize` 背后唯一的 authored 文件规划器。`init` 使用 `full`，`normalize` 对未初始化或 partial scope 使用 `adoption`，对已初始化 scope 使用 `converge`。它 stat 候选路径，用现有路径和计划路径构建 anchors，并且只渲染缺失文件，因此 planner 永不覆盖现有 authored 文件。存在的根 `AGENTS.md`（或 global `.agents/AGENTS.md`）只作为 anchor，不会被规划或写入，因此 converge 只在它存在时才从生成的 docs 链接它。现有 target 在保留前会先校验：documentation 文件必须是可读的普通文件或指向仓库内普通文件的符号链接，skill 目录必须是真实目录或指向仓库内具备读与搜索权限目录的符号链接。逃逸链接、特殊文件以及不可读的文件或目录在任何写入前都是受治理的错误。
 - Documentation pack 拥有 `docs/AGENTS.md` 和 `docs/architecture.md`。它只写一种语言，从不创建 `.zh.md` 或 `.i18n.yaml` 配对；`docs/AGENTS.md` 是 AGENTS 文件，继续豁免配对。
 - `docs.language` 为 `auto`、`en` 或 `zh`。`auto` 采样现有的 `docs/AGENTS.md`、`docs/architecture.md`、根 `AGENTS.md`、`README.md`、`package.json` description 和 locale，然后默认 `en`。解析结果携带 `{ value, source }`，并由 `init`、`normalize` 和 `detect` 报告。
 - `.agents/rules/docs-bilingual.md` 是项目政策信号，不是错误：缺失的 documentation targets 被 policy skip，规则本身保留。已有 docs 作为 skipped 保留，因此悬空的 docs 路径不会阻止 skills 或 target 写入。
 - Hooks 与共享记忆是高级、可选能力。`init` 和 normalize adoption 不创建 `.agents/hooks/` 或 `.agents/memory/`；已有 hooks 由 `init`、`normalize` 和 `detect` 校验并在适用时编译，已有记忆文件由 `init` 和 `normalize` 保留，并由 `init` 和 `detect` 校验。
-- Authoring pack 拥有 `.agents/skills/dab-doc-writing`、`.agents/skills/dab-architecture-writing` 和 `.agents/skills/dab-decision-notes`。已存在的 skill 目录会保留。当只有可导入的物理 `.claude/skills/dab-*` 目录存在时，`init` 丢弃对应模板并把 import 报告为 pending，由 `normalize` 执行。非目录条目以 warning pending 报告为 `practice.skill-import-conflict`，且不提供 import 提示。每个渲染 body 都带 `dab-skill: <name>@<version>` 标记；DAB 从不自动更新已安装 skill，而是报告落后标记。
+- Authoring pack 拥有 `.agents/skills/dab-doc-writing`、`.agents/skills/dab-architecture-writing` 和 `.agents/skills/dab-decision-notes`。脚手架会保留已存在的 skill 目录。当只有可导入的物理 `.claude/skills/dab-*` 目录存在时，`init` 丢弃对应模板并把 import 报告为 pending，由 `normalize` 执行。非目录条目以 warning pending 报告为 `practice.skill-import-conflict`，且不提供 import 提示。Canonical 模板 body 位于已安装包的 `skills/<name>/SKILL.md`；marker 和受管更新流程见 Managed authoring skills。
 - `.agents/rules` 或 `.agents/skills` 处的普通文件是受治理的路径错误：`normalize` 和 `detect` 报告 `practice.docs-path` 或 `practice.skill-path`，`init` 报告 `path.conflict`，且不会执行任何 practice 写入。只有精确的 practice parent 可以把自身事实集收窄为空；不可读的嵌套 skill 目录按 skill 报告 `skill.unreadable`，同级 skills 仍可被发现和投影。`.agents/agents`、`.agents/hooks`、`.agents/memory`、`.agents/notes`、`.agents/policies` 或 `.agents/adapters` 处的普通文件、悬空链接、访问拒绝或符号链接循环是受治理的 `path.conflict`，在 `init`、`normalize` 和 `detect` 中；project 和 global 运行都会在写入或发现之前阻断。缺少读与搜索权限的 source parent 是同样的受治理冲突；best-effort secret scan 可能跳过不可读子树，因此访问错误由 parent probe 而不是 scan 负责。
 - `normalize` 在 target planning 之前规划 practice 写入，因此新文件会在同一次运行中被投影。Practice 错误阻止所有写入，包括 `.claude`；policy skip 不会。
-- `detect` 只读运行相同的 packs。它在 Instructions 之后增加 `Documentation` 组，并在 `Skills` 中增加 authoring 条目。Preflight（未初始化和 partial scope）只报告存在性、policy skip、语言和路径状态；在已初始化 scope 中，内容检查覆盖两个文档文件中的链接、行首 `TODO:` 或 `TODO(owner):` 标记、空架构章节和 skill 版本标记。
+- `detect` 只读运行相同的 packs。它在 Instructions 之后增加 `Documentation` 组，并在 `Skills` 中增加 authoring 条目。Preflight（未初始化和 partial scope）只报告存在性、policy skip、语言和路径状态；在已初始化 scope 中，内容检查覆盖两个文档文件中的链接、行首 `TODO:` 或 `TODO(owner):` 标记、空架构章节和受管 skill 状态。
 - `normalize --json` 为 project scope 增加 `practices`，包含 `profile`、`mode`、`language`、`created`、`skipped`、`policySkipped`、`directories`、`skills` 和 `diagnostics`；`policySkipped` 只列出因双语规则而跳过的缺失 docs，已有 docs 报告为 `skipped`；global scope 省略它。`detect --json` 通过 `checklist` 在既有 `schemaVersion: 1` 下携带新条目。
+
+## 受管 authoring skills
+
+- Canonical 模板位于 DAB 仓库和已安装包的 `skills/<name>/SKILL.md`；`package.json` 发布 `skills`。`init` 和 `normalize` 从 package root 读取它们，因此不涉及网络、`npx skills` 或外部安装器。
+- `.agents/skills/<name>/SKILL.md` 的已安装副本在 frontmatter 之后带 `<!-- dab-skill: <name>@<version> sha256=<hex> -->`。`version` 是渲染该副本的 DAB 包版本，`sha256` 是移除 marker 行后的 UTF-8 body 哈希。
+- `normalize` 在 target planning 之前规划每个 `dab-*` skill。缺失文件会创建；hash 匹配且版本相同会跳过；hash 匹配且版本严格较旧会用当前模板和 marker 原子重写；无 hash 的 legacy marker 在去掉 marker 后 body 与当前模板逐字节一致时迁移。已修改 body、较新或无法解析的版本、不同的 legacy body、缺失 marker 和指向其他 skill 的 marker 会保留并产生诊断。不是普通文件、逃逸 root 或无法读取的路径是阻断性的 `practice.skill-path` 错误。skill 文件本身即使是解析到 root 内的符号链接也是该错误；所在 skill 目录可以是指向 root 内的符号链接。
+- 每次受管写入前，`normalize` 会重新读取目标并校验计划的 marker、版本和 body hash。planning 之后被修改、删除或新建的目标会以 `practice.skill-concurrent-change` warning 保留而不是写入；缺失 skill 使用独占创建，因此并发创建的文件不会被替换。
+- 受管更新要求稳定的数字版本。像 `0.1.3-beta.1` 这样的 prerelease DAB 版本无法比较，因此已安装 skills 会保留且不会自动更新；prerelease 创建的 skill 带有后续稳定版本也会保留的 marker。
+- 更新只针对 `dab-*` skills。用户自定义 skills 永不被触碰。受管更新不创建 `.dab/backups/` 条目，已修改文件绝不会被覆盖或备份；已安装包和 git 历史就是记录。`init` 只安装缺失 skills。
+- CRLF 很重要：legacy 迁移和 modified 检测都比较字节，因此仅有 CRLF 换行差异的 body 会保留。
+- `detect` 把受管状态映射到 Skills 组：
+
+| 状态 | 诊断 | `--strict` |
+|---|---|---|
+| current | 无 | 通过 |
+| stale | `practice.skill-stale` | 失败 |
+| newer 或无法比较 | `practice.skill-newer` | 通过 |
+| modified | `practice.skill-modified` | 通过 |
+| legacy 可迁移 | `practice.skill-legacy` info | 通过 |
+| legacy body 不同 | `practice.skill-legacy` warning | 通过 |
+| unversioned 或 marker 不匹配 | `practice.skill-unversioned` 或 `practice.skill-marker-mismatch` | 通过 |
+| 路径或读取错误 | `practice.skill-path` | 失败 |
+
+- `normalize --json` 新增 `practices.skills.updated`、`migrated`、`modified`、`newer`、`legacy`、`unversioned`、`markerMismatch` 和 `concurrent`，作为 `schemaVersion: 1` 下的追加字段；人类输出使用 `update skill`、`migrate skill` 和 `skip skill ... (...)` 动作。
 
 ## 核心循环
 
 1. `dab init` 扫描仓库并为一个 scope 写入完整的编写骨架。
-2. `dab normalize` 先采用缺失的最小 source、导入物理 Claude agents 和 skills 并补齐缺失的 practice 文件，再预检每个启用的 target，并在全部预检通过后才写入 target 输出。
+2. `dab normalize` 先采用缺失的最小 source、导入物理 Claude agents 和 skills、补齐缺失的 practice 文件并更新未修改的受管 authoring skills，再预检每个启用的 target，并在全部预检通过后才写入 target 输出。
 3. `dab detect` 在不写入的前提下检查漂移、所有权、phase 和 scope。
 4. `dab policy explain --target <provider>` 展示单个 target 的最终结果。
 
@@ -148,7 +173,7 @@ generated:
 
 - Adoption 在 source-root 解析前运行。未初始化或 partial scope 会获得缺失的最小 source：`AGENTS.md`、`dab.yaml`、项目策略和 Claude Code 策略，以及空的 agents、skills、rules 和 notes 目录。Hooks 和共享记忆不会被采用；已有的 hooks 和记忆文件保持原位，并保留现有的校验行为。它复用 `init` 的渲染函数，但不创建 profile agents 或 core skills；命名空间的 `dab-*` authoring skills 是例外。
 - Import 是受控迁移，不是 unmanaged 冲突：物理 `.claude/agents/*.md` 和 `.claude/skills/<dir>/SKILL.md` 条目会复制到 `.agents`，备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。不需要 `--fix`。
-- `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件保留在备份中。
+- Import 期间，`.agents` 是事实源：现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件保留在备份中。
 - Import 保留 `.claude` 的 basename 或目录名。frontmatter `name` 是 fact id；不一致会警告，但不会重命名。
 - All-or-nothing 门禁覆盖 adoption 和 import：任何非法候选或不安全路径都会阻止所有 source 和 `.claude` 写入。后续 target 预检失败时，`.claude` 保持不变；幂等的 source 副本可能已经存在。
 - Import 对已初始化和未初始化/partial scope 都运行，覆盖 project 和 global scope。Global scope 下 `.claude` 条目链接到 `~/.agents`；`~/.claude/settings.json` 和 `$HOME/.gitignore` 永不读写。
@@ -184,6 +209,9 @@ generated:
 - `src/detect/` 包含漂移和安全检查、checklist 渲染、未初始化 preflight 和 practice 检查。
 - `src/init/` 扫描仓库、渲染模板、解析 adoption phase 并规划最小 source。
 - `src/init/practice.ts` 拥有 authored scaffold planner 和 pack registry；`practice-docs.ts` 和 `practice-authoring.ts` 渲染 documentation 和 authoring packs，`docs-language.ts` 解析 `docs.language`。
+- `src/core/skill-marker.ts` 解析、插入和移除受管 skill marker，并对移除 marker 后的 body 做哈希。
+- `src/init/skill-templates.ts` 从包内 `skills/` 目录加载 canonical 模板；`src/init/managed-skills.ts` 分类已安装 authoring skills，并应用受管创建、更新和迁移。
+- `skills/` 保存随包发布的 canonical authoring-skill 模板。
 - `src/docs/` 运行双语文档门禁。
 
 ## 生成输出
@@ -192,7 +220,7 @@ generated:
 - `.claude/CLAUDE.md` 默认是指向 scope 指令的符号链接，生成的导入垫片是显式 fallback。
 - `.claude/agents/`、`.claude/skills/` 和 `.claude/rules/` 包含逐项符号链接。
 - `docs/AGENTS.md` 和 `docs/architecture.md` 是 authored 项目文档；DAB 只创建一次缺失的骨架，永不覆盖。
-- `.agents/skills/dab-*` 是带版本标记的 authored authoring skills，投影为 `.claude/skills/` 符号链接。
+- `.agents/skills/dab-*` 是带版本/hash marker 的受管 authoring 副本，投影为 `.claude/skills/` 符号链接。
 - `dab.yaml` 保存 `scope`、`targets` 以及逐 target 的生成记录，包含 source 哈希、target 哈希和投影清单。
 - `.dab/backups/` 在 `--fix` 采用 unmanaged path 前、以及 import 替换 `.claude` 条目之前保存原始文件。
 
@@ -243,7 +271,7 @@ execute:
 - 无法表达的 provider 语义会显式失败，而不是静默扩大权限；一个 target 失败会阻止所有写入。
 - 本阶段 DAB 不合并 project 和 global scope，也不采用 global settings。
 - 本阶段 DAB 只导入 `.claude/agents` 和 `.claude/skills`；rules、settings、hooks 和 instructions 不被采用。
-- DAB 从不覆盖 authored docs 或 skill 目录，也从不更新已安装的 `dab-*` skills；落后标记是等待手工审阅的 warning。
+- DAB 从不覆盖 authored docs 或已修改的受管 skills；`normalize` 更新未修改的较旧 `dab-*` skill，同时保留 modified、newer 和 legacy 分叉。
 - DAB 不运行 agent 或 LLM 来填写文档内容；`normalize` 只生成骨架，`detect` 只检查结构。
 - Global import 写入 `$HOME` 下，但从不管理 `~/.claude/settings.json` 或 `$HOME/.gitignore`。
 - 路径 deny 规则是工具级护栏，不是沙箱；`Bash`、`Grep`、`Glob`、`NotebookEdit` 和包装命令可以绕过。

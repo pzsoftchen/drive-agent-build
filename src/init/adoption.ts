@@ -1,8 +1,8 @@
-import { open, readlink, realpath, rm } from 'node:fs/promises';
+import { readlink, realpath } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError } from '../core/errors.ts';
-import { ensureDir, lstatOrNull } from '../core/fs-atomic.ts';
+import { ensureDir, lstatOrNull, writeFileIfAbsent } from '../core/fs-atomic.ts';
 import {
   assertParentInsideRoot,
   assertRealPathInsideRoot,
@@ -18,6 +18,18 @@ import {
   type ClaudeAdoptionPlan,
 } from '../adapter/claude-code/adoption.ts';
 import { resolveDocsLanguage } from './docs-language.ts';
+import {
+  applyManagedSkillWrites,
+  MANAGED_SKILL_DIAGNOSTIC_CODES,
+  planManagedSkills,
+  type ManagedSkillApplyResult,
+  type ManagedSkillPlan,
+  type ManagedSkillState,
+} from './managed-skills.ts';
+import {
+  AUTHORING_SKILL_NAMES,
+  type AuthoringSkillName,
+} from './skill-templates.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
 import { resolveScopeMarker, type Scope, type SourceRoot } from '../model/scope.ts';
 import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
@@ -126,34 +138,6 @@ export async function planSourceWrites(
   return { create, skip };
 }
 
-/**
- * Create a file only when it does not exist. `wx` makes the check and the
- * create one filesystem operation, so an authored file that appears between
- * planning and writing is never replaced.
- */
-async function writeMissingFile(filePath: string, content: string): Promise<boolean> {
-  await ensureDir(dirname(filePath));
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(filePath, 'wx', 0o644);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      return false;
-    }
-    throw error;
-  }
-  try {
-    await handle.writeFile(content);
-    await handle.sync();
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    await rm(filePath, { force: true }).catch(() => undefined);
-    throw error;
-  }
-  await handle.close();
-  return true;
-}
-
 export async function writeSourceFiles(
   root: string,
   plan: MinimalSourcePlan,
@@ -164,7 +148,7 @@ export async function writeSourceFiles(
   const created: string[] = [];
   const skipped: string[] = [];
   for (const [relativePath, content] of Object.entries(plan.files)) {
-    if (await writeMissingFile(join(root, relativePath), content)) {
+    if (await writeFileIfAbsent(join(root, relativePath), content)) {
       created.push(relativePath);
     } else {
       skipped.push(relativePath);
@@ -182,6 +166,11 @@ export interface NormalizeAdoptionPreparation {
   /** Practice docs/skills plan. In adoption mode its files are the source plan. */
   practicePlan?: AuthoredScaffoldPlan;
   claudePlan?: ClaudeAdoptionPlan;
+  /**
+   * Managed `dab-*` authoring-skill states. Computed for project scope after
+   * the practice preflight and before target planning.
+   */
+  managedSkills?: ManagedSkillPlan;
   /**
    * Governed conflicts at non-practice `.agents` source parents. They block
    * every write, so import planning is skipped and discovery never runs.
@@ -267,6 +256,173 @@ async function planImports(
   });
 }
 
+/**
+ * Managed authoring-skill operations as reported to normalize. `created`,
+ * `updated`, `migrated` and `skipped` are the action categories applied (or
+ * planned by a dry run); the remaining lists carry the preserved states, and
+ * `actions` is the stable human/JSON action text.
+ */
+export interface ManagedSkillSummary {
+  actions: string[];
+  created: string[];
+  updated: string[];
+  migrated: string[];
+  skipped: string[];
+  /** Body hash no longer matches the marker; preserved. */
+  modified: string[];
+  /** Installed version is newer or uncomparable; preserved. */
+  newer: string[];
+  /** Legacy marker body differs from the template; preserved. */
+  legacy: string[];
+  /** No managed marker at all; preserved. */
+  unversioned: string[];
+  /** Marker names a different skill; preserved. */
+  markerMismatch: string[];
+  /** Targets changed between planning and applying; preserved. */
+  concurrent: string[];
+}
+
+function emptyManagedSkillSummary(): ManagedSkillSummary {
+  return {
+    actions: [],
+    created: [],
+    updated: [],
+    migrated: [],
+    skipped: [],
+    modified: [],
+    newer: [],
+    legacy: [],
+    unversioned: [],
+    markerMismatch: [],
+    concurrent: [],
+  };
+}
+
+/**
+ * The authoring pack owns missing skill files it planned itself, so the managed
+ * writer must not also create them. Legacy, stale and skipped states are
+ * untouched by the pack because an existing skill directory is user-owned.
+ */
+export function planManagedSkillWrites(
+  plan: ManagedSkillPlan,
+  practiceFiles: ReadonlySet<string>,
+): ManagedSkillPlan {
+  const states = plan.states.filter(
+    (state) => state.status !== 'missing' || !practiceFiles.has(state.file),
+  );
+  const retained = new Set(states.map((state) => state.file));
+  return {
+    states,
+    writes: plan.writes.filter((write) => retained.has(write.file)),
+    diagnostics: [...plan.diagnostics],
+  };
+}
+
+/**
+ * Derive the normalize report from the writes plan. When the plan was applied,
+ * `applied` carries the revalidation outcome: a target that changed after
+ * planning moves from created/updated/migrated to the preserved `concurrent`
+ * list instead of claiming a write that did not happen. A dry run passes the
+ * same apply result (with no bytes written) so both modes agree.
+ */
+export function summarizeManagedSkills(
+  plan: ManagedSkillPlan | undefined,
+  applied?: ManagedSkillApplyResult,
+): ManagedSkillSummary {
+  const summary = emptyManagedSkillSummary();
+  if (plan === undefined) {
+    return summary;
+  }
+  const writes = new Set(plan.writes.map((write) => write.file));
+  const mismatched = new Set(
+    plan.diagnostics
+      .filter((item) => item.code === MANAGED_SKILL_DIAGNOSTIC_CODES.mismatch)
+      .flatMap((item) => (item.file === undefined ? [] : [item.file])),
+  );
+  const created = new Set(applied?.created ?? []);
+  const updated = new Set(applied?.updated ?? []);
+  const migrated = new Set(applied?.migrated ?? []);
+  const concurrent = new Set(applied?.concurrent ?? []);
+
+  const markApplied = (
+    state: ManagedSkillState,
+    written: ReadonlySet<string>,
+    kind: 'create' | 'update' | 'migrate',
+  ): void => {
+    if (applied === undefined || written.has(state.file)) {
+      if (kind === 'create') {
+        summary.created.push(state.file);
+      } else if (kind === 'update') {
+        summary.updated.push(state.file);
+      } else {
+        summary.migrated.push(state.file);
+      }
+      summary.actions.push(`${kind} skill ${state.file}`);
+      return;
+    }
+    if (concurrent.has(state.file)) {
+      summary.skipped.push(state.file);
+      summary.concurrent.push(state.file);
+      summary.actions.push(`skip skill ${state.file} (concurrent-change)`);
+      return;
+    }
+    throw new Error(
+      `managed skill apply result has no ${kind} outcome for ${state.name}`,
+    );
+  };
+
+  for (const state of plan.states) {
+    switch (state.status) {
+      case 'missing': {
+        markApplied(state, created, 'create');
+        break;
+      }
+      case 'stale': {
+        markApplied(state, updated, 'update');
+        break;
+      }
+      case 'legacy': {
+        if (writes.has(state.file)) {
+          markApplied(state, migrated, 'migrate');
+        } else {
+          summary.skipped.push(state.file);
+          summary.legacy.push(state.file);
+          summary.actions.push(`skip skill ${state.file} (legacy)`);
+        }
+        break;
+      }
+      case 'current': {
+        summary.skipped.push(state.file);
+        break;
+      }
+      case 'modified': {
+        summary.skipped.push(state.file);
+        summary.modified.push(state.file);
+        summary.actions.push(`skip skill ${state.file} (modified)`);
+        break;
+      }
+      case 'newer': {
+        summary.skipped.push(state.file);
+        summary.newer.push(state.file);
+        summary.actions.push(`skip skill ${state.file} (newer)`);
+        break;
+      }
+      case 'unversioned': {
+        summary.skipped.push(state.file);
+        if (mismatched.has(state.file)) {
+          summary.markerMismatch.push(state.file);
+          summary.actions.push(`skip skill ${state.file} (marker-mismatch)`);
+        } else {
+          summary.unversioned.push(state.file);
+          summary.actions.push(`skip skill ${state.file} (unversioned)`);
+        }
+        break;
+      }
+    }
+  }
+  return summary;
+}
+
 export interface PrepareAdoptionInput {
   cwd: string;
   home: string;
@@ -277,6 +433,12 @@ export interface PrepareAdoptionInput {
    * normalize's job, not an init side effect.
    */
   suppressImports?: boolean;
+  /**
+   * Skip managed authoring-skill planning. `dab init` already installs missing
+   * skills and must never update an existing one, so its nested normalize run
+   * disables managed updates.
+   */
+  suppressManagedSkills?: boolean;
 }
 
 /**
@@ -383,34 +545,40 @@ async function danglingSourceDiagnostic(root: string): Promise<Diagnostic | unde
 }
 
 /**
- * A physical `.claude/skills/dab-*` entry is an import fact. When its `.agents`
- * source is still missing, the import plan owns that skill, so DAB must not
- * also plan its authoring template: two writers would race for one directory.
- * Existing `.agents` skill directories are already skipped by the planner and
- * keep the normal import rules (source wins, `.claude` is backed up).
+ * Names of authoring skills whose `.agents` source is written by a Claude
+ * import. A physical `.claude/skills/dab-*` entry is an import fact; the import
+ * owns that skill, so the authoring pack and the managed writer must both stay
+ * away from it.
  */
-function suppressImportedAuthoringSkillTemplates(
-  plan: AuthoredScaffoldPlan,
+function importedAuthoringSkillNames(
   claudePlan: ClaudeAdoptionPlan | undefined,
-): AuthoredScaffoldPlan {
-  if (claudePlan === undefined) {
-    return plan;
-  }
-  const imported = new Set<string>();
-  for (const entry of claudePlan.entries) {
-    if (
-      entry.kind === 'skill'
-      && entry.writeSource
-      && entry.target.startsWith('.agents/skills/dab-')
-    ) {
-      imported.add(entry.target);
+): Set<AuthoringSkillName> {
+  const imported = new Set<AuthoringSkillName>();
+  for (const entry of claudePlan?.entries ?? []) {
+    if (entry.kind !== 'skill' || !entry.writeSource) {
+      continue;
+    }
+    for (const name of AUTHORING_SKILL_NAMES) {
+      if (entry.target === `.agents/skills/${name}`) {
+        imported.add(name);
+      }
     }
   }
+  return imported;
+}
+
+function suppressImportedAuthoringSkillTemplates(
+  plan: AuthoredScaffoldPlan,
+  imported: ReadonlySet<AuthoringSkillName>,
+): AuthoredScaffoldPlan {
   if (imported.size === 0) {
     return plan;
   }
+  const targets = new Set(
+    [...imported].map((name) => `.agents/skills/${name}`),
+  );
   const suppressed = (path: string): boolean => {
-    for (const target of imported) {
+    for (const target of targets) {
       if (path === target || path.startsWith(`${target}/`)) {
         return true;
       }
@@ -424,6 +592,23 @@ function suppressImportedAuthoringSkillTemplates(
     ),
     directories: plan.directories.filter((path) => !suppressed(path)),
   };
+}
+
+/**
+ * Plan managed `dab-*` skills for project scope only. Imports that will write
+ * a missing `.agents` source are excluded: the import owns that skill and
+ * `applyClaudeAdoption` refuses to overwrite a source that appeared first.
+ */
+async function planManagedSkillsFor(
+  root: string,
+  scope: Scope,
+  options: { suppress?: boolean; imported: ReadonlySet<AuthoringSkillName> },
+): Promise<ManagedSkillPlan | undefined> {
+  if (scope !== 'project' || options.suppress === true) {
+    return undefined;
+  }
+  const names = AUTHORING_SKILL_NAMES.filter((name) => !options.imported.has(name));
+  return planManagedSkills({ root, version: DAB_VERSION, names });
 }
 
 export async function prepareNormalizeAdoption(
@@ -478,6 +663,7 @@ export async function prepareNormalizeAdoption(
       }
       const scan = await scanProject(adoption.root);
       const claudePlan = await importPlan(loaded.manifest, paths);
+      const imported = importedAuthoringSkillNames(claudePlan);
       const practicePlan = suppressImportedAuthoringSkillTemplates(
         await planPractices({
           root: adoption.root,
@@ -487,8 +673,12 @@ export async function prepareNormalizeAdoption(
           mode: 'converge',
           manifest: loaded.manifest,
         }),
-        claudePlan,
+        imported,
       );
+      const managedSkills = await planManagedSkillsFor(adoption.root, adoption.scope, {
+        suppress: input.suppressManagedSkills,
+        imported,
+      });
       return {
         sourceRoot,
         phase: adoption.phase,
@@ -496,8 +686,14 @@ export async function prepareNormalizeAdoption(
         paths,
         practicePlan,
         claudePlan,
+        ...(managedSkills === undefined ? {} : { managedSkills }),
         ...sourceExtras,
-        diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
+        diagnostics: [
+          ...scan.diagnostics,
+          ...practicePlan.diagnostics,
+          ...(managedSkills?.diagnostics ?? []),
+          ...sourceProblems,
+        ],
       };
     }
     await assertProjectHomeNotGlobal(adoption, input.home);
@@ -517,6 +713,7 @@ export async function prepareNormalizeAdoption(
       };
     }
     const claudePlan = await importPlan(loaded.manifest, paths);
+    const imported = importedAuthoringSkillNames(claudePlan);
     const practicePlan = suppressImportedAuthoringSkillTemplates(
       await planPractices({
         root: adoption.root,
@@ -526,8 +723,12 @@ export async function prepareNormalizeAdoption(
         mode: 'adoption',
         manifest: loaded.manifest,
       }),
-      claudePlan,
+      imported,
     );
+    const managedSkills = await planManagedSkillsFor(adoption.root, adoption.scope, {
+      suppress: input.suppressManagedSkills,
+      imported,
+    });
     // The authored manifest is authoritative: it is never part of the write
     // plan and `practicePlan.manifest` stays equal to what normalize loads.
     const { [manifestKey]: _authored, ...files } = practicePlan.files;
@@ -543,8 +744,14 @@ export async function prepareNormalizeAdoption(
       },
       practicePlan,
       claudePlan,
+      ...(managedSkills === undefined ? {} : { managedSkills }),
       ...sourceExtras,
-      diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
+      diagnostics: [
+        ...scan.diagnostics,
+        ...practicePlan.diagnostics,
+        ...(managedSkills?.diagnostics ?? []),
+        ...sourceProblems,
+      ],
     };
   }
 
@@ -574,7 +781,12 @@ export async function prepareNormalizeAdoption(
   const manifest = rawPracticePlan.manifest ?? minimalSourcePlan(scan, adoption.scope).manifest;
   const paths = resolveProjectPaths(adoption.root, manifest);
   const claudePlan = await importPlan(manifest, paths);
-  const practicePlan = suppressImportedAuthoringSkillTemplates(rawPracticePlan, claudePlan);
+  const imported = importedAuthoringSkillNames(claudePlan);
+  const practicePlan = suppressImportedAuthoringSkillTemplates(rawPracticePlan, imported);
+  const managedSkills = await planManagedSkillsFor(adoption.root, adoption.scope, {
+    suppress: input.suppressManagedSkills,
+    imported,
+  });
   return {
     sourceRoot,
     phase: adoption.phase,
@@ -587,8 +799,14 @@ export async function prepareNormalizeAdoption(
     },
     practicePlan,
     claudePlan,
+    ...(managedSkills === undefined ? {} : { managedSkills }),
     ...sourceExtras,
-    diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
+    diagnostics: [
+      ...scan.diagnostics,
+      ...practicePlan.diagnostics,
+      ...(managedSkills?.diagnostics ?? []),
+      ...sourceProblems,
+    ],
   };
 }
 
@@ -697,6 +915,8 @@ export async function applyNormalizeAdoption(
   diagnostics: Diagnostic[];
   created: string[];
   skipped: string[];
+  /** Absent when managed skills were not planned (global or init nested run). */
+  managed?: ManagedSkillSummary;
 }> {
   const root = prep.sourceRoot.root;
   const actions: string[] = [];
@@ -732,6 +952,23 @@ export async function applyNormalizeAdoption(
     );
   }
 
+  // Managed skill writes share the practice source phase: every blocking
+  // preflight has already run, and the new skill content is visible to target
+  // planning in this same normalization.
+  let managed: ManagedSkillSummary | undefined;
+  if (prep.managedSkills !== undefined) {
+    // Apply (or revalidate on a dry run) first so the report never claims a
+    // write that a concurrent change turned into a preserved file.
+    const appliedManaged = await applyManagedSkillWrites(
+      root,
+      prep.managedSkills,
+      { dryRun: options.dryRun },
+    );
+    managed = summarizeManagedSkills(prep.managedSkills, appliedManaged);
+    actions.push(...managed.actions);
+    diagnostics.push(...appliedManaged.diagnostics);
+  }
+
   // A dry run never replaces .claude entries; the import plan itself is
   // reported through NormalizeResult.adoption.imports.
   if (prep.claudePlan !== undefined && !options.dryRun) {
@@ -745,5 +982,12 @@ export async function applyNormalizeAdoption(
     diagnostics.push(...applied.diagnostics);
   }
 
-  return { actions, backups, diagnostics, created, skipped };
+  return {
+    actions,
+    backups,
+    diagnostics,
+    created,
+    skipped,
+    ...(managed === undefined ? {} : { managed }),
+  };
 }

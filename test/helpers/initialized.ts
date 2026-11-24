@@ -1,9 +1,11 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { discoverProjections } from '../../src/adapter/claude-code/projection.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import { AUTHORING_SKILL_NAMES } from '../../src/init/practice-authoring.ts';
 import {
   loadProjectManifest,
+  resolveProjectPaths,
   updateGeneratedManifest,
 } from '../../src/model/project-manifest.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from './project.ts';
@@ -39,6 +41,29 @@ runner: node
 timeout: 10
 order: 10
 `;
+
+/**
+ * Refresh recorded projection hashes after a test rewrites authored content,
+ * without running normalize. This keeps drift checks focused on the state under
+ * test instead of adding a `generated.manifest-stale` warning that would also
+ * fail `--strict`.
+ */
+export async function syncGeneratedProjections(root: string): Promise<void> {
+  const loaded = await loadProjectManifest(root);
+  const generated = loaded.manifest.generated;
+  if (generated === undefined) {
+    throw new Error('project fixture has no generated manifest');
+  }
+  const paths = resolveProjectPaths(root, loaded.manifest);
+  const discovered = await discoverProjections(root, paths);
+  await updateGeneratedManifest(root, {
+    targets: generated.targets.map((target) => (
+      target.provider === 'claude-code'
+        ? { ...target, projections: discovered.projections }
+        : target
+    )),
+  });
+}
 
 export async function populateProject(project: ProjectFixture): Promise<void> {
   await writeProjectFile(project.root, 'AGENTS.md', '# Project\n\nRead this first.\n');

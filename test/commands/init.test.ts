@@ -5,6 +5,7 @@ import { initializeProject, runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
+import { renderAuthoringSkill } from '../../src/init/skill-templates.ts';
 import {
   getGeneratedTarget,
   loadProjectManifest,
@@ -747,6 +748,19 @@ describe('runInit', () => {
     expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8')).toBe('# Authored docs\n');
     expect(await readFile(join(root, '.agents/skills/dab-doc-writing/SKILL.md'), 'utf8'))
       .toBe(authoredSkill);
+  });
+
+  it('does not update an existing managed authoring skill', async () => {
+    const root = await tempDir();
+    const file = '.agents/skills/dab-doc-writing/SKILL.md';
+    const stale = await renderAuthoringSkill('dab-doc-writing', '0.1.0');
+    await mkdir(join(root, '.agents/skills/dab-doc-writing'), { recursive: true });
+    await writeFile(join(root, file), stale);
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(join(root, file), 'utf8')).toBe(stale);
   });
 
   it('leaves a physical .claude authoring skill pending instead of scaffolding it', async () => {

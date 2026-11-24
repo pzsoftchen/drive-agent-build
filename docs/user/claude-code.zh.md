@@ -50,7 +50,7 @@ targets:
 ## Adoption 与 import
 
 - `dab normalize` 会把物理 `.claude/agents/*.md` 文件和 `.claude/skills/<dir>/SKILL.md` 目录复制到 authored `.agents` 树。本阶段不导入 rules、`.claude/settings.json`、hooks 和 `CLAUDE.md`。
-- `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；当 `.claude` 内容不同时，normalize 会警告并保留 `.agents` 副本。
+- Import 期间，`.agents` 是事实源：现有 source 文件或 skill 目录永不被覆盖；当 `.claude` 内容不同时，normalize 会警告并保留 `.agents` 副本。
 - 原 `.claude` 条目会备份到 `.dab/backups/<timestamp>/` 并替换为逐项符号链接。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件不会合并，并保留在备份中。
 - Import 使用 `.claude` 的 basename 或目录名。frontmatter `name` 仍是 fact id；不一致会警告，但不会重命名条目。
 - Import 不需要 `--fix`。`.claude/agents` 或 `.claude/skills` 上的目录符号链接是冲突，因为 DAB 逐项拥有条目。
@@ -59,6 +59,13 @@ targets:
 - `dab normalize --dry-run` 预览 import、backup 和 symlink 计划，包括计划备份路径。人类输出列出 adoption source 动作、import 动作和备份。
 - 任何非法候选都会阻止所有写入：不采用 source、不执行 import、不备份。导入新条目的那次运行会在下一次运行时记录这些投影，因此重跑 `dab normalize` 可让 `dab detect` 干净。
 - Global scope 在 `$HOME` 下使用相同规则：`$HOME/.claude` 下的物理条目会导入 `~/.agents` 并链接回去。`~/.claude/settings.json` 和 `$HOME/.gitignore` 保持只读。
+
+## Authoring skills
+
+- `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes` 是安装在 `.agents/skills/<name>/SKILL.md` 的 authored 副本，并以逐项符号链接投影到 `.claude/skills/<name>`。
+- Canonical 模板位于 `skills/<name>/SKILL.md`，它包含在已安装 `@saydone/dab` 包的 npm `files` 中。DAB 从 package root 读取它们；从不调用 `npx skills`、网络安装器或远程 registry。
+- 每个已安装副本带 `<!-- dab-skill: <name>@<version> sha256=<hash> -->` 标记。`dab init` 只安装缺失 skills。`dab normalize` 更新 marker 版本较旧且未修改的副本，并在无 hash 的 legacy marker 去掉后 body 与当前模板一致时迁移它。已修改副本、较新或无法比较的版本、缺失 marker、marker 不匹配和 body 不同的 legacy marker 会保留并警告；受管更新不创建备份。
+- `dab detect` 报告 current、stale、newer、modified、legacy、unversioned 和 marker-mismatch 状态。`practice.skill-stale` 会让 `--strict` 失败；保留类状态不会。
 
 ## 记忆模型
 

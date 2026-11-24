@@ -15,7 +15,13 @@ import { parse } from 'yaml';
 import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
-import { prepareNormalizeAdoption } from '../../src/init/adoption.ts';
+import { hashSkillBody, parseSkillMarker } from '../../src/core/skill-marker.ts';
+import { DAB_VERSION } from '../../src/core/version.ts';
+import {
+  applyNormalizeAdoption,
+  prepareNormalizeAdoption,
+} from '../../src/init/adoption.ts';
+import { renderAuthoringSkill, type AuthoringSkillName } from '../../src/init/skill-templates.ts';
 import { ProjectManifestSchema } from '../../src/model/schemas.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
 import { makeInitializedProject } from '../helpers/initialized.ts';
@@ -1912,6 +1918,347 @@ describe('normalize practice layer', () => {
     expect(output.match(/Language: en \(source: [^)]+\)/g)).toHaveLength(1);
     expect(output).toContain('create docs/AGENTS.md');
     expect(output).toContain('create .agents/skills/dab-doc-writing/SKILL.md');
+  });
+});
+
+describe('normalize managed skills', () => {
+  const docWriting = 'dab-doc-writing' as const;
+  const architecture = 'dab-architecture-writing' as const;
+  const decisionNotes = 'dab-decision-notes' as const;
+  const allSkills = [docWriting, architecture, decisionNotes] as const;
+
+  function managedFile(name: AuthoringSkillName): string {
+    return `.agents/skills/${name}/SKILL.md`;
+  }
+
+  function legacyBody(name: AuthoringSkillName, version = '0.1.0'): Promise<string> {
+    return renderAuthoringSkill(name, version).then(
+      (text) => text.replace(/ sha256=[0-9a-f]{64}/, ''),
+    );
+  }
+
+  async function writeManaged(
+    root: string,
+    name: AuthoringSkillName,
+    content: string,
+  ): Promise<string> {
+    const file = managedFile(name);
+    await writeProjectFile(root, file, content);
+    return file;
+  }
+
+  function expectCurrentManaged(text: string): void {
+    const marker = parseSkillMarker(text);
+    expect(marker?.version).toBe(DAB_VERSION);
+    expect(marker?.sha256).toBe(hashSkillBody(text));
+  }
+
+  it('creates a managed skill exactly once when its directory exists without SKILL.md', async () => {
+    const root = await tempDir('dab-managed-create-');
+    await mkdir(join(root, '.agents/skills', docWriting), { recursive: true });
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.mode).toBe('adoption');
+    const created = result.practices?.skills.created ?? [];
+    expect([...created].sort()).toEqual(allSkills.map(managedFile).sort());
+    // Each skill is created by exactly one writer.
+    expect(new Set(created).size).toBe(created.length);
+    const actions = result.adoption?.sourceActions ?? [];
+    expect(actions.filter((action) => action === `create skill ${managedFile(docWriting)}`))
+      .toHaveLength(1);
+    // The directory without SKILL.md is managed, never planned by the authoring pack.
+    expect(actions).not.toContain(`create ${managedFile(docWriting)}`);
+    for (const name of [architecture, decisionNotes]) {
+      expect(actions.filter((action) => action === `create ${managedFile(name)}`))
+        .toHaveLength(1);
+      expect(actions).not.toContain(`create skill ${managedFile(name)}`);
+    }
+    const text = await readFile(join(root, managedFile(docWriting)), 'utf8');
+    expectCurrentManaged(text);
+  });
+
+  it('migrates a legacy managed skill during adoption', async () => {
+    const root = await tempDir('dab-managed-legacy-');
+    const file = await writeManaged(root, docWriting, await legacyBody(docWriting));
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.skills.migrated).toEqual([file]);
+    expect(result.practices?.skills.legacy).toEqual([]);
+    expect(result.adoption?.sourceActions).toContain(`migrate skill ${file}`);
+    expectCurrentManaged(await readFile(join(root, file), 'utf8'));
+  });
+
+  it('plans a legacy migration in an adoption dry run without writing', async () => {
+    const root = await tempDir('dab-managed-legacy-dry-');
+    const legacy = await legacyBody(docWriting);
+    const file = await writeManaged(root, docWriting, legacy);
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.skills.migrated).toEqual([file]);
+    expect(result.practices?.skills.legacy).toEqual([]);
+    expect(result.actions).toContain(`migrate skill ${file}`);
+    expect(await readFile(join(root, file), 'utf8')).toBe(legacy);
+    expect(await lstatOrNull(join(root, 'docs/AGENTS.md'))).toBeNull();
+  });
+
+  it('preserves a managed skill edited between planning and applying', async () => {
+    const root = await tempDir('dab-managed-concurrent-');
+    const stale = await renderAuthoringSkill(docWriting, '0.1.0');
+    const file = await writeManaged(root, docWriting, stale);
+    for (const name of [architecture, decisionNotes]) {
+      await writeManaged(root, name, await renderAuthoringSkill(name, DAB_VERSION));
+    }
+    const preparation = await prepareNormalizeAdoption({
+      cwd: root,
+      home: dirname(root),
+    });
+    const edited = `${stale}\nLocal edit after planning.\n`;
+    await writeFile(join(root, file), edited);
+
+    const applied = await applyNormalizeAdoption(
+      { ...preparation, claudePlan: undefined },
+      { dryRun: false, backupRoot: join(root, '.dab/backups/test') },
+    );
+
+    expect(await readFile(join(root, file), 'utf8')).toBe(edited);
+    expect(applied.managed?.updated).toEqual([]);
+    expect(applied.managed?.concurrent).toEqual([file]);
+    expect(applied.managed?.skipped).toContain(file);
+    expect(applied.managed?.actions).toContain(
+      `skip skill ${file} (concurrent-change)`,
+    );
+    expect(applied.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-concurrent-change',
+        severity: 'warning',
+        file,
+      }),
+    ]));
+  });
+
+  it('preserves a modified legacy skill and still completes other practice writes', async () => {
+    const root = await tempDir('dab-managed-legacy-fork-');
+    const legacy = `${await legacyBody(docWriting)}\nLocal note.\n`;
+    const file = await writeManaged(root, docWriting, legacy);
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.skills.legacy).toEqual([file]);
+    expect(result.practices?.skills.skipped).toContain(file);
+    expect(result.practices?.skills.migrated).toEqual([]);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-legacy',
+        severity: 'warning',
+        file,
+      }),
+    ]));
+    expect(result.adoption?.sourceActions).toContain(`skip skill ${file} (legacy)`);
+    expect(await readFile(join(root, file), 'utf8')).toBe(legacy);
+    // Warnings never block the other practice files.
+    expect(result.practices?.created).toContain('docs/AGENTS.md');
+    expect(await lstatOrNull(join(root, 'docs/AGENTS.md'))).not.toBeNull();
+  });
+
+  it('reports a mismatched marker separately from unversioned skills', async () => {
+    const root = await tempDir('dab-managed-mismatch-');
+    // Keep the body/frontmatter valid for the directory and change only the
+    // marker name, so discovery never sees a duplicate skill name.
+    const mismatched = (await renderAuthoringSkill(docWriting, DAB_VERSION)).replace(
+      'dab-skill: dab-doc-writing@',
+      'dab-skill: dab-other-skill@',
+    );
+    const file = await writeManaged(root, docWriting, mismatched);
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.skills.markerMismatch).toEqual([file]);
+    expect(result.practices?.skills.unversioned).toEqual([]);
+    expect(result.practices?.skills.skipped).toContain(file);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-marker-mismatch',
+        severity: 'warning',
+        file,
+      }),
+    ]));
+    expect(result.adoption?.sourceActions)
+      .toContain(`skip skill ${file} (marker-mismatch)`);
+  });
+
+  it('updates a stale managed skill on an initialized project', async () => {
+    const project = await initializedProject();
+    const stale = await renderAuthoringSkill(docWriting, '0.1.0');
+    const file = await writeManaged(project.root, docWriting, stale);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.mode).toBe('converge');
+    expect(result.practices?.skills.updated).toEqual([file]);
+    expect(result.practices?.skills.created).toHaveLength(2);
+    expect(result.adoption?.sourceActions).toContain(`update skill ${file}`);
+    expectCurrentManaged(await readFile(join(project.root, file), 'utf8'));
+  });
+
+  it('preserves a newer managed skill on an initialized project', async () => {
+    const project = await initializedProject();
+    const newer = await renderAuthoringSkill(docWriting, '9.9.9');
+    const file = await writeManaged(project.root, docWriting, newer);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.skills.newer).toEqual([file]);
+    expect(result.practices?.skills.updated).toEqual([]);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-newer',
+        severity: 'warning',
+        file,
+      }),
+    ]));
+    expect(result.adoption?.sourceActions).toContain(`skip skill ${file} (newer)`);
+    expect(await readFile(join(project.root, file), 'utf8')).toBe(newer);
+  });
+
+  it('preserves a modified managed skill and completes targets', async () => {
+    const project = await initializedProject();
+    const modified = `${await renderAuthoringSkill(docWriting, DAB_VERSION)}\nLocal note.\n`;
+    const file = await writeManaged(project.root, docWriting, modified);
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.skills.modified).toEqual([file]);
+    expect(result.practices?.skills.updated).toEqual([]);
+    expect(result.practices?.skills.skipped).toContain(file);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-modified',
+        severity: 'warning',
+        file,
+      }),
+    ]));
+    expect(result.adoption?.sourceActions).toContain(`skip skill ${file} (modified)`);
+    expect(await readFile(join(project.root, file), 'utf8')).toBe(modified);
+    // The other missing authoring skills and Claude targets still converge.
+    expect(result.practices?.skills.created).toHaveLength(2);
+    expect(result.targets).toHaveLength(1);
+    expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).not.toBeNull();
+  });
+
+  it('plans a stale update in a dry run without writing', async () => {
+    const project = await initializedProject();
+    const stale = await renderAuthoringSkill(docWriting, '0.1.0');
+    const file = await writeManaged(project.root, docWriting, stale);
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.practices?.skills.updated).toEqual([file]);
+    expect(result.actions).toContain(`update skill ${file}`);
+    expect(await readFile(join(project.root, file), 'utf8')).toBe(stale);
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-architecture-writing')))
+      .toBeNull();
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+  });
+
+  it('blocks all writes when a managed skill path is not a regular file', async () => {
+    const project = await initializedProject();
+    const file = managedFile(docWriting);
+    await mkdir(join(project.root, file), { recursive: true });
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-path',
+        severity: 'error',
+        file,
+      }),
+    ]));
+    expect(result.practices?.skills.created).not.toContain(file);
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-architecture-writing')))
+      .toBeNull();
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+  });
+
+  it('does not run managed skills for global scope', async () => {
+    const fixture = await globalFixture();
+    const stale = await renderAuthoringSkill(docWriting, '0.1.0');
+    const file = await writeManaged(fixture.home, docWriting, stale);
+
+    const result = await normalizeProject({
+      cwd: join(fixture.home, '.agents'),
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.scope).toBe('global');
+    expect(result.practices).toBeUndefined();
+    expect(await readFile(join(fixture.home, file), 'utf8')).toBe(stale);
   });
 });
 

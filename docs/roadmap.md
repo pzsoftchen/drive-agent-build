@@ -10,8 +10,8 @@ DAB is the long-term direction. The product roadmap follows DAD first: prove rel
 - Generated output: `.claude/`.
 - Commands: `dab init`, `dab detect`, `dab normalize`, `dab policy explain`.
 - Bilingual documentation gates.
-- Status: released as `v0.1.1` on 2026-11-23.
-- Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)
+- Status: released as `v0.1.2` on 2026-11-24.
+- Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
 
 ## v0.1.x DAD Foundation
 
@@ -24,11 +24,12 @@ DAB is the long-term direction. The product roadmap follows DAD first: prove rel
 
 - `generic` is the default profile; `feature` remains a compatibility alias with the same behavior.
 - `init` and `normalize` scaffold single-language `docs/AGENTS.md` and `docs/architecture.md` and the `dab-*` authoring skills from one planner.
-- `detect` reports a Documentation group and authoring skill state; `normalize` fills missing practice files without overwriting authored docs or skills.
+- `detect` reports a Documentation group and authoring skill state; `normalize` fills missing practice files while preserving authored docs, modified skills and user-defined skills.
+- The `dab-*` authoring skills have canonical templates in `skills/`, a version/hash marker and managed updates: `normalize` updates unmodified older copies and preserves modified, legacy, newer and unversioned copies.
 - Projects with `.agents/rules/docs-bilingual.md` keep the rule and are policy-skipped for generated docs.
 - The generic profile focuses on configuration drift and the documentation, notes and skills discipline.
 - Hooks and shared memory are advanced, opt-in capabilities. `init` and adoption do not scaffold them; existing hooks are validated and compiled where applicable, and existing memory is preserved by `init` and `normalize` and validated by `init` and `detect`.
-- Status: implemented; unreleased.
+- Status: released in `0.1.2`.
 
 ## v0.2 DAD Task Evidence
 
