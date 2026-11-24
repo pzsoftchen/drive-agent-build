@@ -106,7 +106,7 @@ pnpm link --global
 - `dab detect` 在不写入的情况下检查编写事实、生成输出、所有权和作用域。
 - `dab policy explain` 展示选定 target 的最终规则和 hooks。
 
-Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hooks 与共享记忆保持高级、可选：已有的编写文件继续受支持和受管理。
+Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hooks 与共享记忆保持高级、可选：已有 hooks 仍会被校验并在适用时编译，已有记忆仍会被保留和校验。
 
 ## DAB 为什么存在
 

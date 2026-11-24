@@ -64,7 +64,7 @@ Global layout:
 - `dab init path` uses `path` as the exact source root and creates it when missing. It refuses to create a source root inside an existing one.
 - Scans the repository and writes missing authored files. Authored conflicts stop before writes. A regular file, dangling link or inaccessible `.agents` source parent (`agents`, `hooks`, `memory`, `notes`, `policies`, `adapters`, `rules`, `skills`) is a governed conflict that blocks every write. Unmanaged non-import `.claude` conflicts are reported as pending and left to `dab normalize --fix`.
 - Init never imports existing `.claude/agents` or `.claude/skills` entries and never creates adoption backups for them. Import is `dab normalize`'s job.
-- Advanced hooks and shared memory are not scaffolded by default. `.agents/hooks/` and `.agents/memory/` are opt-in; an existing tree is preserved and still validated and managed.
+- Advanced hooks and shared memory are not scaffolded by default. `.agents/hooks/` and `.agents/memory/` are opt-in; existing hooks are validated and compiled where applicable, and existing memory is preserved and validated.
 - The generated manifest is v2 and includes `scope`, `profile`, `docs.language`, `targets` and `instructions: symlink`. `--profile` accepts `generic` (default) or `feature`; `feature` is a compatibility alias with the same practice behavior, and an existing authored manifest is never overwritten.
 - `docs.language` controls the project documentation language: `auto` (default), `en` or `zh`. `auto` samples existing `docs/AGENTS.md`, `docs/architecture.md`, root `AGENTS.md`, `README.md`, the `package.json` description and then the locale; with no signal it uses `en`. Init reports `Language: <value> (source: <source>)` and JSON adds `language: { value, source }`.
 - Init writes two single-language files, `docs/AGENTS.md` and `docs/architecture.md`, with no `.zh.md` or `.i18n.yaml` pairs. `docs/AGENTS.md` is an AGENTS file and stays pairing-exempt. Existing documentation is never overwritten.
@@ -149,7 +149,7 @@ dab detect [--strict] [--json]
 
 Runs read-only. It resolves the scope and adoption phase before any manifest is required, so an uninitialized or partial scope returns a checklist instead of a source-root error. It then verifies scope, enabled target adapters, Claude Code version, ancestor instruction files, the instructions artifact, projections, settings, policy, optional hooks and memory when present, secrets, documentation practice, AGENTS.md size and links.
 
-The human output prints `dab detect` first, then `Scope`, `Root` and `Profile`, groups entries as Instructions, Documentation, Agents, Skills, Rules, Policy, Hooks, Memory, Notes, Generated target and Safety, then prints `score: <ok>/<total> (<percent>%)` and one `next:` line per distinct next action. The example below is captured from DAB's own initialized project, which keeps optional hooks and memory as an advanced example; treat it as illustrative because paths, versions and the score depend on the project and the installed DAB version.
+The human output prints `dab detect` first, then `Scope`, `Root` and `Profile`, groups entries as Instructions, Documentation, Agents, Skills, Rules, Policy, Hooks, Memory, Notes, Generated target and Safety, then prints `score: <ok>/<total> (<percent>%)` and one `next:` line per distinct next action. The example below is captured from a new generic project after `dab init` and `dab detect`, with the root replaced by `/path/to/project`. Paths, versions and the score depend on the project and the installed DAB version. Hooks and Memory appear only when the project has optional `.agents/hooks/` or `.agents/memory/` files, so a new project shows neither group.
 
 ```text
 dab detect
@@ -183,19 +183,13 @@ Rules
 Policy
   [OK] project
 
-Hooks
-  [OK] protect-generated
-
-Memory
-  [OK] .agents/memory/INDEX.md
-
 Notes
   [OK] .agents/notes/
 
 Generated target
   [OK] .claude/settings.json
 
-score: 16/18 (89%)
+score: 14/16 (88%)
 next: use dab-doc-writing
 next: use dab-architecture-writing
 ```
@@ -236,7 +230,7 @@ dab normalize [--dry-run] [--fix] [--json]
 
 Plans or applies authored source adoption, Claude imports, missing documentation and authoring skills, projection repairs, the `.claude/CLAUDE.md` instruction artifact, `.claude/settings.json`, `dab.yaml` generated records and `.gitignore`. It prechecks every enabled target before writing target output; one failing target blocks all target writes. `--fix` backs up conflicting non-import paths under `.dab/backups/` before replacing them.
 
-- Adoption runs before source-root resolution. An uninitialized or partial project gets the missing minimal authored source: `AGENTS.md`, `dab.yaml`, `.agents/policies/project.yaml` and `.agents/adapters/claude-code.yaml`, plus empty `.agents/agents`, `.agents/skills`, `.agents/rules` and `.agents/notes` directories. Hooks and shared memory are opt-in and are not adopted; existing files remain managed. Global scope uses `.agents/AGENTS.md` and `.agents/dab.yaml` under `$HOME` and the same source subdirectories. It never creates the profile's default agents or core skills; the namespaced `dab-*` authoring skills are the exception. Use `dab init` for the full profile skeleton.
+- Adoption runs before source-root resolution. An uninitialized or partial project gets the missing minimal authored source: `AGENTS.md`, `dab.yaml`, `.agents/policies/project.yaml` and `.agents/adapters/claude-code.yaml`, plus empty `.agents/agents`, `.agents/skills`, `.agents/rules` and `.agents/notes` directories. Hooks and shared memory are opt-in and are not adopted. Existing hooks are validated by `init`, `normalize` and `detect` and compiled where applicable; existing memory files are preserved by `init` and `normalize` and validated by `init` and `detect`. Global scope uses `.agents/AGENTS.md` and `.agents/dab.yaml` under `$HOME` and the same source subdirectories. It never creates the profile's default agents or core skills; the namespaced `dab-*` authoring skills are the exception. Use `dab init` for the full profile skeleton.
 - Normalize fills missing practice artifacts in project scope. On an uninitialized or partial project, adoption includes the documentation and authoring packs; on an initialized project, convergence adds only missing docs and `dab-*` skills. Existing docs and skill directories are never overwritten, and `--fix` never replaces or backs up authored practice paths.
 - When `.agents/rules/docs-bilingual.md` exists, missing documentation targets are policy-skipped with `practice.docs-bilingual-policy`; existing docs are preserved as skipped and the rule is preserved. Authoring skills are still installed and target writes continue.
 - A blocking source or practice error (a regular file, dangling link, denied access or symlink loop at a `.agents` source parent, an escaping link or an unreadable path) blocks every write, including `.claude`. Practice writes run before target planning, so new skills are projected in the same run; a later target failure leaves the idempotent practice files in place and a rerun is safe.

@@ -106,7 +106,7 @@ Use `dab init ~/.agents` to initialize the independent global scope.
 - `dab detect` checks authored facts, generated output, ownership and scope without writing.
 - `dab policy explain` shows the effective rules and hooks for a selected target.
 
-The generic profile focuses on configuration drift and the documentation, notes and skills discipline. Hooks and shared memory stay advanced and opt-in: existing authored files remain supported and managed.
+The generic profile focuses on configuration drift and the documentation, notes and skills discipline. Hooks and shared memory stay advanced and opt-in: existing hooks are still validated and compiled where applicable, and existing memory is still preserved and validated.
 
 ## Why DAB exists
 

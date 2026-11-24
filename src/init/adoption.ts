@@ -637,8 +637,8 @@ async function lexicalAlias(
 
 /**
  * Init-style containment checks run before the first write. `plan.directories`
- * omits implicitly created parents (policies, adapters, memory), so every
- * planned file is checked as well as the source tree itself.
+ * omits implicitly created parents (policies, adapters), so every planned file
+ * is checked as well as the source tree itself.
  */
 async function sourceWriteDiagnostics(
   root: string,

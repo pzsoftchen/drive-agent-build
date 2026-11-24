@@ -27,7 +27,7 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 - `detect` 报告 Documentation 组和 authoring skill 状态；`normalize` 补齐缺失的实践文件，不覆盖 authored docs 或 skills。
 - 已有 `.agents/rules/docs-bilingual.md` 的项目保留该规则，生成的 docs 被 policy skip。
 - Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。
-- Hooks 与共享记忆是高级、可选能力。`init` 和 adoption 不生成它们；已有的编写文件继续受支持、校验和管理。
+- Hooks 与共享记忆是高级、可选能力。`init` 和 adoption 不生成它们；已有 hooks 会被校验并在适用时编译，已有记忆由 `init` 和 `normalize` 保留，并由 `init` 和 `detect` 校验。
 - 状态：已实现，尚未发布。
 
 ## v0.2 DAD 任务证据

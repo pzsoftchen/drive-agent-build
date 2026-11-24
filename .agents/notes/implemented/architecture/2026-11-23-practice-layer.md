@@ -17,7 +17,7 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 - An existing `.agents/rules/docs-bilingual.md` is project policy: it is preserved, missing documentation targets are policy-skipped with `practice.docs-bilingual-policy`, existing docs are skipped, and authoring skills and target writes continue.
 - `dab detect` runs the same packs read-only. It adds a `Documentation` group and authoring entries in `Skills`, checks links, line-start `TODO:` or `TODO(owner):` markers, empty architecture sections and version markers, and treats policy skips and unversioned authored skills as non-strict warnings.
 - DAB dogfoods the layer: its own `docs/AGENTS.md` guide and `dab-*` skills are authored files checked by `dab detect`, while its existing bilingual rule keeps its product docs paired.
-- Hooks and shared memory are advanced, opt-in capabilities. The generic profile does not scaffold `.agents/hooks/protect-generated/` or `.agents/memory/INDEX.md`; existing authored hooks and memory remain untouched, validated and managed by `init`, `normalize` and `detect`. The default profile focuses on drift detection/repair and the documentation, notes and skills discipline.
+- Hooks and shared memory are advanced, opt-in capabilities. The generic profile does not scaffold `.agents/hooks/protect-generated/` or `.agents/memory/INDEX.md`; existing hooks are validated by `init`, `normalize` and `detect` and compiled where applicable, while existing memory files are preserved by `init` and `normalize` and validated by `init` and `detect`. The default profile focuses on drift detection/repair and the documentation, notes and skills discipline.
 
 ## Alternatives considered
 

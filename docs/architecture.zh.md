@@ -77,7 +77,7 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 - Documentation pack 拥有 `docs/AGENTS.md` 和 `docs/architecture.md`。它只写一种语言，从不创建 `.zh.md` 或 `.i18n.yaml` 配对；`docs/AGENTS.md` 是 AGENTS 文件，继续豁免配对。
 - `docs.language` 为 `auto`、`en` 或 `zh`。`auto` 采样现有的 `docs/AGENTS.md`、`docs/architecture.md`、根 `AGENTS.md`、`README.md`、`package.json` description 和 locale，然后默认 `en`。解析结果携带 `{ value, source }`，并由 `init`、`normalize` 和 `detect` 报告。
 - `.agents/rules/docs-bilingual.md` 是项目政策信号，不是错误：缺失的 documentation targets 被 policy skip，规则本身保留。已有 docs 作为 skipped 保留，因此悬空的 docs 路径不会阻止 skills 或 target 写入。
-- Hooks 与共享记忆是高级、可选能力。`init` 和 normalize adoption 不创建 `.agents/hooks/` 或 `.agents/memory/`；已有文件仍会被 `init`、`normalize` 和 `detect` 发现、校验和管理。
+- Hooks 与共享记忆是高级、可选能力。`init` 和 normalize adoption 不创建 `.agents/hooks/` 或 `.agents/memory/`；已有 hooks 由 `init`、`normalize` 和 `detect` 校验并在适用时编译，已有记忆文件由 `init` 和 `normalize` 保留，并由 `init` 和 `detect` 校验。
 - Authoring pack 拥有 `.agents/skills/dab-doc-writing`、`.agents/skills/dab-architecture-writing` 和 `.agents/skills/dab-decision-notes`。已存在的 skill 目录会保留。当只有可导入的物理 `.claude/skills/dab-*` 目录存在时，`init` 丢弃对应模板并把 import 报告为 pending，由 `normalize` 执行。非目录条目以 warning pending 报告为 `practice.skill-import-conflict`，且不提供 import 提示。每个渲染 body 都带 `dab-skill: <name>@<version>` 标记；DAB 从不自动更新已安装 skill，而是报告落后标记。
 - `.agents/rules` 或 `.agents/skills` 处的普通文件是受治理的路径错误：`normalize` 和 `detect` 报告 `practice.docs-path` 或 `practice.skill-path`，`init` 报告 `path.conflict`，且不会执行任何 practice 写入。`.agents/agents`、`.agents/hooks`、`.agents/memory`、`.agents/notes`、`.agents/policies` 或 `.agents/adapters` 处的普通文件、悬空链接、访问拒绝或符号链接循环是受治理的 `path.conflict`，在 `init`、`normalize` 和 `detect` 中；project 和 global 运行都会在写入或发现之前阻断。缺少读与搜索权限的 source parent 是同样的受治理冲突；best-effort secret scan 可能跳过不可读子树，因此访问错误由 parent probe 而不是 scan 负责。
 - `normalize` 在 target planning 之前规划 practice 写入，因此新文件会在同一次运行中被投影。Practice 错误阻止所有写入，包括 `.claude`；policy skip 不会。
@@ -146,7 +146,7 @@ generated:
 
 ## Normalize adoption 与 import
 
-- Adoption 在 source-root 解析前运行。未初始化或 partial scope 会获得缺失的最小 source：`AGENTS.md`、`dab.yaml`、项目策略和 Claude Code 策略，以及空的 agents、skills、rules 和 notes 目录。Hooks 和共享记忆不会被采用；已有树仍受管理。它复用 `init` 的渲染函数，但不创建 profile agents 或 core skills；命名空间的 `dab-*` authoring skills 是例外。
+- Adoption 在 source-root 解析前运行。未初始化或 partial scope 会获得缺失的最小 source：`AGENTS.md`、`dab.yaml`、项目策略和 Claude Code 策略，以及空的 agents、skills、rules 和 notes 目录。Hooks 和共享记忆不会被采用；已有的 hooks 和记忆文件保持原位，并保留现有的校验行为。它复用 `init` 的渲染函数，但不创建 profile agents 或 core skills；命名空间的 `dab-*` authoring skills 是例外。
 - Import 是受控迁移，不是 unmanaged 冲突：物理 `.claude/agents/*.md` 和 `.claude/skills/<dir>/SKILL.md` 条目会复制到 `.agents`，备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。不需要 `--fix`。
 - `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件保留在备份中。
 - Import 保留 `.claude` 的 basename 或目录名。frontmatter `name` 是 fact id；不一致会警告，但不会重命名。

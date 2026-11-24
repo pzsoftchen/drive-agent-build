@@ -62,7 +62,7 @@ targets:
 
 ## Memory model
 
-- Shared memory is an advanced, opt-in capability. DAB does not scaffold `.agents/memory/` by default; existing files are still validated and managed.
+- Shared memory is an advanced, opt-in capability. DAB does not scaffold `.agents/memory/` by default; existing files are still preserved and validated.
 - Shared team facts live in `.agents/memory/` and are reviewed in pull requests.
 - Personal auto memory stays machine-local and is never committed.
 - Agents may use `memory: user` or `memory: local`, but `memory: project` is rejected because it creates a second team memory store.

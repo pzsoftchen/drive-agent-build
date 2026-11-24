@@ -62,7 +62,7 @@ targets:
 
 ## 记忆模型
 
-- 共享记忆是高级、可选能力。DAB 默认不生成 `.agents/memory/`；已有文件仍会被校验和管理。
+- 共享记忆是高级、可选能力。DAB 默认不生成 `.agents/memory/`；已有文件仍会被保留和校验。
 - 团队共享事实放在 `.agents/memory/`，并在拉取请求中评审。
 - 个人自动记忆留在机器本地，从不提交。
 - Agent 可以使用 `memory: user` 或 `memory: local`，但 `memory: project` 会被拒绝，因为它会形成第二套团队记忆。
