@@ -15,12 +15,12 @@ sections:
     translation: 9adc63435c6cd4e820c5d2b927a54d89f0e62916aa4e32ad13c2f091097391e3
   - index: 2
     level: 2
-    source: dd688852e5e03f9f0b2a34d01cc25828ba563cd282d307d786d522e9e4c9dab2
-    translation: 2aa34155dd9f4b68260295e820b71001b08816c1481769dd079eae87df9bdd23
+    source: bbeb5a29c3b17ef968b5a09b4011bb068101ff9a5d9e79ce2d5478e510b30ab0
+    translation: df3230fe447e0ff620a90a19a30dd9d4cb9d29aad2712fa6de6ed4ea1304e119
   - index: 3
     level: 3
-    source: 1c2c8b45d8422d50b588147ff47bc5cfa0489e06409c2daad1df4a2c632960da
-    translation: 5f863934bd901debaf44910eb7bd265aca5e2a6f3c74f5011d734b3ed524b72b
+    source: 6fdd5065a914e3154b616730989e00187ca91c9ff91810d3a025c6f94270ddba
+    translation: 53e26699751e1ad24d8a8a3aed12ec2062dfb88f25107e820f1b6d1a3b8b202b
   - index: 4
     level: 2
     source: 9fdf08a79175d19a9f0d585c83f7831275c8f69fb9fae01ddeb337950ac9d9c2
@@ -31,8 +31,8 @@ sections:
     translation: e4898b0ef9ce7cb381d4cd8bdd830d28f873f1c064536af02012083522df709d
   - index: 6
     level: 2
-    source: efc91a5e9abf1696920e5cb108715c05d495572a19a2da0dd8d9e795e96036aa
-    translation: fdd7843462a4004e4ddcce356b5a45a9e67935180cc767ed7a4840f27a975e9a
+    source: f1b520aeff64efc443c3f5ed3063634d953b9c0ceabeb2255ac2d8868a64fc25
+    translation: 7eb91b4cb2f88140aeafb3ee7d6d2e398a1129c9ff508ec30e91a2889dd04db8
   - index: 7
     level: 2
     source: b5df923effd691fbdef2abd96ebc15dae28275d51d460f9e9d9e1dcc5be2a5d0
@@ -47,8 +47,8 @@ sections:
     translation: 55cf08493684d9fc90c58f85beff38b3a6877689a885068e3e1582a4eb674c32
   - index: 10
     level: 2
-    source: d0f65bd3ef43259a301d244c07061c3da61f75124a63d442c42b1e351f4ba8eb
-    translation: 33331c29e0532744c866c0169e05989527f3de8352d6dec7bdf1c5492df6bfd3
+    source: c7c2af20a7e6aefd7a05d93ebd7b8b312b83f1c0ec4044130a24755a96c341fe
+    translation: 913d373aa6174090fba8bc186e98d637f0cf4f8fff17c6f9bc9d43abd64ed030
   - index: 11
     level: 2
     source: 02ee9eae303a1a1ed0b4bb451a8e131ad828bb816c50263b2ef2e536bfdd566c

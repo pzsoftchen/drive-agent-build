@@ -8,7 +8,7 @@ The discipline is part of the authored source. Some rules can be gated by the CL
 
 ## The discipline set
 
-The following rules form the default discipline. A project can customize them, but it must state the enforcement level and the target portability of each rule.
+The following rules form the default discipline model. A project can customize them, but it must state the enforcement level and the target portability of each rule.
 
 | Rule | Why it matters | Enforcement | Portability |
 |---|---|---|---|
@@ -25,7 +25,7 @@ The following rules form the default discipline. A project can customize them, b
 ## Enforcement levels
 
 - `gate`: a CLI or CI check fails the change. Evidence is an exit code, a diagnostic or a failing test.
-- `check`: `dab detect` or `pnpm doc-sync` reports a warning or error; `--strict` decides whether it blocks.
+- `check`: `dab detect` reports a warning or error; `--strict` decides whether it blocks. A `pnpm doc-sync` failure is a `gate`.
 - `behavioral`: an instruction in `AGENTS.md` or a skill. The agent is expected to follow it, but DAB cannot prove it.
 - `optional`: hooks, shared memory or another opt-in capability. The project chooses whether to enable it.
 

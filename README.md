@@ -25,7 +25,7 @@ The working model is `Agent = Model + Harness`. DAB is not a third term in that 
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness loop: think -> act -> observe
+                 Harness loop: think -> act -> observe -> continue
                                |
                                v
                          Model + Project
@@ -48,7 +48,7 @@ The actors have distinct responsibilities:
 
 Single-task closure belongs to DAD; DAB begins when multiple tasks must converge into a larger goal.
 
-DAB does not replace the model, implement the agent loop or become another runtime. The full model is in [Why DAB exists](docs/concepts/why-dab.md).
+DAB does not replace the model, implement the agent loop or become another runtime. The conceptual model is in [Why DAB exists](docs/concepts/why-dab.md); this diagram is the visual overview.
 
 ## The problems DAB addresses
 
@@ -76,7 +76,7 @@ The evidence gates and release mapping are in [Roadmap](docs/roadmap.md).
 
 ## Current status
 
-The Claude Code governance foundation and the practice layer are released in `0.1.2`. Capability and milestone status is tracked in [Roadmap](docs/roadmap.md).
+The current release `0.1.2` includes the Claude Code governance foundation and the practice layer. Capability and milestone status is tracked in [Roadmap](docs/roadmap.md).
 
 ## Quick start
 
@@ -129,9 +129,9 @@ The generic profile focuses on configuration drift and the documentation, notes 
 
 ## What DAB does not guarantee
 
-- v0.1 is currently a single-developer, macOS and Linux, Claude Code-first implementation.
+- The 0.1.x line is currently a single-developer, macOS and Linux, Claude Code-first implementation.
 - It does not implement the DAB goal loop, a task graph, cross-task learning or automatic memory promotion.
-- v0.2 will validate one development task at a time; it will not by itself prove DAB.
+- The v0.2 milestone will validate one development task at a time; it will not by itself prove DAB.
 - Path deny rules are tool-level guardrails, not a sandbox.
 - Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.
 - Windows junctions, a GUI, a plugin marketplace and automatic DAD migration are out of scope.

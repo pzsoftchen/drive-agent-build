@@ -25,7 +25,7 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness loop: think -> act -> observe
+                 Harness loop: think -> act -> observe -> continue
                                |
                                v
                          Model + Project
@@ -48,7 +48,7 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 
 单任务闭包属于 DAD；当多个任务必须收敛到一个更大目标时，DAB 才开始。
 
-DAB 不替代模型，不实现 Agent Loop，也不成为另一个 runtime。完整模型见 [DAB 为什么存在](docs/concepts/why-dab.zh.md)。
+DAB 不替代模型，不实现 Agent Loop，也不成为另一个 runtime。概念模型见 [DAB 为什么存在](docs/concepts/why-dab.zh.md)；上图是可视化概览。
 
 ## DAB 要解决的问题
 
@@ -76,7 +76,7 @@ DAB 存在，是因为 Agent 能力和项目配置本身不会自动产生可靠
 
 ## 当前状态
 
-Claude Code 治理基础和实践层已在 `0.1.2` 发布。能力和里程碑状态见 [路线图](docs/roadmap.zh.md)。
+当前发布 `0.1.2` 包含 Claude Code 治理基础和实践层。能力和里程碑状态见 [路线图](docs/roadmap.zh.md)。
 
 ## 快速开始
 
@@ -129,9 +129,9 @@ Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hoo
 
 ## DAB 不保证什么
 
-- v0.1 当前是单开发者、macOS 和 Linux、Claude Code 优先的实现。
+- 0.1.x 系列当前是单开发者、macOS 和 Linux、Claude Code 优先的实现。
 - 它不实现 DAB 目标循环、任务图、跨任务学习或自动记忆提升。
-- v0.2 将验证单个开发任务，不代表 DAB 已被证明。
+- v0.2 里程碑将验证单个开发任务，不代表 DAB 已被证明。
 - 路径 deny 规则是工具级护栏，不是沙箱。
 - Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。
 - Windows junction、GUI、插件市场和自动 DAD 迁移不在范围内。

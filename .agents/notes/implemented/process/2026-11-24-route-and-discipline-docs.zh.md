@@ -12,7 +12,7 @@ DAB 的文档描述的是发布顺序，不是能力路线。理念和路线分�
 
 - 路线分为四个能力层：L1 配置治理与目标隔离、L2 工程纪律、L3 单任务交付、L4 目标级交付。
 - L1 的证据门禁是：干净项目上的 `detect --strict`、幂等 `normalize`、外部手改检测、目标中立的共享指令，以及跨 Agent 合同测试。合同测试是配置面检查；完整 Codex 和 DSH adapter 仍在 v0.4。
-- `docs/concepts/engineering-discipline.md` 拥有纪律集合、强制级别、可移植性和来源。README 拥有入口摘要；Why DAB 拥有问题和概念模型；Roadmap 拥有路线、门禁和状态；Architecture 拥有实现事实。
+- `docs/concepts/engineering-discipline.md` 拥有纪律集合、强制级别、可移植性和来源。README 拥有入口摘要和系统位置图；Why DAB 拥有问题和概念模型；Roadmap 拥有路线、门禁和状态；Architecture 拥有实现事实。
 - DAB 是长期方向和产品名；DAD 是当前开发专属路径；`dab` 是 CLI。
 - 公开纪律是可识别工程实践的综合。deepseek-harness 样本只是一个参考，不是规范。
 
@@ -32,7 +32,7 @@ DAB 的文档描述的是发布顺序，不是能力路线。理念和路线分�
 
 - 能力状态和计划工作放在 Roadmap；概念文档描述当前模型并链接到路线。
 - 跨 Agent 合同测试存在之前，L1 没有被完整验证。Roadmap 的状态记录了这个缺口。
-- README 和 Why DAB 不再承载完整图或状态表；它们只做摘要和链接。
+- README 拥有系统位置图和路线一瞥；Why DAB 链接到该图，而不是重复它。详细状态表和计划工作留在 Roadmap。
 - 纪律文档必须随规则和强制级别保持更新。行为约定不得写成强制门禁。
 
 ## Verification

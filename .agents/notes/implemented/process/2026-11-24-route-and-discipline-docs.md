@@ -12,7 +12,7 @@ DAB's documentation described a release sequence, not a capability route. The ph
 
 - The route is four capability layers: L1 configuration governance and target isolation, L2 engineering discipline, L3 single-task delivery and L4 goal-level delivery.
 - L1's evidence gate is `detect --strict` on a clean project, idempotent `normalize`, detection of foreign edits, target-neutral shared instructions and a cross-agent contract test. The contract test is a configuration-level check; full Codex and DSH adapters remain v0.4.
-- `docs/concepts/engineering-discipline.md` owns the discipline set, enforcement levels, portability and provenance. README owns the entry summary; Why DAB owns the problem and conceptual model; Roadmap owns the route, gates and status; Architecture owns implementation facts.
+- `docs/concepts/engineering-discipline.md` owns the discipline set, enforcement levels, portability and provenance. README owns the entry summary and the system-position diagram; Why DAB owns the problem and conceptual model; Roadmap owns the route, gates and status; Architecture owns implementation facts.
 - DAB is the long-term direction and product name; DAD is the current development-specific path; `dab` is the CLI.
 - The public discipline is a synthesis of recognizable engineering practice. The deepseek-harness sample is one reference, not a canon.
 
@@ -32,7 +32,7 @@ DAB's documentation described a release sequence, not a capability route. The ph
 
 - Capability status and planned work live in Roadmap; concept documents describe the current model and link to the route.
 - L1 is not fully validated until the cross-agent contract test exists. The status in Roadmap records this gap.
-- README and Why DAB no longer carry the full diagram or the status table; they summarize and link.
+- README owns the system-position diagram and the at-a-glance route; Why DAB links to that diagram instead of duplicating it. The detailed status table and planned work stay in Roadmap.
 - The discipline document must stay current with the rules and enforcement levels. A behavioral rule must not be described as a gate.
 
 ## Verification
