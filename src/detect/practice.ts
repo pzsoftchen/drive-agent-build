@@ -2,6 +2,7 @@ import { dirname, join, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { isPathInside } from '../core/paths.ts';
+import { parseSkillMarker } from '../core/skill-marker.ts';
 import { scanMarkdown, slugifyHeading } from '../docs/markdown.ts';
 import {
   resolveDocsLanguage,
@@ -52,7 +53,6 @@ export const PRACTICE_NON_STRICT_WARNING_CODES: ReadonlySet<string> = new Set([
   'practice.skill-unversioned',
 ]);
 
-const SKILL_MARKER = /<!--\s*dab-skill:\s*([a-z0-9-]+)@([^\s>]+)\s*-->/;
 const TODO_MARKER = /^[ \t]*TODO(?:\(owner\))?:/;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const HEADING_LINE = /^ {0,3}#{1,6}\s/;
@@ -796,12 +796,12 @@ export async function checkPracticePackages(
       continue;
     }
 
-    const marker = SKILL_MARKER.exec(fileState.text);
-    if (marker === null || marker[1] !== name) {
+    const marker = parseSkillMarker(fileState.text);
+    if (marker === undefined || marker.name !== name) {
       addSkillUnversioned(collector, name);
       continue;
     }
-    const markerVersion = marker[2] ?? '';
+    const markerVersion = marker.version;
     const found = parseVersion(markerVersion);
     const current = parseVersion(version);
     if (found === undefined) {

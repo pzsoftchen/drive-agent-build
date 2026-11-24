@@ -86,7 +86,7 @@ async function completePractice(project: ProjectFixture): Promise<void> {
     await writeProjectFile(
       project.root,
       `.agents/skills/${name}/SKILL.md`,
-      renderAuthoringSkill(name, DAB_VERSION),
+      await renderAuthoringSkill(name, DAB_VERSION),
     );
   }
   await normalizeProject({ cwd: project.root, runner: goodRunner });

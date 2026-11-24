@@ -371,7 +371,7 @@ See [nested](architecture.md/child.md).
       await writeProjectFile(
         project.root,
         `.agents/skills/${name}/SKILL.md`,
-        renderAuthoringSkill(name, DAB_VERSION),
+        await renderAuthoringSkill(name, DAB_VERSION),
       );
     }
     await normalizeProject({ cwd: project.root, runner: goodRunner });
@@ -735,7 +735,7 @@ See [nested](architecture.md/child.md).
     await writeProjectFile(
       project.root,
       `${real}/SKILL.md`,
-      renderAuthoringSkill('dab-doc-writing', DAB_VERSION),
+      await renderAuthoringSkill('dab-doc-writing', DAB_VERSION),
     );
     await rm(join(project.root, '.agents/skills/dab-doc-writing'), {
       recursive: true,
