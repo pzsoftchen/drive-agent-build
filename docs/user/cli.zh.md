@@ -170,9 +170,9 @@ Agents
   [OK] reviewer
 
 Skills
-  [OK] dab-doc-writing (version 0.1.1)
-  [OK] dab-architecture-writing (version 0.1.1)
-  [OK] dab-decision-notes (version 0.1.1)
+  [OK] dab-doc-writing (version 0.1.2)
+  [OK] dab-architecture-writing (version 0.1.2)
+  [OK] dab-decision-notes (version 0.1.2)
   [OK] doc-sync
   [OK] feature-delivery
 

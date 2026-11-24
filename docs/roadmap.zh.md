@@ -10,8 +10,8 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 - 生成输出：`.claude/`。
 - 命令：`dab init`、`dab detect`、`dab normalize`、`dab policy explain`。
 - 双语文档门禁。
-- 状态：已于 2026-11-23 发布 `v0.1.1`。
-- 发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)
+- 状态：已于 2026-11-24 发布 `v0.1.2`。
+- 发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
 
 ## v0.1.x DAD 基础层
 
@@ -29,7 +29,7 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 - 已有 `.agents/rules/docs-bilingual.md` 的项目保留该规则，生成的 docs 被 policy skip。
 - Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。
 - Hooks 与共享记忆是高级、可选能力。`init` 和 adoption 不生成它们；已有 hooks 会被校验并在适用时编译，已有记忆由 `init` 和 `normalize` 保留，并由 `init` 和 `detect` 校验。
-- 状态：已实现，随 `0.1.2` 发布。
+- 状态：已在 `0.1.2` 发布。
 
 ## v0.2 DAD 任务证据
 

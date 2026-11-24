@@ -2,7 +2,7 @@
 name: dab-doc-writing
 description: Use when writing, restructuring or reviewing project documentation; covers placement, fact-check, slop audit and verification.
 ---
-<!-- dab-skill: dab-doc-writing@0.1.1 sha256=32117ddec3cfad1126abd7f1e5596ce8bea44cd908716b3af092c34ebc323802 -->
+<!-- dab-skill: dab-doc-writing@0.1.2 sha256=32117ddec3cfad1126abd7f1e5596ce8bea44cd908716b3af092c34ebc323802 -->
 # Documentation writing
 
 ## When to use

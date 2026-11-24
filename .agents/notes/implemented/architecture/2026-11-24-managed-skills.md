@@ -49,6 +49,7 @@ The three `dab-*` authoring skills were Markdown strings inside `src/init/practi
 - `node dist/cli.js detect --strict`: `19/19 (100%)`, exit `0`, after normalize migrated the three dogfood skills.
 - `node dist/cli.js normalize --dry-run`: no writes and no pending changes after the migration.
 - `dab normalize` migrated the three dogfood skill markers from `0.1.1` without hashes to `0.1.1` with hashes and updated the `dab.yaml` source hashes; a second dry run reported no changes.
+- After the `0.1.2` version bump, `dab normalize` refreshed the same three markers to `0.1.2`; the content hashes stayed the same because the marker is excluded, and the `dab.yaml` source hashes were rewritten. A second dry run reported no changes and `detect --strict` stayed `19/19 (100%)`.
 - `git diff --check`: clean.
 
 ## Related

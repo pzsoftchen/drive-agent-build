@@ -2,7 +2,7 @@
 
 # 变更日志
 
-## 未发布
+## 0.1.2 — 2026-11-24
 
 - `dab init` 默认写入 `profile: generic` 和 `docs.language: auto`。`--profile generic|feature` 选择 manifest profile；`feature` 是行为相同的兼容别名。`docs.language` 接受 `auto`、`en` 或 `zh`；`auto` 从项目内容和 locale 解析，并在人类输出和 JSON 中报告 `{ value, source }`。
 - `dab init` 和 `dab normalize` adoption 不再生成高级 `.agents/hooks/` 或 `.agents/memory/` 文件；generic profile 聚焦漂移检测/修复，以及 docs、notes 和 skills 纪律。已有的 authored hooks 和共享记忆保持不变：hooks 仍会被校验并在适用时编译，记忆仍会被保留和校验；缺失时 `dab detect` 会省略它们的 checklist 组。

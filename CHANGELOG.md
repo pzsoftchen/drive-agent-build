@@ -2,7 +2,7 @@ English | [中文](CHANGELOG.zh.md)
 
 # Changelog
 
-## Unreleased
+## 0.1.2 — 2026-11-24
 
 - `dab init` now writes `profile: generic` and `docs.language: auto` by default. `--profile generic|feature` selects the manifest profile; `feature` is a compatibility alias with the same practice behavior. `docs.language` accepts `auto`, `en` or `zh`, is resolved from project content and locale when `auto`, and reports `{ value, source }` in human output and JSON.
 - `dab init` and `dab normalize` adoption no longer scaffold advanced `.agents/hooks/` or `.agents/memory/` files; the generic profile focuses on drift detection/repair and the documentation, notes and skills discipline. Existing authored hooks and shared memory are untouched: hooks are still validated and compiled where applicable, memory is still preserved and validated, and `dab detect` omits their checklist groups when absent.

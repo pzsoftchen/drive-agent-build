@@ -49,6 +49,7 @@ Status: implemented
 - `node dist/cli.js detect --strict`：normalize 迁移三个 dogfood skills 后为 `19/19 (100%)`，退出码 `0`。
 - `node dist/cli.js normalize --dry-run`：迁移后无写入，也没有待处理变更。
 - `dab normalize` 把三个 dogfood skill markers 从无 hash 的 `0.1.1` 迁移为带 hash 的 `0.1.1`，并更新 `dab.yaml` source 哈希；第二次 dry run 报告无变更。
+- `0.1.2` 版本提升后，`dab normalize` 将同一组三个 markers 刷新为 `0.1.2`；因为 hash 排除 marker，内容 hash 保持不变，`dab.yaml` source 哈希被重写。第二次 dry run 报告无变更，`detect --strict` 保持 `19/19 (100%)`。
 - `git diff --check`：干净。
 
 ## Related

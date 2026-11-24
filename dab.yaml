@@ -42,19 +42,19 @@ generated:
           source: .agents/skills/dab-architecture-writing
           target: .claude/skills/dab-architecture-writing
           link: symlink
-          sourceSha256: 55ddfe52d2d2f83bdcf5df4525f0d54b9c9e6cd57204a49318d054731640ce57
+          sourceSha256: d93ae074b296e73db83bd8816e591b2643787e43fe2fa6a4e9dc84d0d26b81ae
         - kind: skill
           name: dab-decision-notes
           source: .agents/skills/dab-decision-notes
           target: .claude/skills/dab-decision-notes
           link: symlink
-          sourceSha256: 4876ecac04cb090fabf28314e7465fbd272dedad111695c88f023caa357f4992
+          sourceSha256: 0d6b3ac44c669dca72d52a68f7e4676e47dd7e6cfbb1bb928ad27ac95f443edd
         - kind: skill
           name: dab-doc-writing
           source: .agents/skills/dab-doc-writing
           target: .claude/skills/dab-doc-writing
           link: symlink
-          sourceSha256: 24dbcd6ece903954efa434557a8303abc536c64d4a27d366058bf9cdc6aef6db
+          sourceSha256: 94a4bb8acbc3096a477804b21d2f96ade950beaa442a58dc896c92b7aaf50bfc
         - kind: skill
           name: doc-sync
           source: .agents/skills/doc-sync

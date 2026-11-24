@@ -52,21 +52,21 @@ Single-task closure belongs to DAD. DAB begins when multiple tasks must converge
 
 ## Current status
 
-The diagram describes the combined target model. The DAD configuration-governance foundation is released as `@saydone/dab@0.1.1`. The practice layer and managed authoring skills are unreleased and ship in `0.1.2`. Single-task evidence is next; DAB is not yet scheduled.
+The diagram describes the combined target model. The DAD configuration-governance foundation is released as `@saydone/dab@0.1.2`, including the practice layer and managed authoring skills. Single-task evidence is next; DAB is not yet scheduled.
 
 | Capability | Status |
 |---|---|
 | DAD authored facts, projections, drift checks and policy explanation | Released in 0.1.1 |
 | DAD independent project/global scopes and v2 manifests | Released in 0.1.1 |
-| DAD practice layer: generic profile, single-language docs and authoring skills | Implemented; ships in 0.1.2 |
-| DAD managed authoring skills: packaged templates, marker hashes and managed updates | Implemented; ships in 0.1.2 |
+| DAD practice layer: generic profile, single-language docs and authoring skills | Released in 0.1.2 |
+| DAD managed authoring skills: packaged templates, marker hashes and managed updates | Released in 0.1.2 |
 | DAD advanced hooks and shared memory | Optional; not scaffolded by default |
 | DAD evidence for one development task | Planned for v0.2; next |
 | DAD memory and operational hardening | Planned for v0.3 |
 | DAD Codex and DSH adapters | After single-task evidence |
 | DAB goal decomposition and cross-task convergence | Research; gated by DAD evidence |
 
-Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release v0.1.1](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)
+Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release v0.1.2](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
 
 ## Quick start
 

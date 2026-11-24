@@ -52,21 +52,21 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 
 ## 当前状态
 
-图中的方式是 DAB/DAD 的组合目标模型。DAD 配置治理基础已发布为 `@saydone/dab@0.1.1`。实践层和受管 authoring skills 尚未发布，将随 `0.1.2` 提供。下一步是单任务证据；DAB 尚未排期。
+图中的方式是 DAB/DAD 的组合目标模型。DAD 配置治理基础已发布为 `@saydone/dab@0.1.2`，包含实践层和受管 authoring skills。下一步是单任务证据；DAB 尚未排期。
 
 | 能力 | 状态 |
 |---|---|
 | DAD 编写事实、投影、漂移检测和策略解释 | 已在 0.1.1 发布 |
 | DAD 独立的 project/global scope 与 v2 manifest | 已在 0.1.1 发布 |
-| DAD 实践层：generic profile、单语 docs 和 authoring skills | 已实现，随 0.1.2 发布 |
-| DAD 受管 authoring skills：包内模板、marker hash 和受管更新 | 已实现，随 0.1.2 发布 |
+| DAD 实践层：generic profile、单语 docs 和 authoring skills | 已在 0.1.2 发布 |
+| DAD 受管 authoring skills：包内模板、marker hash 和受管更新 | 已在 0.1.2 发布 |
 | DAD 高级 hooks 与共享记忆 | 可选；默认不生成 |
 | DAD 单开发任务证据 | 计划在 v0.2 提供，这是下一步 |
 | DAD 记忆与运行加固 | 计划在 v0.3 提供 |
 | DAD Codex 与 DSH adapter | 在单任务证据之后 |
 | DAB 目标拆解与跨任务收敛 | 研究阶段，以 DAD 证据为前置条件 |
 
-发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release v0.1.1](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1)
+发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release v0.1.2](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
 
 ## 快速开始
 

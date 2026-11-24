@@ -2,7 +2,7 @@
 name: dab-architecture-writing
 description: Use when filling docs/architecture.md with evidence about layout, components, runtime flow, seams and invariants.
 ---
-<!-- dab-skill: dab-architecture-writing@0.1.1 sha256=023344a4f258b8ab93634942b3cf194dda84ec5b1a58d8be24df4d1973c05ce4 -->
+<!-- dab-skill: dab-architecture-writing@0.1.2 sha256=023344a4f258b8ab93634942b3cf194dda84ec5b1a58d8be24df4d1973c05ce4 -->
 # Architecture writing
 
 ## When to use
