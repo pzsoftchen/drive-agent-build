@@ -2,8 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject, runDetect } from '../../src/commands/detect.ts';
+import { initializeProject } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
+import { DAB_VERSION } from '../../src/core/version.ts';
+import {
+  AUTHORING_SKILL_NAMES,
+  renderAuthoringSkill,
+} from '../../src/init/practice-authoring.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
 import { populateProject } from '../helpers/initialized.ts';
 import { makeInitializedProject } from '../helpers/initialized.ts';
@@ -28,6 +34,63 @@ const goodRunner: CommandRunner = async () => ({
 const missingRunner: CommandRunner = async () => {
   throw new Error('ENOENT');
 };
+
+const cleanDocumentation = {
+  'docs/AGENTS.md': '# Documentation guide\n\nOne place per fact. Write in English only.\n',
+  'docs/architecture.md': `# Architecture
+
+## Project facts
+
+- Project: Demo
+
+## System purpose
+
+DAB verifies the practice layer.
+
+## Composition
+
+One module.
+
+## Runtime flow
+
+Detect reads authored files.
+
+## Module boundaries
+
+Single module.
+
+## Extension points
+
+None.
+
+## Invariants
+
+Tests pass.
+
+## Verification
+
+Run pnpm test.
+`,
+} as const;
+
+/**
+ * A practice-complete project: clean docs and current authoring skills with
+ * projection records. Tests that observe unrelated warnings need this state so
+ * the practice warnings do not decide their exit code.
+ */
+async function completePractice(project: ProjectFixture): Promise<void> {
+  for (const [path, content] of Object.entries(cleanDocumentation)) {
+    await writeProjectFile(project.root, path, content);
+  }
+  for (const name of AUTHORING_SKILL_NAMES) {
+    await writeProjectFile(
+      project.root,
+      `.agents/skills/${name}/SKILL.md`,
+      renderAuthoringSkill(name, DAB_VERSION),
+    );
+  }
+  await normalizeProject({ cwd: project.root, runner: goodRunner });
+}
 
 const oldRunner: CommandRunner = async () => ({
   stdout: '2.1.100 (Claude Code)\n',
@@ -59,6 +122,42 @@ describe('detectProject', () => {
     expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
   });
 
+  it('omits optional hooks and memory entries from a project that has none', async () => {
+    const root = await makeTempDir('dab-detect-empty-');
+    projects.push({
+      root,
+      agents: join(root, '.agents'),
+      claude: join(root, '.claude'),
+    });
+    const init = await initializeProject({ cwd: root, runner: goodRunner });
+    expect(init.ok).toBe(true);
+
+    const result = await detectProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.phase).toBe('initialized');
+    expect(result.checklist.some((entry) => entry.group === 'Hooks')).toBe(false);
+    expect(result.checklist.some((entry) => entry.group === 'Memory')).toBe(false);
+  });
+
+  it('keeps hook and memory entries for a project that has them', async () => {
+    const project = await initialized();
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', label: 'protect-generated', status: 'ok' }),
+      expect.objectContaining({
+        group: 'Memory',
+        label: '.agents/memory/INDEX.md',
+        status: 'ok',
+      }),
+    ]));
+  });
+
   it('fails on warnings only when strict mode is enabled', async () => {
     const project = await initialized();
     await writeProjectFile(
@@ -80,6 +179,7 @@ describe('detectProject', () => {
 
   it('warns but does not fail when Claude Code is missing', async () => {
     const project = await initialized();
+    await completePractice(project);
     const result = await detectProject(detectOptions(project, missingRunner));
     const strict = await detectProject({
       ...detectOptions(project, missingRunner),
@@ -249,6 +349,9 @@ describe('detectProject', () => {
     await mkdir(join(project.root, '.claude/agent-memory'), { recursive: true });
     const result = await detectProject(detectOptions(project));
     expect(result.diagnostics.map((item) => item.code)).toContain('memory.project-artifact');
+    const artifact = result.diagnostics.find((item) => item.code === 'memory.project-artifact');
+    expect(artifact?.hint).toContain('.agents/notes/');
+    expect(artifact?.hint).toContain('optional');
   });
 
   it('flags unsafe hook scripts', async () => {
@@ -435,6 +538,28 @@ Unsafe.
     expect(result.diagnostics.map((item) => item.code)).toContain('agent.invalid-frontmatter');
     expect(result.checklist.some((item) => item.status === 'importable')).toBe(false);
   });
+
+  it('reports one Skills error row for an invalid authored skill', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/skills/broken/SKILL.md',
+      'not frontmatter\n',
+    );
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(3);
+    expect(
+      result.diagnostics.filter((item) => item.code === 'skill.invalid-frontmatter'),
+    ).toHaveLength(1);
+    const rows = result.checklist.filter(
+      (entry) => entry.group === 'Skills'
+        && entry.label === '.agents/skills/broken/SKILL.md',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'error' });
+  });
 });
 
 describe('runDetect', () => {
@@ -486,10 +611,22 @@ describe('runDetect', () => {
     expect(payload.checklist).toEqual(expect.arrayContaining([
       expect.objectContaining({ group: 'Instructions', label: 'AGENTS.md', status: 'ok' }),
       expect.objectContaining({ group: 'Agents', label: 'reviewer', status: 'ok' }),
+      expect.objectContaining({
+        group: 'Documentation',
+        label: 'docs/AGENTS.md',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+      expect.objectContaining({
+        group: 'Skills',
+        label: 'dab-architecture-writing',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
     ]));
     expect(payload.score.ok).toBeGreaterThan(0);
     expect(payload.score.total).toBeGreaterThanOrEqual(payload.score.ok);
-    expect(payload.nextActions).toEqual([]);
+    expect(payload.nextActions).toEqual(['dab normalize']);
 
     await writeProjectFile(project.root, 'CLAUDE.md', '# user\n');
     const failing: string[] = [];
@@ -557,8 +694,36 @@ describe('runDetect', () => {
     expect(text).toContain('score:');
   });
 
+  it('reports missing practice docs and skills in initialized projects', async () => {
+    const project = await initialized();
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'practice.docs-missing', severity: 'warning' }),
+      expect.objectContaining({ code: 'practice.skill-missing', severity: 'warning' }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Documentation',
+        label: 'docs/AGENTS.md',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+      expect.objectContaining({
+        group: 'Skills',
+        label: 'dab-architecture-writing',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(3);
+  });
+
   it('maps initialized diagnostics into checklist entries', async () => {
     const project = await initialized();
+    await completePractice(project);
     await writeProjectFile(project.root, 'CLAUDE.md', '# user instructions\n');
 
     const result = await detectProject(detectOptions(project));

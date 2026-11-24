@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { explainPolicy, runPolicyExplain } from '../../src/commands/policy-explain.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
@@ -565,5 +565,31 @@ describe('explainPolicy target selection', () => {
 
     await expect(explainPolicy({ cwd: project.root, runner: goodRunner }))
       .rejects.toMatchObject({ code: 'target.none' });
+  });
+
+  it('reports a broken source parent as a governed path conflict', async () => {
+    const project = await initialized();
+    await rm(join(project.root, '.agents/hooks'), { recursive: true, force: true });
+    await writeFile(join(project.root, '.agents/hooks'), 'not a directory\n');
+    const captureResult = capture();
+
+    const code = await runPolicyExplain(
+      {
+        cwd: project.root,
+        home: dirname(project.root),
+        json: true,
+        runner: goodRunner,
+      },
+      captureResult.io,
+    );
+
+    expect(code).toBe(3);
+    const payload = JSON.parse(captureResult.stdout.join('')) as {
+      ok: boolean;
+      error: { code: string; message: string };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe('path.conflict');
+    expect(payload.error.message).toContain('.agents/hooks');
   });
 });

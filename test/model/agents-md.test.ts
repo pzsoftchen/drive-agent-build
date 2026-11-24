@@ -35,6 +35,9 @@ describe('AGENTS.md checks', () => {
 
     expect(result.lineCount).toBe(201);
     expect(result.diagnostics.map((item) => item.code)).toContain('agents-md.too-large');
+    const tooLarge = result.diagnostics.find((item) => item.code === 'agents-md.too-large');
+    expect(tooLarge?.hint).toContain('.agents/notes/');
+    expect(tooLarge?.hint).toContain('optional');
   });
 
   it('warns when AGENTS.md is missing', async () => {

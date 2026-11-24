@@ -7,11 +7,44 @@ function commandOrTodo(command: string | undefined): string {
   return command ?? 'TODO: add a command';
 }
 
-export function renderAgentsMd(scan: ScanResult, added?: string): string {
+/** Documentation files that root AGENTS.md may link in its Documentation section. */
+export interface DocumentationLinks {
+  agents: boolean;
+  architecture: boolean;
+}
+
+export interface RenderAgentsMdOptions {
+  /**
+   * Project scope only: root AGENTS.md links the documentation scaffold. The
+   * core pack derives each link from non-policy-skipped planner anchors, so a
+   * link is never added to a document that is not planned or already present.
+   */
+  documentation?: DocumentationLinks;
+}
+
+function documentationSection(links: DocumentationLinks): string {
+  const items: string[] = [];
+  if (links.agents) {
+    items.push('- [docs/AGENTS.md](docs/AGENTS.md)');
+  }
+  if (links.architecture) {
+    items.push('- [docs/architecture.md](docs/architecture.md)');
+  }
+  return items.length === 0 ? '' : `\n## Documentation\n\n${items.join('\n')}\n`;
+}
+
+export function renderAgentsMd(
+  scan: ScanResult,
+  added?: string,
+  options: RenderAgentsMdOptions = {},
+): string {
   const sources = scan.sourceDirs.length === 0 ? 'not detected' : scan.sourceDirs.join(', ');
   const addition = added === undefined || added.trim().length === 0
     ? ''
     : `\n${added.trim()}\n`;
+  const documentation = options.documentation === undefined
+    ? ''
+    : documentationSection(options.documentation);
   return `# ${scan.projectName}
 
 ## Project map
@@ -34,7 +67,7 @@ export function renderAgentsMd(scan: ScanResult, added?: string): string {
 - \`AGENTS.md\` and \`.agents/\` are the only authored agent configuration.
 - \`.claude/\` is generated. Do not edit it by hand; run \`dab normalize\`.
 - Use the \`feature-delivery\` skill for scoped feature work.
-- Shared team memory lives in \`.agents/memory/\`; personal auto memory stays machine-local.
+- Durable team knowledge lives in \`.agents/notes/\` and project docs; personal auto memory stays machine-local.
 - Read \`.agents/rules/testing.md\` and \`.agents/rules/generated-files.md\` before changing those areas.
 
 ## Working agreement
@@ -43,8 +76,8 @@ export function renderAgentsMd(scan: ScanResult, added?: string): string {
 2. Write a failing test before implementation.
 3. Run the test command above and report the exact result.
 4. Run \`dab detect\` before handing off configuration changes.
-5. Update paired English and Chinese docs when a user-facing behavior changes.
-${addition}`;
+5. Update project documentation when a user-facing behavior changes.
+${documentation}${addition}`;
 }
 
 export function renderImplementerAgent(): string {
@@ -59,7 +92,7 @@ You implement one scoped task at a time.
 - Write a failing test before production code, then make it pass.
 - Keep changes inside the requested scope.
 - Run the project test command and report the exact result.
-- Update paired documentation when behavior changes.
+- Update project documentation when behavior changes.
 `;
 }
 
@@ -94,7 +127,7 @@ description: Delivers one scoped feature with failing tests, implementation, doc
 4. Run \`${commandOrTodo(scan.commands.test)}\` and confirm the new test fails for the expected reason.
 5. Implement the smallest change that makes the test pass.
 6. Run \`${commandOrTodo(scan.commands.test)}\` again and report the exact result.
-7. Update paired documentation when the behavior is user-facing.
+7. Update documentation when the behavior is user-facing.
 8. Summarize changed files, tests and any remaining risk.
 `;
 }
@@ -102,15 +135,14 @@ description: Delivers one scoped feature with failing tests, implementation, doc
 export function renderDocSyncSkill(): string {
   return `---
 name: doc-sync
-description: Updates paired English and Chinese documentation and runs the documentation gates.
+description: Updates project documentation and runs the documentation gates.
 ---
 # Documentation sync
 
-1. Identify the English source document and its \`.zh.md\` translation.
-2. Update both sides in the same change.
+1. Identify the documentation affected by the change.
+2. Update the affected documentation in the same change.
 3. Keep headings, lists, tables, code blocks and inline code structurally identical.
-4. Run the repository's translation-pairing check (for example \`pnpm run verify-translation-pairing --write\` when that script exists).
-5. Run the repository's documentation gate and fix every failure.
+4. Run the repository's documentation gate and fix every failure.
 `;
 }
 
@@ -135,19 +167,6 @@ Write a failing test before production code.
 - The test must fail for the expected reason before the implementation exists.
 - Run the project test command after the change.
 - Do not weaken a test to make an unrelated failure disappear.
-`;
-}
-
-export function renderDocsBilingualRule(): string {
-  return `---
-paths: ["docs/**", "README.md", "CONTRIBUTING.md", ".agents/notes/**"]
----
-Human-facing documentation is paired English and Simplified Chinese.
-
-- Every \`foo.md\` has \`foo.zh.md\` and \`foo.i18n.yaml\`.
-- Update both languages and the record in the same change.
-- Keep headings, lists, tables, code blocks and inline code structurally identical.
-- Run the repository's documentation gate before committing.
 `;
 }
 
@@ -191,68 +210,21 @@ permissions:
 `;
 }
 
-export function renderHookMetadata(): string {
-  return `id: protect-generated
-event: pre_tool
-matcher: Edit|Write|MultiEdit
-entry: run.mjs
-runner: node
-timeout: 10
-order: 10
-`;
-}
-
-export function renderHookScript(): string {
-  return `#!/usr/bin/env node
-import { readFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
-
-let input = {};
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  process.exit(0);
-}
-
-const candidate = input?.tool_input?.file_path ?? input?.tool_input?.path;
-if (typeof candidate !== 'string') {
-  process.exit(0);
-}
-
-const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-const rel = relative(root, resolve(root, candidate)).split('\\\\').join('/');
-if (/^\\.claude\\/(settings\\.json|CLAUDE\\.md|agents\\/|skills\\/|rules\\/)/.test(rel)) {
-  process.stderr.write('DAB: .claude/ is generated. Edit .agents/ and run dab normalize.\\n');
-  process.exit(2);
-}
-process.exit(0);
-`;
-}
-
-export function renderMemoryIndex(): string {
-  return `# Shared memory
-
-Reviewed, durable team facts live here. Every entry needs frontmatter:
-
-\`\`\`yaml
-title: Short title
-source: https://example.com/reviewed-source
-review_by: 2027-01-01
-updated: 2026-11-16
-status: active
-\`\`\`
-
-Link every entry from this index. Personal auto memory stays machine-local.
-`;
-}
-
-export function renderDabYaml(scan: ScanResult, scope: Scope): string {
+export function renderDabYaml(
+  scan: ScanResult,
+  scope: Scope,
+  options: { profile?: 'generic' | 'feature'; docsLanguage?: 'auto' | 'en' | 'zh' } = {},
+): string {
+  const profile = options.profile ?? 'generic';
+  const docsLanguage = options.docsLanguage ?? 'auto';
   return `version: 2
 scope: ${scope}
 project:
   id: ${JSON.stringify(scan.projectId)}
   name: ${JSON.stringify(scan.projectName)}
-profile: feature
+profile: ${profile}
+docs:
+  language: ${docsLanguage}
 targets:
   - provider: claude-code
     enabled: true
@@ -281,24 +253,25 @@ export function templateFiles(
   scan: ScanResult,
   scope: Scope,
   aiAddition?: string,
+  options: { profile?: 'generic' | 'feature'; documentation?: DocumentationLinks } = {},
 ): Record<string, string> {
   const agentsMd = scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
   const manifest = scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml';
   return {
-    [agentsMd]: renderAgentsMd(scan, aiAddition),
-    [manifest]: renderDabYaml(scan, scope),
+    [agentsMd]: renderAgentsMd(
+      scan,
+      aiAddition,
+      options.documentation === undefined ? {} : { documentation: options.documentation },
+    ),
+    [manifest]: renderDabYaml(scan, scope, { profile: options.profile ?? 'generic' }),
     '.agents/agents/implementer.md': renderImplementerAgent(),
     '.agents/agents/reviewer.md': renderReviewerAgent(),
     '.agents/skills/feature-delivery/SKILL.md': renderFeatureDeliverySkill(scan),
     '.agents/skills/doc-sync/SKILL.md': renderDocSyncSkill(),
     '.agents/rules/generated-files.md': renderGeneratedFilesRule(),
     '.agents/rules/testing.md': renderTestingRule(),
-    '.agents/rules/docs-bilingual.md': renderDocsBilingualRule(),
     '.agents/policies/project.yaml': renderProjectPolicy(),
     '.agents/adapters/claude-code.yaml': renderClaudeCodePolicy(),
-    '.agents/hooks/protect-generated/hook.yaml': renderHookMetadata(),
-    '.agents/hooks/protect-generated/run.mjs': renderHookScript(),
-    '.agents/memory/INDEX.md': renderMemoryIndex(),
   };
 }
 
@@ -326,9 +299,5 @@ export const TEMPLATE_PROJECTIONS = [
   {
     source: '.agents/rules/testing.md',
     target: '.claude/rules/testing.md',
-  },
-  {
-    source: '.agents/rules/docs-bilingual.md',
-    target: '.claude/rules/docs-bilingual.md',
   },
 ] as const;

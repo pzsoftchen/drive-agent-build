@@ -185,7 +185,8 @@ describe('normalizeProject', () => {
       path: '.claude/CLAUDE.md',
       mode: 'symlink',
     });
-    expect(generated?.projections).toHaveLength(3);
+    // doc-sync plus the three authoring skills, one agent and one rule.
+    expect(generated?.projections).toHaveLength(6);
 
     const gitignore = await readFile(join(project.root, '.gitignore'), 'utf8');
     expect(gitignore).toContain('# >>> dab managed >>>');
@@ -707,6 +708,49 @@ Unsafe.
     expect(payload.schemaVersion).toBe(1);
     expect(payload.error.code).toBe('config.invalid');
     expect(await readFile(join(project.root, 'dab.yaml'), 'utf8')).toBe('version: nope\n');
+  });
+
+  it('reports practice convergence in machine-readable JSON', async () => {
+    const project = await projectFixture();
+    const stdout: string[] = [];
+
+    const code = await runNormalize(
+      { cwd: project.root, json: true, runner: goodRunner },
+      { stdout: (value) => stdout.push(value), stderr: () => undefined },
+    );
+
+    expect(code).toBe(0);
+    const payload = JSON.parse(stdout.join('')) as {
+      practices?: {
+        profile: string;
+        mode: string;
+        language: { value: string; source: string };
+        created: string[];
+        skipped: string[];
+        policySkipped: string[];
+        directories: string[];
+        skills: { created: string[]; skipped: string[] };
+        diagnostics: unknown[];
+      };
+    };
+    expect(payload.practices?.profile).toBe('feature');
+    expect(payload.practices?.mode).toBe('converge');
+    expect(payload.practices?.language.value).toBe('en');
+    expect(payload.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(payload.practices?.skipped).toEqual([]);
+    expect(payload.practices?.policySkipped).toEqual([]);
+    expect(payload.practices?.directories).toEqual(
+      expect.arrayContaining([
+        '.agents/skills/dab-doc-writing',
+        '.agents/skills/dab-architecture-writing',
+        '.agents/skills/dab-decision-notes',
+      ]),
+    );
+    expect(payload.practices?.skills.created).toHaveLength(3);
+    expect(payload.practices?.skills.skipped).toEqual([]);
+    expect(payload.practices?.diagnostics).toEqual([]);
   });
 
   it('emits machine-readable JSON from runNormalize', async () => {

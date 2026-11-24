@@ -75,7 +75,23 @@ export async function assertParentInsideRoot(root: string, relativePath: string)
   }
 
   const realRoot = await realpath(root);
-  const realParent = await realpath(parent);
+  let realParent: string;
+  try {
+    realParent = await realpath(parent);
+  } catch (error) {
+    // The nearest existing parent is a symlink whose target does not exist.
+    // It cannot be proven to stay inside the root, and writing through it would
+    // create or fail on a path outside the tree, so fail loud with the same
+    // governed code as any other symlinked-parent escape.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new ConfigError(
+        `path parent is a dangling symlink: ${relativePath}`,
+        'path.symlink-escape',
+        { hint: 'Replace the dangling symlink with a real directory inside the root, or remove it.' },
+      );
+    }
+    throw error;
+  }
   if (!isPathInside(realRoot, realParent)) {
     throw new ConfigError(
       `path escapes through a symlinked parent: ${relativePath}`,

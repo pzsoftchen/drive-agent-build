@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { runDetect } from '../../src/commands/detect.ts';
+import { detectProject, runDetect } from '../../src/commands/detect.ts';
 import { preflightProject } from '../../src/detect/preflight.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
@@ -13,6 +13,10 @@ const goodRunner: CommandRunner = async () => ({
   stderr: '',
   exitCode: 0,
 });
+
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
 
 interface ChecklistItem {
   group: string;
@@ -228,6 +232,36 @@ describe('detect preflight', () => {
     expect(await lstatOrNull(join(project, 'dab.yaml'))).toBeNull();
   });
 
+  it('omits optional hooks and memory entries when the project has none', async () => {
+    const project = await tempDir();
+
+    const result = await preflightProject({ cwd: project, home: dirname(project) });
+
+    expect(result.entries.some((entry) => entry.group === 'Hooks')).toBe(false);
+    expect(result.entries.some((entry) => entry.group === 'Memory')).toBe(false);
+  });
+
+  it('keeps hook and memory entries when those files exist', async () => {
+    const root = await tempDir();
+    await writeProjectFile(
+      root,
+      '.agents/hooks/protect-generated/hook.yaml',
+      'id: protect-generated\nevent: pre_tool\nentry: run.mjs\nrunner: node\n',
+    );
+    await writeProjectFile(root, '.agents/memory/INDEX.md', '# Memory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', label: '.agents/hooks/', status: 'ok' }),
+      expect.objectContaining({
+        group: 'Memory',
+        label: '.agents/memory/INDEX.md',
+        status: 'ok',
+      }),
+    ]));
+  });
+
   it('reports an invalid authored manifest as an error entry without throwing', async () => {
     const project = await projectFixture();
     const manifest = 'version: 2\nscope: project\n';
@@ -245,9 +279,314 @@ describe('detect preflight', () => {
       expect.objectContaining({ group: 'Generated target', label: 'dab.yaml', status: 'error' }),
     ]));
     expect(payload.nextActions).not.toContain('dab normalize');
+    const documentation = payload.checklist.find((item) => item.group === 'Documentation');
+    expect(documentation).toBeDefined();
+    expect(documentation?.next).toBeUndefined();
 
     expect(await readFile(join(project.root, 'dab.yaml'), 'utf8')).toBe(manifest);
     expect(await lstatOrNull(join(project.root, '.agents/policies/project.yaml'))).toBeNull();
+  });
+
+  it('governs a regular file at the rules path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/rules', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.docs-path',
+        severity: 'error',
+        file: '.agents/rules',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Documentation',
+        status: 'error',
+        next: 'resolve the path conflict manually',
+      }),
+    ]));
+    expect(result.checklist.some(
+      (item) => item.group === 'Documentation' && item.status === 'missing',
+    )).toBe(false);
+  });
+
+  it('governs a regular file at the skills path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/skills', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-path',
+        severity: 'error',
+        file: '.agents/skills',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Skills',
+        status: 'error',
+        next: 'resolve the path conflict manually',
+      }),
+    ]));
+    expect(result.checklist.some(
+      (item) => item.group === 'Skills' && item.status === 'missing',
+    )).toBe(false);
+  });
+
+  it('does not claim an invalid existing authoring skill is ok', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/skills/dab-doc-writing/SKILL.md', '# not a skill\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.diagnostics.map((item) => item.code)).toContain('skill.invalid-frontmatter');
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Skills',
+        label: '.agents/skills/dab-doc-writing/SKILL.md',
+        status: 'error',
+      }),
+    ]));
+    expect(result.checklist.some(
+      (item) => item.group === 'Skills'
+        && item.label === 'dab-doc-writing'
+        && item.status === 'ok',
+    )).toBe(false);
+  });
+
+  it('governs a regular file at the hooks path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/hooks', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: expect.stringMatching(/^\.agents\/hooks\/?$/),
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', status: 'error' }),
+    ]));
+  });
+
+  it('governs a regular file at the agents path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/agents', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: expect.stringMatching(/^\.agents\/agents\/?$/),
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Agents', status: 'error' }),
+    ]));
+  });
+
+  it('governs a regular file at the notes path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/notes', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: expect.stringMatching(/^\.agents\/notes\/?$/),
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Notes', status: 'error' }),
+    ]));
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory during preflight',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const root = await tempDir();
+      const directory = join(root, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await detectProject({ cwd: root, home: dirname(root) });
+
+        expect(result.phase).toBe('partial');
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file?.replace(/\/$/, '') === `.agents/${parent}`,
+        )).toBe(true);
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable global .agents/%s directory during preflight',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const home = await tempDir('dab-global-preflight-');
+      const directory = join(home, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await detectProject({ cwd: join(home, '.agents'), home });
+
+        expect(result.scope).toBe('global');
+        expect(result.phase).toBe('partial');
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file?.replace(/\/$/, '') === `.agents/${parent}`,
+        )).toBe(true);
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it('emits a governed diagnostic for a non-practice path with a file parent', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/policies', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/policies/project.yaml',
+      }),
+    ]));
+  });
+
+  it('shows Documentation and authoring skill entries before initialization', async () => {
+    const root = await tempDir();
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Documentation', status: 'missing', next: 'dab normalize' }),
+      expect.objectContaining({
+        group: 'Skills',
+        label: 'dab-architecture-writing',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect(
+      result.checklist.find((entry) => entry.group === 'Documentation')?.detail,
+    ).toContain('Language:');
+  });
+
+  it('reports an unreadable user skill directory during preflight', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const root = await tempDir();
+    const broken = join(root, '.agents/skills/broken');
+    await mkdir(broken, { recursive: true });
+    await writeFile(
+      join(broken, 'SKILL.md'),
+      '---\nname: broken\ndescription: Broken.\n---\nBody.\n',
+    );
+    await chmod(broken, 0o000);
+    try {
+      const result = await detectProject({ cwd: root, home: dirname(root) });
+
+      expect(result.exitCode).toBe(2);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'skill.unreadable',
+          severity: 'error',
+          file: '.agents/skills/broken',
+        }),
+      ]));
+    } finally {
+      await chmod(broken, 0o755);
+    }
+  });
+
+  it('checks presence, language and policy in preflight but not document content', async () => {
+    const root = await tempDir();
+    await writeProjectFile(
+      root,
+      'docs/AGENTS.md',
+      '# Docs\n\nTODO: replace this.\n\n[missing](missing.md)\n',
+    );
+
+    const { code, payload } = await detectJson({ cwd: root, home: dirname(root) });
+
+    expect(code).toBe(2);
+    const codes = payload.diagnostics.map((item) => item.code);
+    expect(codes).not.toContain('practice.docs-todo');
+    expect(codes).not.toContain('practice.docs-link');
+    expect(payload.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Documentation',
+        label: 'docs/AGENTS.md',
+        status: 'ok',
+      }),
+    ]));
+  });
+
+  it('uses the manifest profile and docs language for partial practice entries', async () => {
+    const root = await tempDir();
+    await writeProjectFile(
+      root,
+      'dab.yaml',
+      `version: 2
+scope: project
+project:
+  id: demo
+  name: Demo
+profile: generic
+docs:
+  language: zh
+targets:
+  - provider: claude-code
+    enabled: true
+paths:
+  agents: .agents
+  claude: .claude
+`,
+    );
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    const documentation = result.checklist.filter((entry) => entry.group === 'Documentation');
+    expect(documentation.length).toBeGreaterThan(0);
+    expect(documentation.every(
+      (entry) => entry.detail?.includes('Language: zh (source: config)'),
+    )).toBe(true);
+    expect(documentation.every((entry) => entry.next === 'dab normalize')).toBe(true);
   });
 
   it('refuses to suggest project writes at $HOME when ~/.agents is the global source', async () => {
@@ -310,6 +649,9 @@ describe('detect preflight', () => {
     // Global scope never suggests writing the user-owned settings or gitignore.
     expect(payload.checklist.some((item) => item.label === '.claude/settings.json')).toBe(false);
     expect(payload.checklist.some((item) => item.label === '.gitignore')).toBe(false);
+    // Global scope owns neither project docs nor authoring skills.
+    expect(payload.checklist.some((item) => item.group === 'Documentation')).toBe(false);
+    expect(payload.checklist.some((item) => item.label === 'dab-architecture-writing')).toBe(false);
 
     expect(await readFile(settings, 'utf8')).toBe(settingsContent);
     expect(await readFile(gitignore, 'utf8')).toBe(gitignoreContent);

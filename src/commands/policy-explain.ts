@@ -15,6 +15,7 @@ import {
   assertRealPathsDisjoint,
 } from '../core/paths.ts';
 import { assertSupportedPlatform } from '../core/platform.ts';
+import { sourceParentProblems } from '../core/practice-paths.ts';
 import { readClaudeVersion } from '../core/version-check.ts';
 import { getTargetAdapter } from '../adapter/registry.ts';
 import { parseClaudeTargetOptions } from '../adapter/claude-code/options.ts';
@@ -210,6 +211,14 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
       throw new ValidationError(error.message, error.code, { hint: error.hint });
     }
     throw error;
+  }
+  // Discovery below reads these parents directly; report a governed path
+  // conflict instead of failing with an internal ENOTDIR/EACCES error.
+  const [sourceProblem] = await sourceParentProblems(root);
+  if (sourceProblem !== undefined) {
+    throw new ValidationError(sourceProblem.message, 'path.conflict', {
+      hint: 'Resolve the path conflict manually; DAB never writes through it.',
+    });
   }
   const policies = await loadPolicySources(paths);
   const hooks = await discoverHooks(root, paths.agents);

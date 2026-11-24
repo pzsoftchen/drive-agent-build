@@ -41,7 +41,7 @@ pnpm test
 
 ## 文档
 
-正式发布的产品文档是配对的。确认两侧后运行 `pnpm run verify-translation-pairing --write`，然后运行 `pnpm doc-sync`。Agent 指令、skills 和 roles 是英文单源，并受链接、排版和配置预算门禁覆盖。`docs/superpowers/` 下的内部 specs 和 plans 按设计只使用中文，不参与双语配对，但仍受链接和排版门禁覆盖。
+文档流程：[docs/AGENTS.md](AGENTS.md)。
 
 ## 发布
 

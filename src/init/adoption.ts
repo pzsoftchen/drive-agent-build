@@ -10,25 +10,34 @@ import {
   isPathInside,
   toPosix,
 } from '../core/paths.ts';
-import { MIN_CLAUDE_CODE_VERSION } from '../core/version-check.ts';
+import { DAB_VERSION } from '../core/version.ts';
 import {
   applyClaudeAdoption,
   planClaudeAdoption,
   type ClaudeAdoptionEntry,
   type ClaudeAdoptionPlan,
 } from '../adapter/claude-code/adoption.ts';
+import { resolveDocsLanguage } from './docs-language.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
-import { ProjectManifestSchema } from '../model/schemas.ts';
 import { resolveScopeMarker, type Scope, type SourceRoot } from '../model/scope.ts';
 import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
-import { scanProject, type ScanResult } from './scanner.ts';
+import { minimalSourcePlan, type MinimalSourcePlan } from './minimal-source.ts';
 import {
-  renderAgentsMd,
-  renderClaudeCodePolicy,
-  renderDabYaml,
-  renderMemoryIndex,
-  renderProjectPolicy,
-} from './templates.ts';
+  PRACTICE_PACKS,
+  planAuthoredScaffold,
+  type AuthoredScaffoldPlan,
+  type ResolvedProfile,
+} from './practice.ts';
+import {
+  practiceParentDiagnostics,
+  practiceParentProblems,
+  probeLstat,
+  sourceParentDiagnostic,
+  sourceParentProblems,
+} from '../core/practice-paths.ts';
+import { scanProject, type ScanResult } from './scanner.ts';
+
+export { minimalSourcePlan, type MinimalSourcePlan } from './minimal-source.ts';
 
 export type AdoptionPhase = 'initialized' | 'partial' | 'uninitialized';
 
@@ -97,54 +106,6 @@ export async function resolveAdoptionRoot(
   };
 }
 
-export interface MinimalSourcePlan {
-  files: Record<string, string>;
-  directories: string[];
-  manifest: ProjectManifest;
-}
-
-const MINIMAL_DIRECTORIES = [
-  '.agents/agents',
-  '.agents/skills',
-  '.agents/notes',
-  '.agents/rules',
-  '.agents/hooks',
-] as const;
-
-function minimalManifest(scan: ScanResult, scope: Scope): ProjectManifest {
-  return ProjectManifestSchema.parse({
-    version: 2,
-    scope,
-    project: { id: scan.projectId, name: scan.projectName },
-    profile: 'feature',
-    targets: [{
-      provider: 'claude-code',
-      enabled: true,
-      options: {
-        minVersion: MIN_CLAUDE_CODE_VERSION,
-        instructions: 'symlink',
-      },
-    }],
-    paths: { agents: '.agents', claude: '.claude' },
-  });
-}
-
-export function minimalSourcePlan(scan: ScanResult, scope: Scope): MinimalSourcePlan {
-  const agentsMd = scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
-  const manifest = scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml';
-  return {
-    files: {
-      [agentsMd]: renderAgentsMd(scan),
-      [manifest]: renderDabYaml(scan, scope),
-      '.agents/policies/project.yaml': renderProjectPolicy(),
-      '.agents/adapters/claude-code.yaml': renderClaudeCodePolicy(),
-      '.agents/memory/INDEX.md': renderMemoryIndex(),
-    },
-    directories: [...MINIMAL_DIRECTORIES],
-    manifest: minimalManifest(scan, scope),
-  };
-}
-
 export async function planSourceWrites(
   root: string,
   plan: MinimalSourcePlan,
@@ -152,7 +113,11 @@ export async function planSourceWrites(
   const create: string[] = [];
   const skip: string[] = [];
   for (const relativePath of Object.keys(plan.files)) {
-    if ((await lstatOrNull(join(root, relativePath))) === null) {
+    // This is a reporting-only plan for blocked and dry runs. A path-state
+    // error on the parent is already governed by the caller, so the path is
+    // reported as skipped instead of failing with an internal error.
+    const state = await probeLstat(join(root, relativePath));
+    if (state.info === null && state.problem === undefined) {
       create.push(relativePath);
     } else {
       skip.push(relativePath);
@@ -214,7 +179,14 @@ export interface NormalizeAdoptionPreparation {
   manifest: ProjectManifest;
   paths: ProjectPaths;
   sourcePlan?: MinimalSourcePlan;
+  /** Practice docs/skills plan. In adoption mode its files are the source plan. */
+  practicePlan?: AuthoredScaffoldPlan;
   claudePlan?: ClaudeAdoptionPlan;
+  /**
+   * Governed conflicts at non-practice `.agents` source parents. They block
+   * every write, so import planning is skipped and discovery never runs.
+   */
+  sourceProblems?: Diagnostic[];
   diagnostics: Diagnostic[];
 }
 
@@ -307,6 +279,153 @@ export interface PrepareAdoptionInput {
   suppressImports?: boolean;
 }
 
+/**
+ * Plan authored practice artifacts through the shared planner. Normalize uses
+ * adoption mode before a manifest exists and converge mode afterwards; the
+ * production pack registry is always explicit.
+ *
+ * A regular file at `.agents/rules` or `.agents/skills` breaks discovery and
+ * child writes with ENOTDIR. The planner reports child conflicts for adoption,
+ * but converge has no core targets, so probe both parents first and return a
+ * governed practice diagnostic with an empty plan.
+ */
+async function planPractices(input: {
+  root: string;
+  scope: Scope;
+  scan: ScanResult;
+  profile: ResolvedProfile;
+  mode: 'adoption' | 'converge';
+  manifest?: ProjectManifest;
+}): Promise<AuthoredScaffoldPlan> {
+  const docsLanguage = await resolveDocsLanguage({
+    root: input.root,
+    configured: input.manifest?.docs.language ?? 'auto',
+    env: process.env,
+  });
+  if (input.scope === 'project') {
+    const problems = await practiceParentProblems(input.root);
+    const diagnostics: Diagnostic[] = [];
+    for (const [code, problem] of [
+      ['practice.docs-path', problems.docs],
+      ['practice.skill-path', problems.skills],
+    ] as const) {
+      if (problem === undefined) {
+        continue;
+      }
+      diagnostics.push({
+        code,
+        severity: 'error',
+        message: problem.message,
+        file: problem.path,
+        hint: 'Resolve the path conflict manually; DAB never writes through it.',
+      });
+    }
+    if (diagnostics.length > 0) {
+      return {
+        profile: input.profile,
+        mode: input.mode,
+        files: {},
+        directories: [],
+        skipped: [],
+        policySkipped: [],
+        diagnostics,
+        ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
+        docsLanguage,
+      };
+    }
+  }
+  return planAuthoredScaffold({
+    root: input.root,
+    scope: input.scope,
+    scan: input.scan,
+    profile: input.profile,
+    mode: input.mode,
+    version: DAB_VERSION,
+    env: process.env,
+    ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
+  }, PRACTICE_PACKS);
+}
+
+/**
+ * The practice planner resolves real parent paths, which cannot resolve a
+ * dangling `.agents` symlink. Normalize still needs to reach its source-write
+ * safety gate to report the alias/escape, so detect this layout before planning
+ * and use the minimal plan instead of throwing a raw filesystem error.
+ */
+async function danglingSourceDiagnostic(root: string): Promise<Diagnostic | undefined> {
+  const agents = join(root, '.agents');
+  const info = await lstatOrNull(agents);
+  if (info?.isSymbolicLink() !== true) {
+    return undefined;
+  }
+  try {
+    await realpath(agents);
+    return undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  if (await lexicalAlias(root, '.agents', '.claude')) {
+    return {
+      code: 'path.overlap',
+      severity: 'error',
+      message: 'authored and generated trees overlap: .agents and .claude',
+      file: '.agents',
+    };
+  }
+  return {
+    code: 'path.symlink-escape',
+    severity: 'error',
+    message: 'authored source parent is a dangling symlink: .agents',
+    file: '.agents',
+  };
+}
+
+/**
+ * A physical `.claude/skills/dab-*` entry is an import fact. When its `.agents`
+ * source is still missing, the import plan owns that skill, so DAB must not
+ * also plan its authoring template: two writers would race for one directory.
+ * Existing `.agents` skill directories are already skipped by the planner and
+ * keep the normal import rules (source wins, `.claude` is backed up).
+ */
+function suppressImportedAuthoringSkillTemplates(
+  plan: AuthoredScaffoldPlan,
+  claudePlan: ClaudeAdoptionPlan | undefined,
+): AuthoredScaffoldPlan {
+  if (claudePlan === undefined) {
+    return plan;
+  }
+  const imported = new Set<string>();
+  for (const entry of claudePlan.entries) {
+    if (
+      entry.kind === 'skill'
+      && entry.writeSource
+      && entry.target.startsWith('.agents/skills/dab-')
+    ) {
+      imported.add(entry.target);
+    }
+  }
+  if (imported.size === 0) {
+    return plan;
+  }
+  const suppressed = (path: string): boolean => {
+    for (const target of imported) {
+      if (path === target || path.startsWith(`${target}/`)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return {
+    ...plan,
+    files: Object.fromEntries(
+      Object.entries(plan.files).filter(([path]) => !suppressed(path)),
+    ),
+    directories: plan.directories.filter((path) => !suppressed(path)),
+  };
+}
+
 export async function prepareNormalizeAdoption(
   input: PrepareAdoptionInput,
 ): Promise<NormalizeAdoptionPreparation> {
@@ -314,8 +433,23 @@ export async function prepareNormalizeAdoption(
   const sourceRoot = sourceRootOf(adoption);
   const manifestKey = toPosix(relative(adoption.root, adoption.manifestPath));
   const hasManifest = (await lstatOrNull(adoption.manifestPath)) !== null;
+  // Project practice parents are probed by the practice planner, which owns
+  // their `practice.docs-path`/`practice.skill-path` codes. Global scope has no
+  // practice packs, so their access and type conflicts are governed here.
+  const sourceProblems = [
+    ...(await sourceParentProblems(adoption.root)).map(sourceParentDiagnostic),
+    ...(adoption.scope === 'global'
+      ? practiceParentDiagnostics(await practiceParentProblems(adoption.root))
+      : []),
+  ];
+  const sourceExtras = sourceProblems.length === 0
+    ? {}
+    : { sourceProblems };
+  // Import planning reads the authored agents and skills trees. A broken core
+  // source parent already blocks the run, so the plan is skipped instead of
+  // failing discovery with an internal error.
   const importPlan = (manifest: ProjectManifest, paths: ProjectPaths) =>
-    input.suppressImports === true
+    input.suppressImports === true || sourceProblems.length > 0
       ? Promise.resolve(undefined)
       : planImports(adoption, manifest, paths);
 
@@ -325,49 +459,136 @@ export async function prepareNormalizeAdoption(
     await loadProjectManifest(adoption.root, { scope: adoption.scope });
     throw new ConfigError(`invalid ${manifestKey}`, 'config.invalid');
   }
+  const sourceProblem = await danglingSourceDiagnostic(adoption.root);
 
   if (hasManifest) {
     const loaded = await loadProjectManifest(adoption.root, { scope: adoption.scope });
     const paths = resolveProjectPaths(adoption.root, loaded.manifest);
     if (adoption.phase === 'initialized') {
+      if (sourceProblem !== undefined) {
+        return {
+          sourceRoot,
+          phase: adoption.phase,
+          manifest: loaded.manifest,
+          paths,
+          claudePlan: await importPlan(loaded.manifest, paths),
+          ...sourceExtras,
+          diagnostics: [sourceProblem, ...sourceProblems],
+        };
+      }
+      const scan = await scanProject(adoption.root);
+      const claudePlan = await importPlan(loaded.manifest, paths);
+      const practicePlan = suppressImportedAuthoringSkillTemplates(
+        await planPractices({
+          root: adoption.root,
+          scope: adoption.scope,
+          scan,
+          profile: loaded.manifest.profile,
+          mode: 'converge',
+          manifest: loaded.manifest,
+        }),
+        claudePlan,
+      );
       return {
         sourceRoot,
         phase: adoption.phase,
         manifest: loaded.manifest,
         paths,
-        claudePlan: await importPlan(loaded.manifest, paths),
-        diagnostics: [],
+        practicePlan,
+        claudePlan,
+        ...sourceExtras,
+        diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
       };
     }
     await assertProjectHomeNotGlobal(adoption, input.home);
     const scan = await scanProject(adoption.root);
-    const plan = minimalSourcePlan(scan, adoption.scope);
+    if (sourceProblem !== undefined) {
+      const plan = minimalSourcePlan(scan, adoption.scope);
+      const { [manifestKey]: _authored, ...files } = plan.files;
+      return {
+        sourceRoot,
+        phase: adoption.phase,
+        manifest: loaded.manifest,
+        paths,
+        sourcePlan: { ...plan, files, manifest: loaded.manifest },
+        claudePlan: await importPlan(loaded.manifest, paths),
+        ...sourceExtras,
+        diagnostics: [sourceProblem, ...scan.diagnostics, ...sourceProblems],
+      };
+    }
+    const claudePlan = await importPlan(loaded.manifest, paths);
+    const practicePlan = suppressImportedAuthoringSkillTemplates(
+      await planPractices({
+        root: adoption.root,
+        scope: adoption.scope,
+        scan,
+        profile: loaded.manifest.profile,
+        mode: 'adoption',
+        manifest: loaded.manifest,
+      }),
+      claudePlan,
+    );
     // The authored manifest is authoritative: it is never part of the write
-    // plan and `plan.manifest` stays equal to what normalize loads afterwards.
-    const { [manifestKey]: _authored, ...files } = plan.files;
+    // plan and `practicePlan.manifest` stays equal to what normalize loads.
+    const { [manifestKey]: _authored, ...files } = practicePlan.files;
     return {
       sourceRoot,
       phase: adoption.phase,
       manifest: loaded.manifest,
       paths,
-      sourcePlan: { ...plan, files, manifest: loaded.manifest },
-      claudePlan: await importPlan(loaded.manifest, paths),
-      diagnostics: scan.diagnostics,
+      sourcePlan: {
+        files,
+        directories: practicePlan.directories,
+        manifest: loaded.manifest,
+      },
+      practicePlan,
+      claudePlan,
+      ...sourceExtras,
+      diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
     };
   }
 
   await assertProjectHomeNotGlobal(adoption, input.home);
   const scan = await scanProject(adoption.root);
-  const sourcePlan = minimalSourcePlan(scan, adoption.scope);
-  const paths = resolveProjectPaths(adoption.root, sourcePlan.manifest);
+  if (sourceProblem !== undefined) {
+    const plan = minimalSourcePlan(scan, adoption.scope);
+    const paths = resolveProjectPaths(adoption.root, plan.manifest);
+    return {
+      sourceRoot,
+      phase: adoption.phase,
+      manifest: plan.manifest,
+      paths,
+      sourcePlan: plan,
+      claudePlan: await importPlan(plan.manifest, paths),
+      ...sourceExtras,
+      diagnostics: [sourceProblem, ...scan.diagnostics, ...sourceProblems],
+    };
+  }
+  const rawPracticePlan = await planPractices({
+    root: adoption.root,
+    scope: adoption.scope,
+    scan,
+    profile: 'generic',
+    mode: 'adoption',
+  });
+  const manifest = rawPracticePlan.manifest ?? minimalSourcePlan(scan, adoption.scope).manifest;
+  const paths = resolveProjectPaths(adoption.root, manifest);
+  const claudePlan = await importPlan(manifest, paths);
+  const practicePlan = suppressImportedAuthoringSkillTemplates(rawPracticePlan, claudePlan);
   return {
     sourceRoot,
     phase: adoption.phase,
-    manifest: sourcePlan.manifest,
+    manifest,
     paths,
-    sourcePlan,
-    claudePlan: await importPlan(sourcePlan.manifest, paths),
-    diagnostics: scan.diagnostics,
+    sourcePlan: {
+      files: practicePlan.files,
+      directories: practicePlan.directories,
+      manifest,
+    },
+    practicePlan,
+    claudePlan,
+    ...sourceExtras,
+    diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
   };
 }
 
@@ -416,8 +637,8 @@ async function lexicalAlias(
 
 /**
  * Init-style containment checks run before the first write. `plan.directories`
- * omits implicitly created parents (policies, adapters, memory), so every
- * planned file is checked as well as the source tree itself.
+ * omits implicitly created parents (policies, adapters), so every planned file
+ * is checked as well as the source tree itself.
  */
 async function sourceWriteDiagnostics(
   root: string,
@@ -470,28 +691,40 @@ async function sourceWriteDiagnostics(
 export async function applyNormalizeAdoption(
   prep: NormalizeAdoptionPreparation,
   options: { dryRun: boolean; backupRoot: string },
-): Promise<{ actions: string[]; backups: string[]; diagnostics: Diagnostic[] }> {
+): Promise<{
+  actions: string[];
+  backups: string[];
+  diagnostics: Diagnostic[];
+  created: string[];
+  skipped: string[];
+}> {
   const root = prep.sourceRoot.root;
   const actions: string[] = [];
   const backups: string[] = [];
   const diagnostics: Diagnostic[] = [];
+  const created: string[] = [];
+  const skipped: string[] = [];
 
   if (prep.sourcePlan !== undefined) {
     const agents = toPosix(relative(root, prep.paths.agents));
     const sourceDiagnostics = await sourceWriteDiagnostics(root, prep.sourcePlan, agents);
     if (sourceDiagnostics.length > 0) {
-      return { actions: [], backups: [], diagnostics: sourceDiagnostics };
+      return {
+        actions: [],
+        backups: [],
+        diagnostics: sourceDiagnostics,
+        created: [],
+        skipped: [],
+      };
     }
-    let created: string[];
-    let skipped: string[];
     if (options.dryRun) {
       const planned = await planSourceWrites(root, prep.sourcePlan);
-      created = planned.create;
-      skipped = planned.skip;
+      created.push(...planned.create);
+      skipped.push(...planned.skip);
     } else {
       const written = await writeSourceFiles(root, prep.sourcePlan);
-      created = written.created;
-      skipped = written.skipped;
+      created.push(...written.created);
+      skipped.push(...written.skipped);
     }
     actions.push(
       ...created.map((file) => `create ${file}`),
@@ -512,5 +745,5 @@ export async function applyNormalizeAdoption(
     diagnostics.push(...applied.diagnostics);
   }
 
-  return { actions, backups, diagnostics };
+  return { actions, backups, diagnostics, created, skipped };
 }

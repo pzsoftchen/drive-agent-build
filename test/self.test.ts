@@ -80,6 +80,16 @@ describe('DAB dogfood', () => {
     expect(discovered.projections.some((item) => item.kind === 'rule')).toBe(true);
   });
 
+  it('keeps model and adapter layers independent of init helpers', async () => {
+    for (const file of [
+      'src/model/facts.ts',
+      'src/adapter/claude-code/adoption.ts',
+    ]) {
+      const text = await readFile(join(root, file), 'utf8');
+      expect(text, file).not.toMatch(/from\s+['"][^'"]*\/init\//);
+    }
+  });
+
   it('passes the documentation gates', async () => {
     const result = await runDocSync(root);
     expect(result.diagnostics.filter((item) => item.severity === 'error')).toEqual([]);

@@ -20,6 +20,16 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 - Project 和 global scope 保持独立；DAB 不提供 `dab global` 命令，也从不合并 scope。
 - Codex 和 DSH adapter 推迟到 DAD 任务循环完成评测之后。
 
+## v0.1.x DAD 实践层
+
+- `generic` 是默认 profile；`feature` 保留为行为相同的兼容别名。
+- `init` 和 `normalize` 通过同一个 planner 生成单语 `docs/AGENTS.md`、`docs/architecture.md` 和 `dab-*` authoring skills。
+- `detect` 报告 Documentation 组和 authoring skill 状态；`normalize` 补齐缺失的实践文件，不覆盖 authored docs 或 skills。
+- 已有 `.agents/rules/docs-bilingual.md` 的项目保留该规则，生成的 docs 被 policy skip。
+- Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。
+- Hooks 与共享记忆是高级、可选能力。`init` 和 adoption 不生成它们；已有 hooks 会被校验并在适用时编译，已有记忆由 `init` 和 `normalize` 保留，并由 `init` 和 `detect` 校验。
+- 状态：已实现，尚未发布。
+
 ## v0.2 DAD 任务证据
 
 这是下一步。它只验证单个开发任务，不代表 DAB 已被证明。

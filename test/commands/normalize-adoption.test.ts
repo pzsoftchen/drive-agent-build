@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  chmod,
   lstat,
   mkdir,
   readFile,
@@ -30,6 +31,10 @@ const goodRunner: CommandRunner = async () => ({
 const projects: ProjectFixture[] = [];
 const dirs: string[] = [];
 const homes: string[] = [];
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
+const GOVERNED_SOURCE_CODES = ['path.conflict', 'practice.docs-path', 'practice.skill-path'];
 
 async function projectFixture(): Promise<ProjectFixture> {
   const project = await makeProject();
@@ -741,6 +746,55 @@ describe('normalize source tree safety', () => {
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
   });
+
+  it('blocks a dangling docs symlink with a governed diagnostic', async () => {
+    const root = await tempDir('dab-adopt-docs-dangling-');
+    await symlink('missing-shared-docs', join(root, 'docs'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('path.symlink-escape');
+    // Blocked-result contract: planned practice fields and diagnostics stay.
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.diagnostics.map((item) => item.code))
+      .toContain('path.symlink-escape');
+    expect(result.practices?.created).toEqual([]);
+    expect(result.adoption?.sourceActions).toEqual([]);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'missing-shared-docs'))).toBeNull();
+  });
+
+  it('blocks a dangling .agents/skills symlink with a governed diagnostic', async () => {
+    const root = await tempDir('dab-adopt-skills-dangling-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await symlink('missing-skills', join(root, '.agents/skills'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('path.symlink-escape');
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.diagnostics.map((item) => item.code))
+      .toContain('path.symlink-escape');
+    expect(result.adoption?.sourceActions).toEqual([]);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'missing-skills'))).toBeNull();
+  });
 });
 
 describe('normalize managed projection drift', () => {
@@ -916,6 +970,948 @@ describe('normalize managed projection drift', () => {
     expect(await readlink(target)).toBe('../../.agents/skills/extra-skill');
     const backup = fixed.backups.find((item) => item.endsWith('.claude/skills/extra-skill'));
     expect(backup).toMatch(/^\.dab\/backups\//);
+  });
+});
+
+describe('normalize practice layer', () => {
+  const skillNames = [
+    'dab-doc-writing',
+    'dab-architecture-writing',
+    'dab-decision-notes',
+  ] as const;
+
+  it('adopts docs and authoring skills for an uninitialized project', async () => {
+    const root = await tempDir('dab-practice-adopt-');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.profile).toBe('generic');
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(result.practices?.language.value).toBe('en');
+    expect(result.practices?.directories).toEqual(
+      expect.arrayContaining(skillNames.map((name) => `.agents/skills/${name}`)),
+    );
+    expect(await lstatOrNull(join(root, 'docs/AGENTS.md'))).not.toBeNull();
+    expect(await lstatOrNull(join(root, 'docs/architecture.md'))).not.toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing/SKILL.md')))
+      .not.toBeNull();
+    expect(result.adoption?.sourceActions).toEqual(expect.arrayContaining([
+      'create docs/AGENTS.md',
+      'create .agents/skills/dab-doc-writing/SKILL.md',
+    ]));
+  });
+
+  it('adopts docs and authoring skills for a partial project', async () => {
+    const project = await projectFixture();
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.adoption?.phase).toBe('partial');
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(result.adoption?.sourceActions).toContain('create docs/AGENTS.md');
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).not.toBeNull();
+  });
+
+  it('policy-skips docs but still installs skills when the bilingual rule exists', async () => {
+    const root = await tempDir('dab-practice-policy-');
+    await writeProjectFile(root, '.agents/rules/docs-bilingual.md', 'paired docs');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.policySkipped.sort())
+      .toEqual(['docs/AGENTS.md', 'docs/architecture.md']);
+    expect(result.practices?.created).toEqual([]);
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(result.diagnostics.some(
+      (item) => item.code === 'practice.docs-bilingual-policy' && item.severity === 'warning',
+    )).toBe(true);
+    expect(await lstatOrNull(join(root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing/SKILL.md')))
+      .not.toBeNull();
+  });
+
+  it('adds Documentation links to a root AGENTS.md written by adoption', async () => {
+    const root = await tempDir('dab-practice-adopt-agents-');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(join(root, 'AGENTS.md'), 'utf8')).toContain(
+      '## Documentation\n\n- [docs/AGENTS.md](docs/AGENTS.md)\n- [docs/architecture.md](docs/architecture.md)',
+    );
+  });
+
+  it('does not let a dangling docs symlink block policy-skipped docs, skills or targets', async () => {
+    const root = await tempDir('dab-practice-policy-dangling-');
+    const outside = await tempDir('dab-practice-policy-outside-');
+    await writeProjectFile(root, '.agents/rules/docs-bilingual.md', 'paired docs');
+    await symlink(join(outside, 'missing-docs'), join(root, 'docs'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.policySkipped.sort())
+      .toEqual(['docs/AGENTS.md', 'docs/architecture.md']);
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing/SKILL.md')))
+      .not.toBeNull();
+    expect((await lstat(join(root, '.claude/CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    expect((await lstat(join(root, '.claude/skills/dab-doc-writing'))).isSymbolicLink())
+      .toBe(true);
+    expect(await lstatOrNull(join(outside, 'missing-docs'))).toBeNull();
+  });
+
+  it('preserves existing docs under the bilingual rule without policy-skipping them', async () => {
+    const root = await tempDir('dab-practice-policy-existing-');
+    await writeProjectFile(root, '.agents/rules/docs-bilingual.md', 'paired docs');
+    await writeProjectFile(root, 'docs/AGENTS.md', '# Authored docs\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.skipped).toContain('docs/AGENTS.md');
+    expect(result.practices?.policySkipped).toEqual(['docs/architecture.md']);
+    const policyWarnings = result.diagnostics.filter(
+      (item) => item.code === 'practice.docs-bilingual-policy',
+    );
+    expect(policyWarnings).toHaveLength(1);
+    expect(policyWarnings[0]?.file).toBe('docs/architecture.md');
+    expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8')).toBe('# Authored docs\n');
+    expect(await lstatOrNull(join(root, 'docs/architecture.md'))).toBeNull();
+    expect(await readFile(join(root, 'AGENTS.md'), 'utf8')).not.toContain('## Documentation');
+  });
+
+  it('governs a regular file at .agents/rules during adoption with zero writes', async () => {
+    const root = await tempDir('dab-practice-rules-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/rules'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.some(
+      (item) => item.severity === 'error'
+        && item.file?.startsWith('.agents/rules')
+        && (item.code === 'practice.docs-path' || item.code === 'path.conflict'),
+    )).toBe(true);
+    expect(await readFile(join(root, '.agents/rules'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/skills during adoption with zero writes', async () => {
+    const root = await tempDir('dab-practice-skills-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/skills'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.some(
+      (item) => item.severity === 'error'
+        && item.file?.startsWith('.agents/skills')
+        && (item.code === 'practice.skill-path' || item.code === 'path.conflict'),
+    )).toBe(true);
+    expect(await readFile(join(root, '.agents/skills'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/rules in converge mode with zero writes', async () => {
+    const project = await initializedProject();
+    await rm(join(project.root, '.agents/rules'), { recursive: true, force: true });
+    await writeFile(join(project.root, '.agents/rules'), 'not a directory\n');
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.some(
+      (item) => item.severity === 'error'
+        && item.file?.startsWith('.agents/rules')
+        && (item.code === 'practice.docs-path' || item.code === 'path.conflict'),
+    )).toBe(true);
+    expect(await readFile(join(project.root, '.agents/rules'), 'utf8'))
+      .toBe('not a directory\n');
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing')))
+      .toBeNull();
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+  });
+
+  it('governs a regular file at .agents/skills in converge mode with zero writes', async () => {
+    const project = await initializedProject();
+    await rm(join(project.root, '.agents/skills'), { recursive: true, force: true });
+    await writeFile(join(project.root, '.agents/skills'), 'not a directory\n');
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.some(
+      (item) => item.severity === 'error'
+        && item.file?.startsWith('.agents/skills')
+        && (item.code === 'practice.skill-path' || item.code === 'path.conflict'),
+    )).toBe(true);
+    expect(await readFile(join(project.root, '.agents/skills'), 'utf8'))
+      .toBe('not a directory\n');
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+  });
+
+  it('governs a regular file at .agents/hooks during adoption with zero writes', async () => {
+    const root = await tempDir('dab-practice-hooks-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/hooks'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(result.practices?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'path.conflict', file: '.agents/hooks' }),
+    ]));
+    expect(await readFile(join(root, '.agents/hooks'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/hooks in converge mode with zero writes', async () => {
+    const project = await initializedProject();
+    await rm(join(project.root, '.agents/hooks'), { recursive: true, force: true });
+    await writeFile(join(project.root, '.agents/hooks'), 'not a directory\n');
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8')).toBe(settings);
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing'))).toBeNull();
+  });
+
+  it('governs a dangling .agents/hooks symlink with zero writes', async () => {
+    const root = await tempDir('dab-practice-hooks-dangling-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await symlink('missing-hooks', join(root, '.agents/hooks'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect((await lstat(join(root, '.agents/hooks'))).isSymbolicLink()).toBe(true);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/agents with zero writes', async () => {
+    const root = await tempDir('dab-practice-agents-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/agents'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/agents',
+      }),
+    ]));
+    expect(await readFile(join(root, '.agents/agents'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/policies with zero writes', async () => {
+    const root = await tempDir('dab-practice-policies-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/policies'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/policies',
+      }),
+    ]));
+    expect(await readFile(join(root, '.agents/policies'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/notes with zero writes', async () => {
+    const root = await tempDir('dab-practice-notes-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/notes'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(result.practices?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'path.conflict', file: '.agents/notes' }),
+    ]));
+    expect(await readFile(join(root, '.agents/notes'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a dangling .agents/notes symlink with zero writes', async () => {
+    const root = await tempDir('dab-practice-notes-dangling-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await symlink('missing-notes', join(root, '.agents/notes'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect((await lstat(join(root, '.agents/notes'))).isSymbolicLink()).toBe(true);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('fails loudly on an unreadable user skill directory', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const project = await initializedProject();
+    const broken = join(project.root, '.agents/skills/broken');
+    await mkdir(broken, { recursive: true });
+    await writeFile(
+      join(broken, 'SKILL.md'),
+      '---\nname: broken\ndescription: Broken.\n---\nBody.\n',
+    );
+    const projected = join(project.root, '.claude/skills/doc-sync');
+    const before = await readlink(projected);
+    await chmod(broken, 0o000);
+    try {
+      const result = await normalizeProject({
+        cwd: project.root,
+        home: dirname(project.root),
+        runner: goodRunner,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.exitCode).toBe(3);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'skill.unreadable',
+          severity: 'error',
+          file: '.agents/skills/broken',
+        }),
+      ]));
+      expect(result.diagnostics.some((item) => item.code === 'skill.unreadable')).toBe(true);
+      // The valid sibling keeps its projection; the unreadable skill is never
+      // planned or projected.
+      expect(await readlink(projected)).toBe(before);
+      expect(await lstatOrNull(join(project.root, '.claude/skills/broken'))).toBeNull();
+    } finally {
+      await chmod(broken, 0o755);
+    }
+  });
+
+  it('links an existing root AGENTS.md from converged docs', async () => {
+    const project = await initializedProject();
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(join(project.root, 'docs/AGENTS.md'), 'utf8'))
+      .toContain('- [AGENTS.md](../AGENTS.md)');
+  });
+
+  it('omits the root AGENTS.md link when converge has no AGENTS.md', async () => {
+    const project = await initializedProject();
+    await rm(join(project.root, 'AGENTS.md'), { force: true });
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    const docs = await readFile(join(project.root, 'docs/AGENTS.md'), 'utf8');
+    expect(docs).toContain('- Root `AGENTS.md`');
+    expect(docs).not.toContain('](../AGENTS.md)');
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory with zero writes',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const root = await tempDir('dab-practice-source-access-');
+      const directory = join(root, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await normalizeProject({
+          cwd: root,
+          home: dirname(root),
+          runner: goodRunner,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file === `.agents/${parent}`
+            && GOVERNED_SOURCE_CODES.includes(item.code),
+        )).toBe(true);
+        expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+        expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+        expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory in converge mode with zero writes',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const project = await initializedProject();
+      const directory = join(project.root, '.agents', parent);
+      const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await normalizeProject({
+          cwd: project.root,
+          home: dirname(project.root),
+          runner: goodRunner,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file === `.agents/${parent}`
+            && GOVERNED_SOURCE_CODES.includes(item.code),
+        )).toBe(true);
+        expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+          .toBe(settings);
+        expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it('governs a regular file at global .agents/notes with zero writes', async () => {
+    const fixture = await globalFixture();
+    await rm(join(fixture.agents, 'notes'), { recursive: true, force: true });
+    await writeFile(join(fixture.agents, 'notes'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: fixture.agents,
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.scope).toBe('global');
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(await lstatOrNull(join(fixture.home, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable global .agents/%s directory with zero writes',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const fixture = await globalFixture();
+      const directory = join(fixture.agents, parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await normalizeProject({
+          cwd: fixture.agents,
+          home: fixture.home,
+          runner: goodRunner,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.scope).toBe('global');
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file === `.agents/${parent}`
+            && GOVERNED_SOURCE_CODES.includes(item.code),
+        )).toBe(true);
+        expect(await lstatOrNull(join(fixture.home, '.claude/CLAUDE.md'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it('governs a regular file at global .agents/hooks with zero writes', async () => {
+    const fixture = await globalFixture();
+    await rm(join(fixture.agents, 'hooks'), { recursive: true, force: true });
+    await writeFile(join(fixture.agents, 'hooks'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: fixture.agents,
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.scope).toBe('global');
+    expect(result.practices).toBeUndefined();
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(await readFile(join(fixture.agents, 'hooks'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(fixture.home, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
+  it('converges missing docs on an initialized project', async () => {
+    const project = await initializedProject();
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.mode).toBe('converge');
+    // The authored manifest profile is preserved.
+    expect(result.practices?.profile).toBe('feature');
+    expect(result.practices?.created).toContain('docs/AGENTS.md');
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).not.toBeNull();
+    // Practice writes during the same run are discovered and projected.
+    expect(await readlink(join(project.root, '.claude/skills/dab-doc-writing')))
+      .toBe('../../.agents/skills/dab-doc-writing');
+  });
+
+  it('never overwrites existing docs and skills and is idempotent', async () => {
+    const root = await tempDir('dab-practice-existing-');
+    const authoredSkill = '---\nname: dab-doc-writing\ndescription: Authored.\n---\nAuthored.\n';
+    await writeProjectFile(root, 'docs/AGENTS.md', 'authored');
+    await writeProjectFile(root, '.agents/skills/dab-doc-writing/SKILL.md', authoredSkill);
+
+    const first = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+      fix: true,
+    });
+
+    expect(first.ok).toBe(true);
+    expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8')).toBe('authored');
+    expect(await readFile(join(root, '.agents/skills/dab-doc-writing/SKILL.md'), 'utf8'))
+      .toBe(authoredSkill);
+    expect(first.practices?.created).not.toContain('docs/AGENTS.md');
+    expect(first.practices?.skipped).toContain('docs/AGENTS.md');
+    expect(first.practices?.skills.skipped).toContain('.agents/skills/dab-doc-writing');
+    expect(first.practices?.skills.created).toHaveLength(2);
+
+    const second = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(second.practices?.created).toEqual([]);
+    expect(await readFile(join(root, 'docs/AGENTS.md'), 'utf8')).toBe('authored');
+    expect(await readFile(join(root, '.agents/skills/dab-doc-writing/SKILL.md'), 'utf8'))
+      .toBe(authoredSkill);
+  });
+
+  it('plans adoption in a dry run without writing', async () => {
+    const root = await tempDir('dab-practice-dry-adopt-');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing/SKILL.md'))).toBeNull();
+  });
+
+  it('plans convergence in a dry run without writing', async () => {
+    const project = await initializedProject();
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices?.mode).toBe('converge');
+    expect(result.practices?.created).toContain('docs/AGENTS.md');
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing'))).toBeNull();
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+  });
+
+  it('blocks all writes when the practice plan conflicts', async () => {
+    const project = await initializedProject();
+    await writeProjectFile(project.root, 'docs', 'not a directory');
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.practices?.mode).toBe('converge');
+    expect(result.practices?.diagnostics.map((item) => item.code))
+      .toContain('path.conflict');
+    expect(result.practices?.created).toEqual([]);
+    // Planned directories stay visible even though nothing was written.
+    expect(result.practices?.directories).toEqual(expect.arrayContaining(
+      skillNames.map((name) => `.agents/skills/${name}`),
+    ));
+    expect(await readFile(join(project.root, 'docs'), 'utf8')).toBe('not a directory');
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing')))
+      .toBeNull();
+  });
+
+  it('omits practices for global scope', async () => {
+    const fixture = await globalFixture();
+
+    const result = await normalizeProject({
+      cwd: join(fixture.home, '.agents'),
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.practices).toBeUndefined();
+    expect(await lstatOrNull(join(fixture.home, 'docs'))).toBeNull();
+    expect(await lstatOrNull(join(fixture.home, '.agents/skills/dab-doc-writing')))
+      .toBeNull();
+  });
+
+  it('imports a physical .claude authoring skill instead of planning the template', async () => {
+    const project = await initializedProject();
+    const physical = '---\nname: dab-doc-writing\ndescription: User copy.\n---\nUser copy.\n';
+    await writeProjectFile(
+      project.root,
+      '.claude/skills/dab-doc-writing/SKILL.md',
+      physical,
+    );
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(
+      join(project.root, '.agents/skills/dab-doc-writing/SKILL.md'),
+      'utf8',
+    )).toBe(physical);
+    expect(result.adoption?.imports?.map((entry) => entry.target))
+      .toContain('.agents/skills/dab-doc-writing');
+    expect(result.adoption?.importActions).toEqual(expect.arrayContaining([
+      'import .claude/skills/dab-doc-writing -> .agents/skills/dab-doc-writing',
+    ]));
+    expect(result.practices?.skills.created)
+      .not.toContain('.agents/skills/dab-doc-writing/SKILL.md');
+    expect(result.practices?.skills.created).toHaveLength(2);
+    expect(await readlink(join(project.root, '.claude/skills/dab-doc-writing')))
+      .toBe('../../.agents/skills/dab-doc-writing');
+  });
+
+  it('keeps an existing authored skill when .claude has a physical copy', async () => {
+    const project = await initializedProject();
+    const authored = '---\nname: dab-doc-writing\ndescription: Authored.\n---\nAuthored.\n';
+    const physical = '---\nname: dab-doc-writing\ndescription: Physical.\n---\nPhysical.\n';
+    await writeProjectFile(
+      project.root,
+      '.agents/skills/dab-doc-writing/SKILL.md',
+      authored,
+    );
+    await writeProjectFile(
+      project.root,
+      '.claude/skills/dab-doc-writing/SKILL.md',
+      physical,
+    );
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(
+      join(project.root, '.agents/skills/dab-doc-writing/SKILL.md'),
+      'utf8',
+    )).toBe(authored);
+    expect(await readlink(join(project.root, '.claude/skills/dab-doc-writing')))
+      .toBe('../../.agents/skills/dab-doc-writing');
+    expect(result.practices?.skills.created)
+      .not.toContain('.agents/skills/dab-doc-writing/SKILL.md');
+    expect(result.practices?.skills.skipped).toContain('.agents/skills/dab-doc-writing');
+    expect(result.adoption?.backups.length).toBe(1);
+  });
+
+  it('does not write practice files when an initialized import is invalid', async () => {
+    const project = await initializedProject();
+    await writeFile(join(project.root, '.claude/agents/bad.md'), '---\nname: bad\n---\n');
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('agent.invalid-frontmatter');
+    expect(result.practices?.mode).toBe('converge');
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(project.root, 'docs'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing')))
+      .toBeNull();
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+      .toBe(settings);
+  });
+
+  it('does not write practice files when no target is enabled', async () => {
+    const project = await initializedProject();
+    const manifestPath = join(project.root, 'dab.yaml');
+    const manifest = await readFile(manifestPath, 'utf8');
+    await writeFile(manifestPath, manifest.replace('enabled: true', 'enabled: false'));
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('target.none');
+    expect(result.practices?.mode).toBe('converge');
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(project.root, 'docs'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing')))
+      .toBeNull();
+  });
+
+  it('keeps planned practice fields when an import blocks adoption', async () => {
+    const root = await tempDir('dab-practice-import-block-');
+    await writeProjectFile(root, '.claude/agents/bad.md', '---\nname: bad\n---\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.created).toEqual(
+      expect.arrayContaining(['docs/AGENTS.md', 'docs/architecture.md']),
+    );
+    expect(result.practices?.skills.created).toHaveLength(3);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing'))).toBeNull();
+  });
+
+  it('prints language and practice create lines once in human output', async () => {
+    const project = await initializedProject();
+    const captured = capture();
+
+    const code = await runNormalize(
+      { cwd: project.root, home: dirname(project.root), runner: goodRunner },
+      captured.io,
+    );
+
+    expect(code).toBe(0);
+    const output = captured.stdout.join('');
+    expect(output.match(/Language: en \(source: [^)]+\)/g)).toHaveLength(1);
+    expect(output).toContain('create docs/AGENTS.md');
+    expect(output).toContain('create .agents/skills/dab-doc-writing/SKILL.md');
   });
 });
 

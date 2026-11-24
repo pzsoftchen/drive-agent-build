@@ -23,7 +23,7 @@ generated:
       instructions:
         path: .claude/CLAUDE.md
         mode: symlink
-        sha256: ca9e2e73a0cebb6c9def75e928b8a78d67c7a4f7be7a81223d21cf1c62b0bb30
+        sha256: 3ac235685429e4b27dff6c6b9f30e47c8acf2be0044e08f3127235094c15c8d0
       projections:
         - kind: agent
           name: implementer
@@ -37,6 +37,24 @@ generated:
           target: .claude/agents/reviewer.md
           link: symlink
           sourceSha256: 8e41d07594a26536f27a1811e7d1b6ceb67388f2187ccf6ecd41a9a571ab88e8
+        - kind: skill
+          name: dab-architecture-writing
+          source: .agents/skills/dab-architecture-writing
+          target: .claude/skills/dab-architecture-writing
+          link: symlink
+          sourceSha256: 1089bfb0b8a16153a2d16cda63337701bf327e0c3e538b0cc79f37477723c928
+        - kind: skill
+          name: dab-decision-notes
+          source: .agents/skills/dab-decision-notes
+          target: .claude/skills/dab-decision-notes
+          link: symlink
+          sourceSha256: d27d28a5d74817a4a12e7e675923da7ea225eed513ffae1885bf5cc7354b41bd
+        - kind: skill
+          name: dab-doc-writing
+          source: .agents/skills/dab-doc-writing
+          target: .claude/skills/dab-doc-writing
+          link: symlink
+          sourceSha256: 6f8ff140bd3c2b8bef6391392c96b5c50d7333d6ebd24c0ddf401544eaccb878
         - kind: skill
           name: doc-sync
           source: .agents/skills/doc-sync

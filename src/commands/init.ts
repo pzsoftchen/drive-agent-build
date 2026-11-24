@@ -4,11 +4,17 @@ import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { CommandRunner } from '../core/command.ts';
 import { runCommand } from '../core/command.ts';
-import { formatDiagnostics, type Diagnostic } from '../core/diagnostics.ts';
+import {
+  dedupeDiagnostics,
+  formatDiagnostics,
+  hasErrors,
+  type Diagnostic,
+} from '../core/diagnostics.ts';
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
 import { contractJson } from '../core/json.ts';
+import { DAB_VERSION } from '../core/version.ts';
 import {
   assertParentInsideRoot,
   assertRealPathInsideRoot,
@@ -45,10 +51,27 @@ import {
   requestAiProposal,
   type AiProposal,
 } from '../init/ai-proposal.ts';
+import {
+  resolveDocsLanguage,
+  type DocsLanguageResolution,
+} from '../init/docs-language.ts';
+import {
+  PRACTICE_PACKS,
+  planAuthoredScaffold,
+  type AuthoredScaffoldPlan,
+} from '../init/practice.ts';
+import { AUTHORING_SKILL_NAMES } from '../init/practice-authoring.ts';
+import {
+  authoredDirectoryState,
+  practiceParentDiagnostics,
+  practiceParentProblems,
+  probeStat,
+  sourceParentDiagnostic,
+  sourceParentProblems,
+} from '../core/practice-paths.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import {
   renderAgentFromProposal,
-  templateFiles,
   TEMPLATE_PROJECTIONS,
 } from '../init/templates.ts';
 import { normalizeProject, type NormalizeResult } from './normalize.ts';
@@ -57,7 +80,7 @@ export interface InitOptions {
   cwd: string;
   home?: string;
   path?: string;
-  profile?: 'feature';
+  profile?: 'generic' | 'feature';
   ai?: boolean;
   dryRun?: boolean;
   json?: boolean;
@@ -81,6 +104,8 @@ export interface InitResult {
   conflicts: Diagnostic[];
   pending: Diagnostic[];
   diagnostics: Diagnostic[];
+  /** Resolved project documentation language and its detection source. */
+  language: DocsLanguageResolution;
   normalize: NormalizeResult | null;
   ai?: {
     applied: boolean;
@@ -97,6 +122,7 @@ function blocked(
   scope: Scope,
   root: string,
   scopeRoot: string,
+  language: DocsLanguageResolution,
   diagnostics: Diagnostic[],
   conflicts: Diagnostic[],
   dryRun = false,
@@ -113,7 +139,18 @@ function blocked(
     conflicts,
     pending: [],
     diagnostics,
+    language,
     normalize: null,
+  };
+}
+
+function policySkipDiagnostic(path: string): Diagnostic {
+  return {
+    code: 'practice.docs-bilingual-policy',
+    severity: 'warning',
+    message: `project bilingual rule skips single-language documentation: ${path}`,
+    file: path,
+    hint: 'Remove .agents/rules/docs-bilingual.md to let DAB scaffold single-language docs.',
   };
 }
 
@@ -125,6 +162,68 @@ function pendingDiagnostic(item: Diagnostic): Diagnostic {
       .filter((value): value is string => value !== undefined && value.length > 0)
       .join(' '),
   };
+}
+
+interface PendingSkillImportPlan {
+  files: Record<string, string>;
+  directories: string[];
+  diagnostics: Diagnostic[];
+}
+
+/**
+ * Init never imports Claude entries and authoring skills are project-only. An
+ * importable `.claude/skills/dab-<name>` directory is pending for normalize, so
+ * init drops that template. A non-directory entry cannot be imported: drop the
+ * template too and report a governed conflict without an import hint.
+ */
+async function pendingSkillImports(
+  root: string,
+  scope: Scope,
+  plan: AuthoredScaffoldPlan,
+): Promise<PendingSkillImportPlan> {
+  const files = { ...plan.files };
+  const directories = [...plan.directories];
+  const diagnostics: Diagnostic[] = [];
+  if (scope !== 'project') {
+    return { files, directories, diagnostics };
+  }
+  for (const name of AUTHORING_SKILL_NAMES) {
+    const source = `.agents/skills/${name}`;
+    if ((await lstatOrNull(join(root, source))) !== null) {
+      continue;
+    }
+    const target = `.claude/skills/${name}`;
+    const state = await authoredDirectoryState(root, target);
+    if (state.kind === 'missing') {
+      continue;
+    }
+    delete files[`${source}/SKILL.md`];
+    const index = directories.indexOf(source);
+    if (index !== -1) {
+      directories.splice(index, 1);
+    }
+    if (state.kind === 'conflict') {
+      // Pending conflicts are warnings in init: init leaves the physical entry
+      // untouched, skips the template and still completes the remaining safe
+      // writes. A user resolves it by hand; there is no import action.
+      diagnostics.push({
+        code: 'practice.skill-import-conflict',
+        severity: 'warning',
+        message: `existing Claude skill path is not an importable directory: ${state.message}`,
+        file: target,
+        hint: `Remove ${target} or replace it with a directory, then rerun dab init.`,
+      });
+      continue;
+    }
+    diagnostics.push({
+      code: 'practice.skill-import-pending',
+      severity: 'warning',
+      message: 'existing Claude skill is not imported by init',
+      file: target,
+      hint: 'Run dab normalize to import the existing skill into .agents.',
+    });
+  }
+  return { files, directories, diagnostics };
 }
 
 function manifestConflict(): Diagnostic {
@@ -324,22 +423,6 @@ async function writeIfMissing(
   created.push(relativePath);
 }
 
-async function planFileWrites(
-  root: string,
-  files: Readonly<Record<string, string>>,
-): Promise<{ created: string[]; skipped: string[] }> {
-  const created: string[] = [];
-  const skipped: string[] = [];
-  for (const relativePath of Object.keys(files).sort()) {
-    if ((await lstatOrNull(join(root, relativePath))) === null) {
-      created.push(relativePath);
-    } else {
-      skipped.push(relativePath);
-    }
-  }
-  return { created, skipped };
-}
-
 function targetMap(existing: readonly Projection[]): Map<string, string> {
   const targets = new Map<string, string>();
   for (const projection of existing) {
@@ -440,6 +523,7 @@ function resolveInitLayout(initRoot: string, scope: Scope, home: string): InitLa
 function formatInit(result: InitResult): string {
   const lines = [
     `dab init ${result.root} scope=${result.scope}${result.dryRun ? ' (dry run)' : ''}`,
+    `Language: ${result.language.value} (source: ${result.language.source})`,
   ];
   if (result.created.length > 0) {
     lines.push(result.dryRun ? 'would create:' : 'created:');
@@ -460,12 +544,23 @@ function formatInit(result: InitResult): string {
     lines.push(`normalize: ${result.normalize.ok ? 'ok' : 'failed'}`);
   }
   if (result.pending.length > 0) {
-    lines.push('pending generated conflicts:');
+    lines.push('pending conflicts:');
     for (const item of result.pending) {
       lines.push(`  ${item.file ?? '-'} ${item.code} ${item.message}`);
     }
-    lines.push('next: dab normalize --dry-run');
-    lines.push('next: dab normalize --fix');
+    // A non-importable `.claude` entry and an import pending are resolved by
+    // hand or by plain normalize, never by the destructive `--fix` path.
+    const targetConflicts = result.pending.some(
+      (item) => item.code !== 'practice.skill-import-pending'
+        && item.code !== 'practice.skill-import-conflict',
+    );
+    if (targetConflicts) {
+      lines.push('next: dab normalize --dry-run');
+      lines.push('next: dab normalize --fix');
+    }
+    if (result.pending.some((item) => item.code === 'practice.skill-import-pending')) {
+      lines.push('next: dab normalize');
+    }
   }
   const pendingKeys = new Set(
     result.pending.map((item) => `${item.code}|${item.file ?? ''}|${item.line ?? ''}`),
@@ -484,9 +579,13 @@ function formatInit(result: InitResult): string {
 
 export async function initializeProject(options: InitOptions): Promise<InitResult> {
   assertSupportedPlatform(options.platform);
-  if (options.profile !== undefined && options.profile !== 'feature') {
+  if (
+    options.profile !== undefined
+    && options.profile !== 'generic'
+    && options.profile !== 'feature'
+  ) {
     throw new UsageError(
-      `unsupported profile: ${options.profile}; v0.1 supports: feature`,
+      `unsupported profile: ${String(options.profile)}; supported profiles: generic, feature`,
       'usage.invalid-profile',
     );
   }
@@ -513,11 +612,16 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   const existingManifest = (await lstatOrNull(layout.manifestPath)) === null
     ? undefined
     : await loadProjectManifest(layout.scopeRoot, { scope });
+  // An authored manifest wins over --profile; init never rewrites it.
+  const resolvedProfile = existingManifest?.manifest.profile
+    ?? options.profile
+    ?? 'generic';
   const manifest: ProjectManifest = existingManifest?.manifest ?? {
     version: 2,
     scope,
     project: { id: scan.projectId, name: scan.projectName },
-    profile: 'feature',
+    profile: resolvedProfile,
+    docs: { language: 'auto' },
     targets: [{
       provider: 'claude-code',
       enabled: true,
@@ -526,6 +630,11 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     paths: { agents: '.agents', claude: '.claude' },
   };
   const paths: ProjectPaths = resolveProjectPaths(layout.scopeRoot, manifest);
+  const language = await resolveDocsLanguage({
+    root: layout.scopeRoot,
+    configured: existingManifest?.manifest.docs.language ?? 'auto',
+    env: process.env,
+  });
 
   const safety: Diagnostic[] = [];
   try {
@@ -555,9 +664,37 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         message: error.message,
         file: scope === 'global' ? '.agents/dab.yaml' : 'dab.yaml',
       });
-      return blocked(scope, root, layout.scopeRoot, [...scan.diagnostics, ...safety], safety, dryRun);
+      return blocked(
+        scope,
+        root,
+        layout.scopeRoot,
+        language,
+        [...scan.diagnostics, ...safety],
+        safety,
+        dryRun,
+      );
     }
     throw error;
+  }
+
+  // Discovery reads every `.agents` source parent directly. A regular file,
+  // dangling link or denied access at any of them would fail as an internal
+  // error, so report a governed conflict and block before any write or
+  // discovery. Practice parents share the same probe and diagnostic shape.
+  const sourceDiagnostics = [
+    ...(await sourceParentProblems(layout.scopeRoot)).map(sourceParentDiagnostic),
+    ...practiceParentDiagnostics(await practiceParentProblems(layout.scopeRoot)),
+  ];
+  if (sourceDiagnostics.length > 0) {
+    return blocked(
+      scope,
+      root,
+      layout.scopeRoot,
+      language,
+      [...scan.diagnostics, ...sourceDiagnostics],
+      sourceDiagnostics,
+      dryRun,
+    );
   }
 
   const authoredConflicts = await findAuthoredConflicts(layout.scopeRoot);
@@ -571,6 +708,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       scope,
       root,
       layout.scopeRoot,
+      language,
       [...scan.diagnostics, ...authored, ...authoredConflicts],
       authoredErrors,
       dryRun,
@@ -582,7 +720,16 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   ];
 
   let existingProjections: Projection[] = [];
-  if ((await lstatOrNull(paths.agents)) !== null) {
+  // Discovery reads `.agents/skills` and `.agents/rules`; a regular file at
+  // either parent raises ENOTDIR. The planner reports those conflicts and
+  // blocks every write, so enumeration is skipped instead of failing here.
+  const agentsProbe = await probeStat(paths.agents);
+  const parentProblems = await practiceParentProblems(layout.scopeRoot);
+  if (
+    agentsProbe.info?.isDirectory() === true
+    && parentProblems.docs === undefined
+    && parentProblems.skills === undefined
+  ) {
     const existing = await discoverProjections(layout.scopeRoot, paths);
     const errors = existing.diagnostics.filter((item) => item.severity === 'error');
     if (errors.length > 0) {
@@ -590,6 +737,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         scope,
         root,
         layout.scopeRoot,
+        language,
         [...scan.diagnostics, ...existing.diagnostics],
         errors,
         dryRun,
@@ -641,6 +789,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
         conflicts: [],
         pending: [],
         diagnostics: preflightDiagnostics,
+        language,
         normalize: null,
         ai: { applied: false, proposal },
       };
@@ -648,11 +797,41 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     aiApplied = true;
   }
 
-  const files = templateFiles(scan, scope, proposal?.agentsMdAddition);
-  for (const agent of proposal?.agents ?? []) {
-    files[`.agents/agents/${agent.name}.md`] = renderAgentFromProposal(agent);
+  const proposals = proposal === undefined
+    ? undefined
+    : { agentsMdAddition: proposal.agentsMdAddition, agents: proposal.agents };
+  const plan = await planAuthoredScaffold(
+    {
+      root: layout.scopeRoot,
+      scope,
+      scan,
+      profile: resolvedProfile,
+      mode: 'full',
+      version: DAB_VERSION,
+      env: process.env,
+      ...(existingManifest === undefined ? {} : { manifest: existingManifest.manifest }),
+      ...(proposals === undefined ? {} : { proposals }),
+    },
+    PRACTICE_PACKS,
+  );
+  const planDiagnostics = [
+    ...plan.diagnostics,
+    ...plan.policySkipped.map(policySkipDiagnostic),
+  ];
+  if (hasErrors(plan.diagnostics)) {
+    return blocked(
+      scope,
+      root,
+      layout.scopeRoot,
+      plan.docsLanguage,
+      [...preflightDiagnostics, ...planDiagnostics],
+      plan.diagnostics.filter((item) => item.severity === 'error'),
+      dryRun,
+    );
   }
 
+  const skillImports = await pendingSkillImports(layout.scopeRoot, scope, plan);
+  const files = skillImports.files;
   const targets = targetMap(existingProjections);
   for (const agent of proposal?.agents ?? []) {
     targets.set(`.claude/agents/${agent.name}.md`, `.agents/agents/${agent.name}.md`);
@@ -668,15 +847,18 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       scope,
       root,
       layout.scopeRoot,
-      [...preflightDiagnostics, ...generated.fatal],
+      plan.docsLanguage,
+      [...preflightDiagnostics, ...planDiagnostics, ...generated.fatal],
       generated.fatal,
       dryRun,
     );
   }
-  const pending = generated.pending.map(pendingDiagnostic);
+  const pending = [
+    ...generated.pending.map(pendingDiagnostic),
+    ...skillImports.diagnostics,
+  ];
 
   if (dryRun) {
-    const preview = await planFileWrites(layout.scopeRoot, files);
     return {
       ok: true,
       exitCode: ExitCode.Ok,
@@ -684,22 +866,31 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       root,
       scopeRoot: layout.scopeRoot,
       dryRun: true,
-      created: preview.created,
-      skipped: preview.skipped,
+      created: Object.keys(files).sort(),
+      skipped: [...plan.skipped].sort(),
       conflicts: [],
       pending,
-      diagnostics: [...preflightDiagnostics, ...pending],
+      diagnostics: [...preflightDiagnostics, ...planDiagnostics, ...pending],
+      language: plan.docsLanguage,
       normalize: null,
       ...(proposal === undefined ? {} : { ai: { applied: false, proposal } }),
     };
   }
 
-  const created: string[] = [];
-  const skipped: string[] = [];
-  for (const file of Object.keys(files).sort()) {
-    await writeIfMissing(layout.scopeRoot, file, files[file] ?? '', created, skipped);
+  for (const directory of skillImports.directories) {
+    await ensureDir(join(layout.scopeRoot, directory));
   }
-  await ensureDir(join(paths.agents, 'notes'));
+  const created: string[] = [];
+  const writeSkipped: string[] = [];
+  for (const file of Object.keys(files).sort()) {
+    await writeIfMissing(layout.scopeRoot, file, files[file] ?? '', created, writeSkipped);
+  }
+  const skipped = [...plan.skipped];
+  for (const path of writeSkipped) {
+    if (!skipped.includes(path)) {
+      skipped.push(path);
+    }
+  }
 
   if (pending.length > 0) {
     return {
@@ -713,7 +904,8 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       skipped,
       conflicts: [],
       pending,
-      diagnostics: [...preflightDiagnostics, ...pending],
+      diagnostics: [...preflightDiagnostics, ...planDiagnostics, ...pending],
+      language: plan.docsLanguage,
       normalize: null,
       ...(proposal === undefined ? {} : { ai: { applied: aiApplied, proposal } }),
     };
@@ -728,7 +920,13 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     suppressImports: true,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
-  const diagnostics = [...scan.diagnostics, ...normalize.diagnostics];
+  // The nested normalize re-plans the same practice policy skips, so merge with
+  // exact-duplicate removal: one warning per skipped docs path.
+  const diagnostics = dedupeDiagnostics([
+    ...scan.diagnostics,
+    ...planDiagnostics,
+    ...normalize.diagnostics,
+  ]);
   return {
     ok: normalize.ok,
     exitCode: normalize.exitCode,
@@ -741,6 +939,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     conflicts: [],
     pending: [],
     diagnostics,
+    language: plan.docsLanguage,
     normalize,
     ...(proposal === undefined ? {} : { ai: { applied: aiApplied, proposal } }),
   };

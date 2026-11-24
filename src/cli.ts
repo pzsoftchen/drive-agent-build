@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import type { CommandRunner } from './core/command.ts';
 import { DabError, UsageError } from './core/errors.ts';
 import { ExitCode } from './core/exit-codes.ts';
 import { contractJson } from './core/json.ts';
+import { DAB_VERSION } from './core/version.ts';
 import { runDetect } from './commands/detect.ts';
 import { runInit } from './commands/init.ts';
 import { runNormalize } from './commands/normalize.ts';
@@ -14,25 +15,8 @@ import { runPolicyExplain } from './commands/policy-explain.ts';
 import { TARGET_PROVIDERS } from './model/schemas.ts';
 import type { TargetProvider } from './model/types.ts';
 
-function readProgramVersion(): string {
-  const parsed: unknown = JSON.parse(
-    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-  );
-  if (
-    typeof parsed !== 'object'
-    || parsed === null
-    || typeof (parsed as { version?: unknown }).version !== 'string'
-  ) {
-    throw new Error('package.json must declare a string version');
-  }
-  return (parsed as { version: string }).version;
-}
-
-let cachedVersion: string | undefined;
-
 export function programVersion(): string {
-  cachedVersion ??= readProgramVersion();
-  return cachedVersion;
+  return DAB_VERSION;
 }
 
 export interface CliContext {
@@ -48,7 +32,7 @@ function helpText(): string {
   return `dab ${programVersion()} - Drive Agent as Builder
 
 Usage:
-  dab init [path] [--profile feature] [--ai] [--dry-run] [--json]
+  dab init [path] [--profile generic|feature] [--ai] [--dry-run] [--json]
   dab detect [--strict] [--json]
   dab normalize [--dry-run] [--fix] [--json]
   dab policy explain [--agent <name>] [--target <provider>] [--json]
@@ -82,13 +66,13 @@ function rejectUnknownOptions(args: string[], allowedFlags: string[]): void {
 
 interface InitArguments {
   path?: string;
-  profile: 'feature';
+  profile: 'generic' | 'feature';
   ai: boolean;
   dryRun: boolean;
 }
 
 function parseInitArgs(rest: string[]): InitArguments {
-  let profile = 'feature';
+  let profile: 'generic' | 'feature' = 'generic';
   let ai = false;
   let dryRun = false;
   let targetPath: string | undefined;
@@ -108,6 +92,12 @@ function parseInitArgs(rest: string[]): InitArguments {
       if (value === undefined || value.startsWith('-')) {
         throw new UsageError('missing value for --profile', 'usage.missing-option-value');
       }
+      if (value !== 'generic' && value !== 'feature') {
+        throw new UsageError(
+          `unsupported profile: ${value}; supported profiles: generic, feature`,
+          'usage.invalid-profile',
+        );
+      }
       profile = value;
       index += 1;
       continue;
@@ -121,15 +111,9 @@ function parseInitArgs(rest: string[]): InitArguments {
     targetPath = arg;
   }
 
-  if (profile !== 'feature') {
-    throw new UsageError(
-      `unsupported profile: ${profile}; v0.1 supports: feature`,
-      'usage.invalid-profile',
-    );
-  }
   return {
     ...(targetPath === undefined ? {} : { path: targetPath }),
-    profile: 'feature',
+    profile,
     ai,
     dryRun,
   };

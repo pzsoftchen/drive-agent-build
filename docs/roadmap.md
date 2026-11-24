@@ -20,6 +20,16 @@ DAB is the long-term direction. The product roadmap follows DAD first: prove rel
 - Project and global scopes remain independent; DAB provides no `dab global` command and never merges scopes.
 - Codex and DSH adapters are deferred until the DAD task loop is measured.
 
+## v0.1.x DAD Practice Layer
+
+- `generic` is the default profile; `feature` remains a compatibility alias with the same behavior.
+- `init` and `normalize` scaffold single-language `docs/AGENTS.md` and `docs/architecture.md` and the `dab-*` authoring skills from one planner.
+- `detect` reports a Documentation group and authoring skill state; `normalize` fills missing practice files without overwriting authored docs or skills.
+- Projects with `.agents/rules/docs-bilingual.md` keep the rule and are policy-skipped for generated docs.
+- The generic profile focuses on configuration drift and the documentation, notes and skills discipline.
+- Hooks and shared memory are advanced, opt-in capabilities. `init` and adoption do not scaffold them; existing hooks are validated and compiled where applicable, and existing memory is preserved by `init` and `normalize` and validated by `init` and `detect`.
+- Status: implemented; unreleased.
+
 ## v0.2 DAD Task Evidence
 
 This is the next milestone. It validates one development task at a time and does not prove DAB.

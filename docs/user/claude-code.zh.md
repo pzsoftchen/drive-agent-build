@@ -62,13 +62,16 @@ targets:
 
 ## 记忆模型
 
-- 团队共享事实放在 `.agents/memory/`，并在拉取请求中评审。
+- 共享记忆是高级、可选能力。DAB 默认不生成 `.agents/memory/`；已有文件仍会被保留和校验。
+- 可长期保留的团队知识放在 `.agents/notes/` 和项目 docs 中。项目显式启用共享记忆时，其经评审的事实放在 `.agents/memory/`。
 - 个人自动记忆留在机器本地，从不提交。
 - Agent 可以使用 `memory: user` 或 `memory: local`，但 `memory: project` 会被拒绝，因为它会形成第二套团队记忆。
 - `dab eval` 计划在 v0.2 提供，并将使用空记忆目录。
 - Global scope 会跳过祖先和个人记忆检查，因为用户级 Claude 数据不是项目产物。
 
 ## 权限与 hooks
+
+Hooks 是高级、可选能力。DAB 默认不生成 `.agents/hooks/`；已有 hooks 仍会被校验并投影到 `.claude/settings.json`。
 
 项目策略被编译进 `.claude/settings.json`。项目 deny 规则是 Claude Code 文件工具的硬边界，但 `Bash`、包装命令和其他工具可以绕过路径规则。Agent 定义可以收窄工具并追加 hooks，但不能移除项目 hooks。Agent hooks 必须调用受管 `.agents/hooks/<id>/` 条目生成的命令；任意 inline shell 命令都会被拒绝。接受的形式是 node hook 的 `node "${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"` 或 exec hook 的 `"${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"`；agent hook id 不得与项目 hook id 冲突。Hook 脚本会检查路径逃逸、重复 id、换行符、执行权限和敏感信息。
 

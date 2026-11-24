@@ -58,6 +58,8 @@ The diagram describes the combined target model. The DAD configuration-governanc
 |---|---|
 | DAD authored facts, projections, drift checks and policy explanation | Released in 0.1.1 |
 | DAD independent project/global scopes and v2 manifests | Released in 0.1.1 |
+| DAD practice layer: generic profile, single-language docs and authoring skills | Implemented; unreleased |
+| DAD advanced hooks and shared memory | Optional; not scaffolded by default |
 | DAD evidence for one development task | Planned for v0.2; next |
 | DAD memory and operational hardening | Planned for v0.3 |
 | DAD Codex and DSH adapters | After single-task evidence |
@@ -99,10 +101,12 @@ Use `dab init ~/.agents` to initialize the independent global scope.
 
 ## What the commands do
 
-- `dab init` writes the authored project skeleton and runs normalize when it is safe.
-- `dab normalize` compiles policy, materializes instruction and projection artifacts, and records hashes.
+- `dab init` writes the authored project skeleton, including `docs/AGENTS.md`, `docs/architecture.md` and the `dab-*` authoring skills, and runs normalize when it is safe. It does not scaffold advanced hooks or shared memory.
+- `dab normalize` compiles policy, materializes instruction and projection artifacts, fills missing docs and authoring skills, and records hashes.
 - `dab detect` checks authored facts, generated output, ownership and scope without writing.
 - `dab policy explain` shows the effective rules and hooks for a selected target.
+
+The generic profile focuses on configuration drift and the documentation, notes and skills discipline. Hooks and shared memory stay advanced and opt-in: existing hooks are still validated and compiled where applicable, and existing memory is still preserved and validated.
 
 ## Why DAB exists
 
@@ -113,7 +117,7 @@ Two observations shaped my thinking:
 - A DeepSeek operator developer described a likely shift from designing, writing and optimizing operators to driving agents that perform that work.
 - Robin Li's Builder framing broadens the creator role beyond people who write code.
 
-I first explored a narrower practice, DAD (Drive Agent Development): defining how agents should carry out development work and driving them through that process. DAB keeps DAD's authored facts, projections, drift detection, decisions and shared memory, then adds the delivery-oriented convergence described above. Development is the first scope because I am the first Builder, not because it is the endpoint.
+I first explored a narrower practice, DAD (Drive Agent Development): defining how agents should carry out development work and driving them through that process. DAB keeps DAD's authored facts, projections, drift detection and decisions, plus optional shared memory, then adds the delivery-oriented convergence described above. Development is the first scope because I am the first Builder, not because it is the endpoint.
 
 ## Design principles
 
@@ -136,6 +140,7 @@ I first explored a narrower practice, DAD (Drive Agent Development): defining ho
 
 Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/main/docs)
 
+- [Documentation guide](docs/AGENTS.md)
 - [Why DAB exists](docs/concepts/why-dab.md)
 - [Roadmap](docs/roadmap.md)
 - [Architecture](docs/architecture.md)
@@ -144,6 +149,7 @@ Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/
 - [Claude Code integration](docs/user/claude-code.md)
 - [Agent Note 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.md)
 - [Agent Note 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.md)
+- [Agent Note 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.md)
 
 ## License
 

@@ -140,6 +140,9 @@ describe('compilePolicy', () => {
 
     expect(result.diagnostics.map((item) => item.code)).toContain('agent.memory-project');
     expect(result.diagnostics.map((item) => item.code)).toContain('agent.permission-mode');
+    const memory = result.diagnostics.find((item) => item.code === 'agent.memory-project');
+    expect(memory?.hint).toContain('.agents/notes/');
+    expect(memory?.hint).toContain('optional');
   });
 
   it('maps neutral hook events and defaults the post_edit matcher', () => {

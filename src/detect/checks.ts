@@ -6,6 +6,7 @@ import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { sha256 } from '../core/hash.ts';
 import { extractMarkdownLinks } from '../core/markdown-links.ts';
 import { isPathInside, toPosix } from '../core/paths.ts';
+import { pathProblemFrom } from '../core/practice-paths.ts';
 import { scanSecrets } from '../core/security.ts';
 import {
   buildManagedHookCommands,
@@ -471,6 +472,12 @@ async function walkFiles(dir: string, depth = 0): Promise<string[]> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return [];
     }
+    // The secret scan is best effort: an unreadable or non-directory subtree is
+    // reported by its owning check (for example the practice skill check), so
+    // it contributes no candidates instead of failing the whole command.
+    if (pathProblemFrom(error) !== undefined) {
+      return [];
+    }
     throw error;
   }
   const files: string[] = [];
@@ -553,7 +560,7 @@ export async function checkMemory(
           severity: 'error',
           message: `team memory or auto memory artifact exists in the repository: ${dir}`,
           file: toPosix(relative(root, absolute)),
-          hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/memory/.',
+          hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/notes/ and docs (optional advanced: .agents/memory/).',
         });
       }
     }

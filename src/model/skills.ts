@@ -4,6 +4,7 @@ import { compareStrings } from '../core/compare.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
+import { pathProblemFrom, problemMessage } from '../core/practice-paths.ts';
 import { DiagnosticCodes } from './diagnostics-codes.ts';
 import { parseFrontmatter, unknownFrontmatterDiagnostic } from './frontmatter.ts';
 import { KEBAB_CASE, SkillFrontmatterSchema } from './schemas.ts';
@@ -25,11 +26,41 @@ export interface SkillSourceResult {
   diagnostics: Diagnostic[];
 }
 
+/**
+ * One unreadable skill directory must not erase the sibling facts. The error is
+ * governed per skill so discovery can continue and commands fail loudly on the
+ * reported path instead of claiming the skill set is empty.
+ */
+function unreadableSkill(root: string, dir: string, error: unknown): Diagnostic {
+  const file = toPosix(relative(root, dir));
+  const problem = pathProblemFrom(error);
+  return {
+    code: DiagnosticCodes.skillUnreadable,
+    severity: 'error',
+    message: problem === undefined
+      ? `skill directory cannot be read: ${file}`
+      : `skill directory cannot be read: ${problemMessage(file, problem)}`,
+    file,
+    hint: 'Restore read and search permission for the skill directory; DAB never projects an unreadable skill.',
+  };
+}
+
 async function parseSkillSource(root: string, dir: string): Promise<SkillSourceResult> {
   const diagnostics: Diagnostic[] = [];
   const skillFile = join(dir, 'SKILL.md');
   const file = toPosix(relative(root, skillFile));
-  if ((await lstatOrNull(skillFile)) === null) {
+
+  let skillInfo;
+  try {
+    skillInfo = await lstatOrNull(skillFile);
+  } catch (error) {
+    if (pathProblemFrom(error) === undefined) {
+      throw error;
+    }
+    diagnostics.push(unreadableSkill(root, dir, error));
+    return { diagnostics };
+  }
+  if (skillInfo === null) {
     diagnostics.push({
       code: DiagnosticCodes.skillMissing,
       severity: 'warning',
@@ -43,6 +74,10 @@ async function parseSkillSource(root: string, dir: string): Promise<SkillSourceR
   try {
     parsed = parseFrontmatter(await readTextFile(skillFile), file);
   } catch (error) {
+    if (pathProblemFrom(error) !== undefined) {
+      diagnostics.push(unreadableSkill(root, dir, error));
+      return { diagnostics };
+    }
     diagnostics.push({
       code: DiagnosticCodes.skillInvalidFrontmatter,
       severity: 'error',
@@ -137,7 +172,19 @@ export async function discoverSkills(
     if (!entry.isDirectory() || entry.isSymbolicLink()) {
       continue;
     }
-    const source = await parseSkillSource(root, join(sourceDir, entry.name));
+    const dir = join(sourceDir, entry.name);
+    let source: SkillSourceResult;
+    try {
+      source = await parseSkillSource(root, dir);
+    } catch (error) {
+      // Keep sibling skills when one directory cannot be read. The practice
+      // parent check still owns an unreadable `.agents/skills` itself.
+      if (pathProblemFrom(error) === undefined) {
+        throw error;
+      }
+      diagnostics.push(unreadableSkill(root, dir, error));
+      continue;
+    }
     diagnostics.push(...source.diagnostics);
     if (source.item === undefined) {
       continue;

@@ -15,6 +15,7 @@ export const DiagnosticCodes = {
   skillUnknownFrontmatter: 'skill.unknown-frontmatter',
   skillDuplicateName: 'skill.duplicate-name',
   skillMissing: 'skill.missing',
+  skillUnreadable: 'skill.unreadable',
   ruleInvalidFrontmatter: 'rule.invalid-frontmatter',
   ruleUnknownFrontmatter: 'rule.unknown-frontmatter',
   hookInvalid: 'hook.invalid',

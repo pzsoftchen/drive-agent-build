@@ -12,6 +12,7 @@ import {
   updateGeneratedManifest,
   writeProjectManifest,
 } from '../../src/model/project-manifest.ts';
+import { ProjectManifestSchema } from '../../src/model/schemas.ts';
 import type { GeneratedManifest } from '../../src/model/types.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 import { writeProjectFile } from '../helpers/project.ts';
@@ -40,6 +41,19 @@ paths:
   agents: .agents
   claude: .claude
 `;
+
+const validManifestData = {
+  version: 2 as const,
+  scope: 'project' as const,
+  project: { id: 'demo', name: 'Demo' },
+  profile: 'feature' as const,
+  targets: [{
+    provider: 'claude-code' as const,
+    enabled: true,
+    options: { minVersion: '2.1.277', instructions: 'generated' },
+  }],
+  paths: { agents: '.agents', claude: '.claude' },
+};
 
 const v2Manifest = `version: 2
 scope: project
@@ -98,6 +112,7 @@ describe('project manifest', () => {
 
     expect(loaded.legacy).toBe(true);
     expect(loaded.manifest.version).toBe(2);
+    expect(loaded.manifest.docs).toEqual({ language: 'auto' });
     expect(loaded.manifest.targets).toEqual([
       {
         provider: 'claude-code',
@@ -105,6 +120,18 @@ describe('project manifest', () => {
         options: { minVersion: '2.1.277', instructions: 'generated' },
       },
     ]);
+  });
+
+  it('carries docs.language from a legacy v1 manifest', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, 'dab.yaml', `${validManifest}docs:
+  language: en
+`);
+
+    const loaded = await loadProjectManifest(root, { scope: 'project' });
+
+    expect(loaded.legacy).toBe(true);
+    expect(loaded.manifest.docs.language).toBe('en');
   });
 
   it('maps a disabled v1 shim to disabled instructions and migrates generated records', async () => {
@@ -194,6 +221,31 @@ describe('project manifest', () => {
     await expect(loadProjectManifest(root)).rejects.toThrow(/profile/);
   });
 
+  it('accepts generic and feature profiles plus docs.language', () => {
+    const generic = ProjectManifestSchema.parse({
+      ...validManifestData,
+      profile: 'generic',
+      docs: { language: 'auto' },
+    });
+    expect(generic.profile).toBe('generic');
+    expect(generic.docs.language).toBe('auto');
+    for (const language of ['auto', 'en', 'zh'] as const) {
+      expect(
+        ProjectManifestSchema.parse({ ...validManifestData, docs: { language } }).docs.language,
+      ).toBe(language);
+    }
+  });
+
+  it('defaults docs.language to auto and rejects unknown values', () => {
+    expect(
+      ProjectManifestSchema.parse({ ...validManifestData, docs: undefined }).docs.language,
+    ).toBe('auto');
+    expect(() => ProjectManifestSchema.parse({ ...validManifestData, profile: 'other' })).toThrow();
+    expect(() =>
+      ProjectManifestSchema.parse({ ...validManifestData, docs: { language: 'fr' } }),
+    ).toThrow();
+  });
+
   it('writes and reloads a manifest', async () => {
     const root = await tempDir();
     const manifest = {
@@ -201,6 +253,7 @@ describe('project manifest', () => {
       scope: 'project' as const,
       project: { id: 'demo', name: 'Demo' },
       profile: 'feature' as const,
+      docs: { language: 'auto' as const },
       targets: [{
         provider: 'claude-code' as const,
         enabled: true,
@@ -281,6 +334,7 @@ describe('project manifest', () => {
       scope: 'global' as const,
       project: { id: 'demo', name: 'Demo' },
       profile: 'feature' as const,
+      docs: { language: 'auto' as const },
       targets: [{
         provider: 'claude-code' as const,
         enabled: true,

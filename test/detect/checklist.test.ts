@@ -49,6 +49,7 @@ describe('buildChecklist', () => {
       { group: 'Agents', label: 'agent-a', status: 'ok' },
       { group: 'Skills', label: 'skill-a', status: 'ok' },
       { group: 'Instructions', label: 'AGENTS.md', status: 'ok' },
+      { group: 'Documentation', label: 'docs/AGENTS.md', status: 'ok' },
       { group: 'Generated target', label: '.claude', status: 'ok' },
     ];
     const checklist = buildChecklist({
@@ -60,6 +61,7 @@ describe('buildChecklist', () => {
 
     expect(checklist.entries.map((entry) => entry.label)).toEqual([
       'AGENTS.md',
+      'docs/AGENTS.md',
       'agent-a',
       'skill-b',
       'skill-a',
@@ -70,6 +72,7 @@ describe('buildChecklist', () => {
       'agent-a',
       'skill-a',
       'AGENTS.md',
+      'docs/AGENTS.md',
       '.claude',
     ]);
   });
@@ -87,6 +90,44 @@ describe('buildChecklist', () => {
       ],
     });
     expect(checklist.nextActions).toEqual(['dab normalize', 'dab normalize --dry-run']);
+  });
+
+  it('collapses identical rows and keeps distinct rows with the same label', () => {
+    const checklist = buildChecklist({
+      scope: 'project',
+      root: '/tmp/p',
+      phase: 'initialized',
+      entries: [
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'invalid skill frontmatter: broken',
+        },
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'invalid skill frontmatter: broken',
+        },
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'different detail',
+        },
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'invalid skill frontmatter: broken',
+          file: '.agents/skills/broken/SKILL.md',
+        },
+      ],
+    });
+
+    expect(checklist.entries).toHaveLength(3);
+    expect(checklist.score).toEqual({ ok: 0, total: 3, percent: 0 });
   });
 
   it('scores an empty checklist as zero percent', () => {

@@ -60,6 +60,12 @@ export const AGENT_PERMISSION_MODES = [
 ] as const;
 export const MEMORY_STATUSES = ['active', 'superseded'] as const;
 
+export const DocsLanguageSchema = z.enum(['auto', 'en', 'zh']);
+export const DocsConfigSchema = z
+  .object({ language: DocsLanguageSchema.default('auto') })
+  .strict()
+  .default({ language: 'auto' });
+
 export const KEBAB_CASE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export const SHA256_HEX = /^[a-f0-9]{64}$/;
@@ -122,7 +128,8 @@ export const ProjectManifestSchema = z
         goal: z.string().min(1).optional(),
       })
       .strict(),
-    profile: z.literal('feature'),
+    profile: z.enum(['generic', 'feature']),
+    docs: DocsConfigSchema,
     targets: z.array(TargetConfigSchema).min(1),
     paths: z
       .object({
@@ -179,6 +186,7 @@ export const LegacyProjectManifestSchema = z
       })
       .strict(),
     profile: z.literal('feature'),
+    docs: DocsConfigSchema.optional(),
     target: z
       .object({
         provider: z.literal('claude-code'),

@@ -1,4 +1,11 @@
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { normalizeProject } from '../../src/commands/normalize.ts';
+import { AUTHORING_SKILL_NAMES } from '../../src/init/practice-authoring.ts';
+import {
+  loadProjectManifest,
+  updateGeneratedManifest,
+} from '../../src/model/project-manifest.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from './project.ts';
 
 const projectPolicy = `version: 1
@@ -85,5 +92,29 @@ export async function makeInitializedProject(): Promise<ProjectFixture> {
   const project = await makeProject();
   await populateProject(project);
   await normalizeProject({ cwd: project.root });
+  // Fixtures model an initialized project from before the practice layer: the
+  // practice tests need a clean baseline where docs and authoring skills are
+  // still missing. Drop the scaffolded practice artifacts and their generated
+  // projection records so the remaining generated state stays self-consistent.
+  const loaded = await loadProjectManifest(project.root);
+  const generated = loaded.manifest.generated;
+  if (generated !== undefined) {
+    const practiceTargets = new Set(
+      AUTHORING_SKILL_NAMES.map((name) => `.claude/skills/${name}`),
+    );
+    await updateGeneratedManifest(project.root, {
+      targets: generated.targets.map((target) => ({
+        ...target,
+        projections: target.projections.filter(
+          (projection) => !practiceTargets.has(projection.target),
+        ),
+      })),
+    });
+  }
+  await rm(join(project.root, 'docs'), { recursive: true, force: true });
+  for (const name of AUTHORING_SKILL_NAMES) {
+    await rm(join(project.root, '.agents/skills', name), { recursive: true, force: true });
+    await rm(join(project.root, '.claude/skills', name), { recursive: true, force: true });
+  }
   return project;
 }
