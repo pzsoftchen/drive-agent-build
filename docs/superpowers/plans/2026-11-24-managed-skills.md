@@ -139,7 +139,7 @@ git commit -m "feat: load authoring skills from packaged templates"
 
 ```ts
 export type ManagedSkillStatus =
-  | 'current' | 'stale' | 'modified' | 'legacy' | 'unversioned' | 'missing';
+  | 'current' | 'stale' | 'newer' | 'modified' | 'legacy' | 'unversioned' | 'missing';
 
 export interface ManagedSkillState {
   name: AuthoringSkillName;
@@ -194,7 +194,8 @@ Rules:
 - Read canonical template and render current candidate with current version.
 - Read target if present; parse marker with optional `sha256`.
 - current: hash matches and version equals current.
-- stale: hash matches and version differs.
+- stale: hash matches and installed version is strictly older than current.
+- newer: hash matches and installed version is newer or unparseable; preserve with non-strict warning, no write.
 - modified: hash differs.
 - legacy: marker exists without hash; compare marker-stripped body to current template; migration allowed only on exact match.
 - unversioned: no marker.
@@ -274,17 +275,18 @@ git commit -m "feat: update managed skills during normalize"
 - Test: `test/detect/checklist.test.ts` (if group rows change)
 
 **Interfaces:**
-- Add diagnostics: `practice.skill-modified`, `practice.skill-legacy` as non-strict warnings.
+- Add diagnostics: `practice.skill-modified`, `practice.skill-legacy`, `practice.skill-newer`, `practice.skill-marker-mismatch` as non-strict warnings.
 - Keep `practice.skill-stale` strict; `practice.skill-unversioned` non-strict; `practice.skill-missing` strict.
-- States: current `ok`; stale `warn` + `dab normalize`; modified `warn` no auto-next; legacy/unversioned `warn` no auto-next.
+- States: current `ok`; stale `warn` + `dab normalize`; newer `warn` no auto-next; modified `warn` no auto-next; legacy/unversioned/marker-mismatch `warn` no auto-next.
 
 - [ ] **Step 1: Write failing detect tests**
 
 - current marker/hash → OK.
 - older version matching hash → stale warning, `--strict` exit 3, next normalize.
+- newer/unparseable version matching hash → newer warning non-strict, no write/next.
 - modified body → warn non-strict, no normalize next, file preserved.
 - legacy without hash and old body → warn non-strict.
-- unversioned → warn non-strict.
+- unversioned / marker naming another skill → warn non-strict.
 - duplicate rows collapse; exit codes unchanged.
 
 - [ ] **Step 2: Run tests to verify RED**
@@ -328,7 +330,7 @@ Describe:
 - marker version/hash;
 - managed update: unmodified updates, modified/legacy preserved, no automatic user-fork updates;
 - no `npx skills` runtime;
-- detect states and strictness;
+- detect states and strictness, including newer/marker-mismatch and CRLF legacy preservation;
 - release 0.1.2 behavior.
 Update EN/ZH pairs/i18n; run pairing writer and doc-sync.
 

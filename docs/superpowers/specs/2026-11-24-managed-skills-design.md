@@ -71,7 +71,8 @@ skills/
 1. 目标缺失：写入当前模板 + marker，报告 `create`。
 2. marker 和 hash 存在且 hash 匹配：
    - version 等于当前 DAB 版本 → skip。
-   - version 较旧 → 用当前模板更新，重写 marker/hash，报告 `update`；这是 DAB-managed 内容，不覆盖用户修改（hash 已证明未修改）。
+   - version 严格较旧 → 用当前模板更新，重写 marker/hash，报告 `update`；这是 DAB-managed 内容，不覆盖用户修改（hash 已证明未修改）。
+   - version 较新或无法解析 → 保留，报告 `newer` warning，不写入；绝不降级未来版本。
 3. marker 和 hash 存在但 hash 不匹配：视为用户修改/分叉，不写，报告 `skill.modified` warning；DAB 保留该文件且不再自动更新。
 4. marker 缺失或 legacy 无 hash：
    - 去掉 marker 后 body 与当前模板一致 → 升级 marker/hash，报告 `migrate`；
@@ -87,12 +88,14 @@ skills/
 |---|---|---|
 | `ok` | marker/hash 匹配，version 当前 | — |
 | `warn` | marker/hash 匹配，version 较旧 | `dab normalize`；strict 失败 |
+| `warn` | marker/hash 匹配，version 较新/无法解析 | 无自动 next；strict 不失败 |
 | `warn` | hash 不匹配（用户分叉） | 无自动 next；strict 不失败 |
 | `warn` | legacy 无 hash，body 不等于当前模板 | 手工确认；strict 不失败 |
-| `warn` | 无 marker | 手工确认；strict 不失败 |
+| `warn` | 无 marker 或 marker 指向其他 skill | 手工确认；strict 不失败 |
 | `error` | 路径类型/读失败/逃逸 | 手工解决 |
 
-- `practice.skill-stale` 保持 strict failure（未修改但可更新）；`practice.skill-modified`、`practice.skill-legacy`、`practice.skill-unversioned` 为非 strict warning。
+- `practice.skill-stale` 保持 strict failure（未修改但可更新）；`practice.skill-modified`、`practice.skill-legacy`、`practice.skill-newer`、`practice.skill-marker-mismatch`、`practice.skill-unversioned` 为非 strict warning。
+- CRLF-only 差异不会迁移；legacy 迁移要求 marker-stripped body 与当前模板完全一致。
 - `practices.skills` JSON 的 created/skipped 继续描述 practice planner 写入/跳过的文件；新增的 managed update 结果可放在 `practices.skills.updated`/`migrated`/`modified` 等 additive 字段（或统一为 actions；实现计划定稿）。`schemaVersion` 保持 1。
 - 人类输出显示 `update skill ...`、`migrate skill ...`、`skip skill ... (modified)`。
 
