@@ -96,7 +96,7 @@ describe('skill marker parsing', () => {
     expect(stripMarker('# no marker\n')).toBe('# no marker\n');
   });
 
-  it('fails loud when the template has no frontmatter closing line', () => {
+  it('fails loud when the template has no frontmatter', () => {
     expect(() =>
       insertSkillMarker('# no frontmatter\n', {
         name: 'dab-doc-writing',
@@ -104,5 +104,58 @@ describe('skill marker parsing', () => {
         sha256: 'a'.repeat(64),
       }),
     ).toThrow(/frontmatter/i);
+  });
+
+  it('fails loud when the frontmatter is unclosed', () => {
+    expect(() =>
+      insertSkillMarker('---\nname: dab-doc-writing\n', {
+        name: 'dab-doc-writing',
+        version: '1.0.0',
+        sha256: 'a'.repeat(64),
+      }),
+    ).toThrow(/frontmatter/i);
+  });
+
+  it('fails loud when the frontmatter closing line has no trailing newline', () => {
+    // Adding the separating newline would make marker removal leave an extra
+    // newline behind, so insertion must refuse instead of drifting the hash.
+    expect(() =>
+      insertSkillMarker('---\nname: dab-doc-writing\n---', {
+        name: 'dab-doc-writing',
+        version: '1.0.0',
+        sha256: 'a'.repeat(64),
+      }),
+    ).toThrow(/newline/i);
+  });
+
+  it('removes a CRLF marker line without leaving a line ending behind', () => {
+    const body = '---\r\nname: dab-doc-writing\r\ndescription: d\r\n---\r\n# Body\r\n';
+    const hash = sha256(body);
+    const marked =
+      '---\r\nname: dab-doc-writing\r\ndescription: d\r\n---\r\n'
+      + `<!-- dab-skill: dab-doc-writing@1.0.0 sha256=${hash} -->\r\n`
+      + '# Body\r\n';
+
+    expect(parseSkillMarker(marked)).toEqual({
+      name: 'dab-doc-writing',
+      version: '1.0.0',
+      sha256: hash,
+    });
+    expect(stripMarker(marked)).toBe(body);
+    expect(hashSkillBody(marked)).toBe(hash);
+  });
+
+  it('removes a CRLF legacy marker line without a hash', () => {
+    const body = '---\r\nname: dab-doc-writing\r\n---\r\n# Body\r\n';
+    const marked =
+      '---\r\nname: dab-doc-writing\r\n---\r\n'
+      + '<!-- dab-skill: dab-doc-writing@0.1.1 -->\r\n'
+      + '# Body\r\n';
+
+    expect(parseSkillMarker(marked)).toEqual({
+      name: 'dab-doc-writing',
+      version: '0.1.1',
+    });
+    expect(stripMarker(marked)).toBe(body);
   });
 });

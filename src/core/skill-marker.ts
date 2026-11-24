@@ -15,7 +15,7 @@ const MARKER_LINE =
   /^[ \t]*<!--[ \t]*dab-skill:[ \t]*([a-z0-9-]+)@([^\s>]+)(?:[ \t]+sha256=([0-9a-f]{64}))?[ \t]*-->[ \t]*$/m;
 
 const MARKER_LINE_WITH_NEWLINE =
-  /^[ \t]*<!--[ \t]*dab-skill:[^\n]*-->[ \t]*(?:\n|$)/m;
+  /^[ \t]*<!--[ \t]*dab-skill:[^\n]*-->[ \t]*(?:\r?\n|$)/m;
 
 const FRONTMATTER_OPEN = /^---[ \t]*\r?\n/;
 
@@ -43,8 +43,12 @@ export function insertSkillMarker(
 ): string {
   const end = frontmatterEnd(template);
   const prefix = template.slice(0, end);
-  const separator = prefix.endsWith('\n') ? '' : '\n';
-  return `${prefix}${separator}${formatSkillMarker(marker)}\n${template.slice(end)}`;
+  // Adding a separating newline and later removing the marker line would leave
+  // that newline behind, silently changing the hash. Refuse instead.
+  if (!prefix.endsWith('\n')) {
+    throw new Error('skill template frontmatter closing line must end with a newline');
+  }
+  return `${prefix}${formatSkillMarker(marker)}\n${template.slice(end)}`;
 }
 
 /**
