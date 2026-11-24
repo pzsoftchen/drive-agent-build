@@ -103,7 +103,7 @@ pnpm link --global
 ## 命令做什么
 
 - `dab init` 写入项目编写骨架，包括 `docs/AGENTS.md`、`docs/architecture.md` 和 `dab-*` authoring skills，并在安全时运行 normalize。它不生成高级 hooks 或共享记忆。
-- `dab normalize` 编译策略、生成指令和投影产物、补齐缺失的 docs 和 authoring skills、更新未修改的受管 authoring skills，并记录哈希。
+- `dab normalize` 编译策略、生成指令和投影产物、补齐缺失的 docs 和 authoring skills、更新未修改的较旧受管 authoring skills，并记录哈希。
 - `dab detect` 在不写入的情况下检查编写事实、生成输出、所有权和作用域。
 - `dab policy explain` 展示选定 target 的最终规则和 hooks。
 

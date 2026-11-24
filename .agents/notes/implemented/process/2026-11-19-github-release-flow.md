@@ -14,7 +14,7 @@ The first npm release needed a repeatable, auditable path from a tagged commit t
 - A `v*` tag runs `.github/workflows/release.yml`. The verify job runs the full suite, generated-config check, pack smoke test and uploads the tarball.
 - The publish job waits on the `npm-release` environment, which requires the maintainer as a required reviewer. It uses GitHub OIDC with `id-token: write`, publishes with `npm publish --provenance --access public`, and creates the GitHub Release after npm succeeds.
 - The workflow skips `npm publish` when the version already exists, so reruns and the first manual bootstrap are idempotent.
-- The first release is published manually with npm 2FA and `--access public`; the npm Trusted Publisher is then configured for this workflow and environment. Later releases use OIDC and no long-lived token.
+- The 0.1.1 bootstrap was published manually with npm 2FA and `--access public`; the npm Trusted Publisher for this workflow and `npm-release` environment was configured after the package existed. 0.1.2 and later use OIDC and no long-lived token.
 
 ## Alternatives considered
 
@@ -28,9 +28,9 @@ The first npm release needed a repeatable, auditable path from a tagged commit t
 
 ## Consequences
 
-- The `npm-release` environment requires maintainer approval; the npm Trusted Publisher still needs one-time configuration.
+- The `npm-release` environment requires maintainer approval; the npm Trusted Publisher is configured for this repository, while a new package or repository still needs its own one-time entry.
 - A tag that does not match `package.json` fails before publishing.
-- The first release remains a manual step; later releases are fully tag-driven.
+- The 0.1.1 bootstrap was manual; 0.1.2 and later are fully tag-driven.
 - Rerunning a partially completed release is safe because the version check is idempotent.
 
 ## Verification
@@ -39,6 +39,7 @@ The first npm release needed a repeatable, auditable path from a tagged commit t
 - CI runs `npm pack` and a scoped `npx @saydone/dab` smoke test.
 - `pnpm test`, `pnpm typecheck` and `pnpm doc-sync` pass.
 - The `v0.1.1` tag run (`45116029166`) passed. The publish job skipped `npm publish` because `@saydone/dab@0.1.1` already existed and created the [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.1).
+- The `v0.1.2` tag run (`45387402531`) passed end-to-end after the Trusted Publisher and `npm-release` environment were configured: verify passed, the publish job was approved, npm published `0.1.2` with provenance, and the [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2) was created. npm now serves `0.1.2` as latest.
 
 ## Related
 

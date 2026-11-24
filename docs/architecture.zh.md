@@ -112,7 +112,7 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 ## 核心循环
 
 1. `dab init` 扫描仓库并为一个 scope 写入完整的编写骨架。
-2. `dab normalize` 先采用缺失的最小 source、导入物理 Claude agents 和 skills、补齐缺失的 practice 文件并更新未修改的受管 authoring skills，再预检每个启用的 target，并在全部预检通过后才写入 target 输出。
+2. `dab normalize` 先采用缺失的最小 source、导入物理 Claude agents 和 skills、补齐缺失的 practice 文件并更新未修改的较旧受管 authoring skills，再预检每个启用的 target，并在全部预检通过后才写入 target 输出。
 3. `dab detect` 在不写入的前提下检查漂移、所有权、phase 和 scope。
 4. `dab policy explain --target <provider>` 展示单个 target 的最终结果。
 

@@ -11,3 +11,7 @@
 
 - [跨 Harness 对齐 spec](specs/2026-11-16-cross-harness-alignment.md)（已批准，基础部分已实现）
 - [Target Adapter Contract spec](specs/2026-11-17-adapter-contract.md)（已批准，计划已编写；完整执行推迟到 Codex adapter）
+- [Detect Checklist 与 Normalize Adoption](specs/2026-11-23-detect-normalize-adoption-design.md)（已实现）
+- [Practice Layer](specs/2026-11-23-practice-layer-design.md)（已批准，0.1.2 已实现）
+- [Practice Layer 差距登记](specs/2026-11-23-practice-layer-gap-register.md)（记录，迭代 A 进行中）
+- [Managed Skills](specs/2026-11-24-managed-skills-design.md)（已批准，0.1.2 已实现）

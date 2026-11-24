@@ -103,7 +103,7 @@ Use `dab init ~/.agents` to initialize the independent global scope.
 ## What the commands do
 
 - `dab init` writes the authored project skeleton, including `docs/AGENTS.md`, `docs/architecture.md` and the `dab-*` authoring skills, and runs normalize when it is safe. It does not scaffold advanced hooks or shared memory.
-- `dab normalize` compiles policy, materializes instruction and projection artifacts, fills missing docs and authoring skills, updates unmodified managed authoring skills, and records hashes.
+- `dab normalize` compiles policy, materializes instruction and projection artifacts, fills missing docs and authoring skills, updates unmodified older managed authoring skills, and records hashes.
 - `dab detect` checks authored facts, generated output, ownership and scope without writing.
 - `dab policy explain` shows the effective rules and hooks for a selected target.
 
