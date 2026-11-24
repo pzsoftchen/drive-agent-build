@@ -14,6 +14,7 @@ import {
   parseSkillMarker,
   removeSkillMarker,
 } from '../core/skill-marker.ts';
+import { compareVersions, parseVersion } from '../core/version-compare.ts';
 import {
   AUTHORING_SKILL_NAMES,
   loadAuthoringSkillTemplate,
@@ -23,6 +24,8 @@ import {
 export type ManagedSkillStatus =
   | 'current'
   | 'stale'
+  /** Installed version is newer than this package or cannot be compared. */
+  | 'newer'
   | 'modified'
   | 'legacy'
   | 'unversioned'
@@ -62,6 +65,8 @@ export const MANAGED_SKILL_DIAGNOSTIC_CODES = {
   modified: 'practice.skill-modified',
   legacy: 'practice.skill-legacy',
   unversioned: 'practice.skill-unversioned',
+  mismatch: 'practice.skill-marker-mismatch',
+  newer: 'practice.skill-newer',
   path: 'practice.skill-path',
 } as const;
 
@@ -98,6 +103,50 @@ function unversionedWarning(file: string, name: string): Diagnostic {
     message: `authoring skill has no dab-skill marker for ${name}`,
     file,
     hint: 'Confirm the skill content manually; DAB preserves skills without a managed marker.',
+  };
+}
+
+function mismatchedMarkerWarning(
+  file: string,
+  name: string,
+  found: string,
+): Diagnostic {
+  return {
+    code: MANAGED_SKILL_DIAGNOSTIC_CODES.mismatch,
+    severity: 'warning',
+    message: `authoring skill marker names ${found}, expected ${name}; the file is preserved`,
+    file,
+    hint: 'Check whether the skill was copied or installed for another name; DAB will not rewrite it.',
+  };
+}
+
+function newerWarning(
+  file: string,
+  name: string,
+  installed: string,
+  current: string,
+): Diagnostic {
+  return {
+    code: MANAGED_SKILL_DIAGNOSTIC_CODES.newer,
+    severity: 'warning',
+    message: `authoring skill version ${installed} is newer than ${current} and is preserved: ${name}`,
+    file,
+    hint: 'Update DAB or review the skill manually; DAB never downgrades a newer skill.',
+  };
+}
+
+function uncomparableVersionWarning(
+  file: string,
+  name: string,
+  installed: string,
+  current: string,
+): Diagnostic {
+  return {
+    code: MANAGED_SKILL_DIAGNOSTIC_CODES.newer,
+    severity: 'warning',
+    message: `authoring skill version ${installed} cannot be compared with ${current} and is preserved: ${name}`,
+    file,
+    hint: 'Review the skill manually; DAB only updates versions it can prove are older.',
   };
 }
 
@@ -204,14 +253,23 @@ export async function planManagedSkills(input: {
     }
 
     const marker = parseSkillMarker(text);
-    if (marker === undefined || marker.name !== name) {
+    if (marker === undefined) {
       states.push({ name, file, status: 'unversioned' });
       diagnostics.push(unversionedWarning(file, name));
+      continue;
+    }
+    if (marker.name !== name) {
+      states.push({ name, file, status: 'unversioned' });
+      diagnostics.push(mismatchedMarkerWarning(file, name, marker.name));
       continue;
     }
 
     if (marker.sha256 === undefined) {
       states.push({ name, file, status: 'legacy', version: marker.version });
+      // Migration success is informational; a preserved legacy fork is a
+      // warning. Task 3/4 must keep this severity mapping when consolidating.
+      // The body comparison is intentionally byte-exact, so a legacy file
+      // differing only by CRLF line endings is preserved, not migrated.
       if (removeSkillMarker(text) === template) {
         writes.push({ name, file, content: candidate });
         diagnostics.push(legacyMigrationInfo(file, name, input.version));
@@ -234,10 +292,26 @@ export async function planManagedSkills(input: {
       continue;
     }
 
-    // A matching hash proves the body is unmodified, so any version
-    // difference is safe to update. The brief treats "differs" as stale even
-    // when the marker is newer than the running package.
-    if (marker.version !== input.version) {
+    // A matching hash proves the body is unmodified, but only a version that
+    // parses and is strictly older may be downgraded. A newer or unparseable
+    // version is preserved so an older DAB cannot overwrite newer content.
+    const installed = parseVersion(marker.version);
+    const current = parseVersion(input.version);
+    if (installed === undefined || current === undefined) {
+      states.push({ name, file, status: 'newer', version: marker.version, hash });
+      diagnostics.push(
+        uncomparableVersionWarning(file, name, marker.version, input.version),
+      );
+      continue;
+    }
+
+    const order = compareVersions(installed, current);
+    if (order > 0) {
+      states.push({ name, file, status: 'newer', version: marker.version, hash });
+      diagnostics.push(newerWarning(file, name, marker.version, input.version));
+      continue;
+    }
+    if (order < 0) {
       states.push({ name, file, status: 'stale', version: marker.version, hash });
       writes.push({ name, file, content: candidate });
       continue;
@@ -264,6 +338,15 @@ export async function applyManagedSkillWrites(
   plan: ManagedSkillPlan,
   options: { dryRun: boolean },
 ): Promise<ManagedSkillApplyResult> {
+  // The writer is the last line of defense for all-or-nothing: a plan with a
+  // blocking path/read error must never write any of its other entries.
+  const blocking = plan.diagnostics.find((item) => item.severity === 'error');
+  if (blocking !== undefined) {
+    throw new Error(
+      `managed skill plan has blocking diagnostics (${blocking.code}); refusing to write`,
+    );
+  }
+
   const result: ManagedSkillApplyResult = {
     created: [],
     updated: [],
@@ -326,6 +409,7 @@ export async function applyManagedSkillWrites(
         break;
       }
       case 'current':
+      case 'newer':
       case 'modified':
       case 'unversioned': {
         if (write !== undefined) {

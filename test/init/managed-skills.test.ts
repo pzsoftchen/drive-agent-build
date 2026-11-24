@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { lstatOrNull, writeFileAtomic } from '../../src/core/fs-atomic.ts';
-import { parseSkillMarker } from '../../src/core/skill-marker.ts';
+import { hashSkillBody, insertSkillMarker, parseSkillMarker } from '../../src/core/skill-marker.ts';
 import {
   applyManagedSkillWrites,
   managedSkillFile,
@@ -99,6 +99,57 @@ describe('planManagedSkills', () => {
     expect(plan.diagnostics).toEqual([]);
   });
 
+  it('preserves a newer skill with a differing body and a valid self-hash', async () => {
+    const template = await loadAuthoringSkillTemplate(NAME);
+    const body = `${template}\nLocal note.\n`;
+    const newer = insertSkillMarker(body, {
+      name: NAME,
+      version: '9.9.9',
+      sha256: hashSkillBody(body),
+    });
+    await writeSkill(NAME, newer);
+
+    const plan = await planOne();
+
+    expect(plan.states).toEqual([
+      { name: NAME, file: FILE, status: 'newer', version: '9.9.9', hash: hashSkillBody(body) },
+    ]);
+    expect(plan.writes).toEqual([]);
+    expect(plan.diagnostics).toHaveLength(1);
+    expect(plan.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-newer',
+      severity: 'warning',
+      file: FILE,
+    });
+
+    const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
+    expect(result.skipped).toEqual([FILE]);
+    expect(await readSkill(NAME)).toBe(newer);
+  });
+
+  it('preserves a skill whose marker version cannot be compared', async () => {
+    const template = await loadAuthoringSkillTemplate(NAME);
+    const marked = insertSkillMarker(template, {
+      name: NAME,
+      version: 'next',
+      sha256: hashSkillBody(template),
+    });
+    await writeSkill(NAME, marked);
+
+    const plan = await planOne();
+
+    expect(plan.states).toEqual([
+      { name: NAME, file: FILE, status: 'newer', version: 'next', hash: hashSkillBody(template) },
+    ]);
+    expect(plan.writes).toEqual([]);
+    expect(plan.diagnostics).toHaveLength(1);
+    expect(plan.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-newer',
+      severity: 'warning',
+      file: FILE,
+    });
+  });
+
   it('reports an edited body as modified and preserves it', async () => {
     const rendered = await renderAuthoringSkill(NAME, VERSION);
     await writeSkill(NAME, `${rendered}\nLocal note.\n`);
@@ -180,13 +231,37 @@ describe('planManagedSkills', () => {
     });
   });
 
-  it('treats a marker for another skill name as unversioned', async () => {
+  it('preserves a legacy CRLF body that differs only by line endings', async () => {
+    await writeSkill(NAME, (await legacySkill(NAME)).replaceAll('\n', '\r\n'));
+
+    const plan = await planOne();
+
+    expect(plan.states).toEqual([
+      { name: NAME, file: FILE, status: 'legacy', version: OLD_VERSION },
+    ]);
+    expect(plan.writes).toEqual([]);
+    expect(plan.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-legacy',
+      severity: 'warning',
+      file: FILE,
+    });
+  });
+
+  it('reports a marker naming another skill with a distinct diagnostic', async () => {
     await writeSkill(NAME, await renderAuthoringSkill('dab-architecture-writing', VERSION));
 
     const plan = await planOne();
 
     expect(plan.states[0]?.status).toBe('unversioned');
     expect(plan.writes).toEqual([]);
+    expect(plan.diagnostics).toHaveLength(1);
+    expect(plan.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-marker-mismatch',
+      severity: 'warning',
+      file: FILE,
+    });
+    expect(plan.diagnostics[0]?.message).toContain('dab-architecture-writing');
+    expect(plan.diagnostics[0]?.message).toContain(NAME);
   });
 
   it('checks all authoring skills unless names narrow the set', async () => {
@@ -286,6 +361,26 @@ describe('applyManagedSkillWrites', () => {
     const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
 
     expect(result).toEqual({ created: [], updated: [], migrated: [], skipped: [FILE] });
+  });
+
+  it('refuses to apply a plan containing blocking diagnostics', async () => {
+    const plan: ManagedSkillPlan = {
+      states: [{ name: NAME, file: FILE, status: 'missing' }],
+      writes: [{ name: NAME, file: FILE, content: 'untrusted content' }],
+      diagnostics: [
+        {
+          code: 'practice.skill-path',
+          severity: 'error',
+          message: 'path conflict',
+          file: FILE,
+        },
+      ],
+    };
+
+    await expect(applyManagedSkillWrites(root, plan, { dryRun: false })).rejects.toThrow(
+      /blocking/i,
+    );
+    expect(await lstatOrNull(join(root, FILE))).toBeNull();
   });
 
   it('fails loud when a managed state has no planned write', async () => {

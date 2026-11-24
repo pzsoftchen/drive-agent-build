@@ -3,6 +3,7 @@ import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { isPathInside } from '../core/paths.ts';
 import { parseSkillMarker } from '../core/skill-marker.ts';
+import { compareVersions, parseVersion } from '../core/version-compare.ts';
 import { scanMarkdown, slugifyHeading } from '../docs/markdown.ts';
 import {
   resolveDocsLanguage,
@@ -282,24 +283,6 @@ async function skillFileState(
       message: `skill file cannot be read: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-}
-
-function parseVersion(value: string): number[] | undefined {
-  if (!/^\d+(?:\.\d+)*$/.test(value)) {
-    return undefined;
-  }
-  return value.split('.').map((part) => Number(part));
-}
-
-function compareVersions(left: readonly number[], right: readonly number[]): number {
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (left[index] ?? 0) - (right[index] ?? 0);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return 0;
 }
 
 function stripInlineCode(line: string): string {
