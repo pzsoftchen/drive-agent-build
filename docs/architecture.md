@@ -112,7 +112,7 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 ## Core loop
 
 1. `dab init` scans a repository and writes the full authored skeleton for one scope.
-2. `dab normalize` adopts missing minimal source, imports physical Claude agents and skills, fills missing practice files and updates unmodified managed authoring skills, then prechecks every enabled target and writes target output only when all prechecks pass.
+2. `dab normalize` adopts missing minimal source, imports physical Claude agents and skills, fills missing practice files and updates unmodified older managed authoring skills, then prechecks every enabled target and writes target output only when all prechecks pass.
 3. `dab detect` checks drift, ownership, phase and scope without writing.
 4. `dab policy explain --target <provider>` shows the effective result for one target.
 

@@ -18,7 +18,7 @@ pnpm test
 - `pnpm test` runs the unit and integration suite.
 - `pnpm typecheck` checks TypeScript.
 - `pnpm doc-sync` runs translation pairing, links, wrap, budgets and Agent Note format.
-- `node dist/cli.js detect --strict` checks this repository's generated configuration and fails on warnings.
+- `node dist/cli.js detect --strict` checks this repository's generated configuration and fails on strict warnings; non-strict warnings remain warnings.
 - `node dist/cli.js normalize --dry-run` shows pending projection changes.
 
 ## Development loop
@@ -45,6 +45,6 @@ Documentation workflow: [docs/AGENTS.md](AGENTS.md).
 
 ## Release
 
-Update the version only in `package.json`; `dab --version` reads it from there. Update `CHANGELOG.md` and its Chinese pair, run the full suite and `pnpm doc-sync`, run `npm pack` and install the tarball in a temporary directory for a CLI smoke test, then tag the release.
+Update `package.json` to the release version, then run `pnpm build && node dist/cli.js normalize` to refresh the dogfood `dab-*` skill markers and `dab.yaml` source hashes. Update `CHANGELOG.md` and its Chinese pair, README/roadmap release status and links, run the full suite, `pnpm doc-sync`, `npm pack`, and install the tarball in a temporary directory for a CLI smoke test. Commit the normalized tree, then tag `v<version>`.
 
-The release workflow runs on `v*` tags. It checks that the tag matches `package.json`, runs the full suite and pack smoke test, publishes `@saydone/dab` with npm provenance through the `npm-release` environment, and creates the GitHub Release. The `npm-release` environment requires maintainer approval. The first release is published manually with `npm publish --access public`; configure the npm Trusted Publisher for `.github/workflows/release.yml` and the `npm-release` environment before using OIDC.
+The release workflow runs on `v*` tags. It verifies the tag matches `package.json`, runs normalize and rejects generated drift, runs the full suite and pack smoke test, publishes `@saydone/dab` with npm provenance through the `npm-release` environment, and creates the GitHub Release. The `npm-release` environment requires maintainer approval. The 0.1.1 bootstrap was published manually; 0.1.2 and later use GitHub OIDC. A new package or repository still needs a one-time npm Trusted Publisher entry for `.github/workflows/release.yml` with the `npm-release` environment.
