@@ -262,11 +262,22 @@ export async function practiceParentProblems(root: string): Promise<PracticePare
     ['.agents/rules', 'docs'],
     ['.agents/skills', 'skills'],
   ] as const) {
-    const result = await probeStat(join(root, path));
+    const absolute = join(root, path);
+    const result = await probeStat(absolute);
     if (result.problem !== undefined) {
       problems[key] = { path, message: problemMessage(path, result.problem) };
-    } else if (result.info !== null && !result.info.isDirectory()) {
+      continue;
+    }
+    if (result.info === null) {
+      continue;
+    }
+    if (!result.info.isDirectory()) {
       problems[key] = { path, message: `${path} is not a directory` };
+      continue;
+    }
+    const accessProblem = await directoryAccessProblem(absolute, path);
+    if (accessProblem !== undefined) {
+      problems[key] = { path, message: accessProblem };
     }
   }
   return problems;
@@ -281,6 +292,7 @@ export const CORE_SOURCE_PARENT_PATHS = [
   '.agents/agents',
   '.agents/hooks',
   '.agents/memory',
+  '.agents/notes',
   '.agents/policies',
   '.agents/adapters',
 ] as const;
@@ -307,15 +319,23 @@ export async function sourceParentProblems(root: string): Promise<PracticeParent
       const target = await probeStat(absolute);
       if (target.problem !== undefined) {
         problems.push({ path, message: problemMessage(path, target.problem) });
-      } else if (target.info === null) {
-        problems.push({ path, message: `${path} is a dangling symlink` });
-      } else if (!target.info.isDirectory()) {
-        problems.push({ path, message: `${path} is not a directory` });
+        continue;
       }
+      if (target.info === null) {
+        problems.push({ path, message: `${path} is a dangling symlink` });
+        continue;
+      }
+      if (!target.info.isDirectory()) {
+        problems.push({ path, message: `${path} is not a directory` });
+        continue;
+      }
+    } else if (!link.info.isDirectory()) {
+      problems.push({ path, message: `${path} is not a directory` });
       continue;
     }
-    if (!link.info.isDirectory()) {
-      problems.push({ path, message: `${path} is not a directory` });
+    const accessProblem = await directoryAccessProblem(absolute, path);
+    if (accessProblem !== undefined) {
+      problems.push({ path, message: accessProblem });
     }
   }
   return problems;
@@ -329,4 +349,11 @@ export function sourceParentDiagnostic(problem: PracticeParentProblem): Diagnost
     file: problem.path,
     hint: 'Resolve the path conflict manually; DAB never writes through it.',
   };
+}
+
+export function practiceParentDiagnostics(
+  problems: PracticeParentProblems,
+): Diagnostic[] {
+  return [problems.docs, problems.skills]
+    .flatMap((problem) => problem === undefined ? [] : [sourceParentDiagnostic(problem)]);
 }

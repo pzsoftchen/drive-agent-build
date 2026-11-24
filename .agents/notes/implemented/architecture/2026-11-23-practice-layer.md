@@ -37,12 +37,12 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 - An importable physical `.claude/skills/dab-*` directory is not duplicated: `init` reports it pending, and `dab normalize` imports it before later runs project it. A non-directory entry is reported as a warning pending with `practice.skill-import-conflict` and no import hint, and init never writes or replaces it.
 - `feature` manifests receive the same practice behavior as `generic`, so a normalize can add docs and skills that did not exist before. `--dry-run` and the `practices` JSON expose the plan first.
 - New generic projects no longer get the bilingual rule. DAB itself keeps the rule, so its own documentation pack is policy-skipped while other projects get single-language docs; project rules win.
-- Every authored source parent a command reads is validated before discovery: a regular file, dangling link, denied access or symlink loop at `.agents/agents`, `.agents/hooks`, `.agents/memory`, `.agents/policies` or `.agents/adapters` is a governed `path.conflict` that blocks project and global runs before writes; `.agents/rules` and `.agents/skills` stay practice-owned diagnostics. Unreadable practice skill directories are governed path errors instead of later discovery errors.
+- Every authored source parent a command reads is validated before discovery: a regular file, dangling link, denied access or symlink loop at `.agents/agents`, `.agents/hooks`, `.agents/memory`, `.agents/notes`, `.agents/policies` or `.agents/adapters` is a governed `path.conflict` that blocks project and global runs before writes; `.agents/rules` and `.agents/skills` stay practice-owned diagnostics. Access-denied source parents and unreadable practice skill directories are governed path errors instead of later discovery errors; the best-effort secret scan may skip unreadable subtrees but does not own those errors.
 - The detect score includes practice entries, and `--strict` fails on missing or stale practice content except the two non-strict policy and preserved warnings.
 
 ## Verification
 
-- `pnpm test`: 59 test files, 660 tests pass.
+- `pnpm test`: 59 test files, 698 tests pass.
 - `pnpm typecheck`: no errors.
 - `pnpm doc-sync`: pairing, links, wrap, budgets and Agent Note checks pass.
 - `pnpm build`: TypeScript compiles.

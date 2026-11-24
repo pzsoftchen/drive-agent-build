@@ -63,6 +63,7 @@ import {
 import { AUTHORING_SKILL_NAMES } from '../init/practice-authoring.ts';
 import {
   authoredDirectoryState,
+  practiceParentDiagnostics,
   practiceParentProblems,
   probeStat,
   sourceParentDiagnostic,
@@ -676,13 +677,15 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     throw error;
   }
 
-  // Discovery reads `.agents/agents`, `.agents/hooks`, `.agents/memory`,
-  // `.agents/policies` and `.agents/adapters` directly. A regular file or
-  // denied access at any of them would fail as an internal error, so report a
-  // governed conflict and block before any write or discovery.
-  const sourceProblems = await sourceParentProblems(layout.scopeRoot);
-  if (sourceProblems.length > 0) {
-    const sourceDiagnostics = sourceProblems.map(sourceParentDiagnostic);
+  // Discovery reads every `.agents` source parent directly. A regular file,
+  // dangling link or denied access at any of them would fail as an internal
+  // error, so report a governed conflict and block before any write or
+  // discovery. Practice parents share the same probe and diagnostic shape.
+  const sourceDiagnostics = [
+    ...(await sourceParentProblems(layout.scopeRoot)).map(sourceParentDiagnostic),
+    ...practiceParentDiagnostics(await practiceParentProblems(layout.scopeRoot)),
+  ];
+  if (sourceDiagnostics.length > 0) {
     return blocked(
       scope,
       root,

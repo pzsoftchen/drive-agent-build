@@ -467,6 +467,134 @@ See [nested](architecture.md/child.md).
     ]));
   });
 
+  it('governs a regular file at .agents/notes on an initialized project', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await rm(join(project.root, '.agents/notes'), { recursive: true, force: true });
+    await writeProjectFile(project.root, '.agents/notes', 'not a directory\n');
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Notes', label: '.agents/notes', status: 'error' }),
+    ]));
+  });
+
+  it('governs a dangling .agents/notes symlink on an initialized project', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await rm(join(project.root, '.agents/notes'), { recursive: true, force: true });
+    await symlink('missing-notes', join(project.root, '.agents/notes'), 'dir');
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Notes', label: '.agents/notes', status: 'error' }),
+    ]));
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory on an initialized project',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const project = await initializedProject();
+      await completePractice(project);
+      const directory = join(project.root, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await detect(project);
+
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file === `.agents/${parent}`
+            && ['path.conflict', 'practice.docs-path', 'practice.skill-path']
+              .includes(item.code),
+        )).toBe(true);
+        expect(result.checklist.some(
+          (entry) => entry.status === 'ok'
+            && entry.label === `.agents/${parent}`,
+        )).toBe(false);
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it('governs a regular file at global .agents/notes', async () => {
+    const fixture = await makeGlobalFixture();
+    homes.push(fixture.home);
+    await rm(join(fixture.agents, 'notes'), { recursive: true, force: true });
+    await writeFile(join(fixture.agents, 'notes'), 'not a directory\n');
+
+    const result = await detectProject({
+      cwd: fixture.agents,
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.scope).toBe('global');
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Notes', label: '.agents/notes', status: 'error' }),
+    ]));
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable global .agents/%s directory',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const fixture = await makeGlobalFixture();
+      homes.push(fixture.home);
+      const directory = join(fixture.agents, parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await detectProject({
+          cwd: fixture.agents,
+          home: fixture.home,
+          runner: goodRunner,
+        });
+
+        expect(result.scope).toBe('global');
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error' && item.file === `.agents/${parent}`,
+        )).toBe(true);
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
   it('governs a regular file at .agents/agents on an initialized project', async () => {
     const project = await initializedProject();
     await completePractice(project);

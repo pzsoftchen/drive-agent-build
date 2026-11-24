@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  chmod,
   lstat,
   mkdir,
   readFile,
@@ -30,6 +31,10 @@ const goodRunner: CommandRunner = async () => ({
 const projects: ProjectFixture[] = [];
 const dirs: string[] = [];
 const homes: string[] = [];
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
+const GOVERNED_SOURCE_CODES = ['path.conflict', 'practice.docs-path', 'practice.skill-path'];
 
 async function projectFixture(): Promise<ProjectFixture> {
   const project = await makeProject();
@@ -1342,6 +1347,182 @@ describe('normalize practice layer', () => {
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
   });
+
+  it('governs a regular file at .agents/notes with zero writes', async () => {
+    const root = await tempDir('dab-practice-notes-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/notes'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(result.practices?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'path.conflict', file: '.agents/notes' }),
+    ]));
+    expect(await readFile(join(root, '.agents/notes'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a dangling .agents/notes symlink with zero writes', async () => {
+    const root = await tempDir('dab-practice-notes-dangling-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await symlink('missing-notes', join(root, '.agents/notes'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect((await lstat(join(root, '.agents/notes'))).isSymbolicLink()).toBe(true);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory with zero writes',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const root = await tempDir('dab-practice-source-access-');
+      const directory = join(root, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await normalizeProject({
+          cwd: root,
+          home: dirname(root),
+          runner: goodRunner,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file === `.agents/${parent}`
+            && GOVERNED_SOURCE_CODES.includes(item.code),
+        )).toBe(true);
+        expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+        expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+        expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory in converge mode with zero writes',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const project = await initializedProject();
+      const directory = join(project.root, '.agents', parent);
+      const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await normalizeProject({
+          cwd: project.root,
+          home: dirname(project.root),
+          runner: goodRunner,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file === `.agents/${parent}`
+            && GOVERNED_SOURCE_CODES.includes(item.code),
+        )).toBe(true);
+        expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8'))
+          .toBe(settings);
+        expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it('governs a regular file at global .agents/notes with zero writes', async () => {
+    const fixture = await globalFixture();
+    await rm(join(fixture.agents, 'notes'), { recursive: true, force: true });
+    await writeFile(join(fixture.agents, 'notes'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: fixture.agents,
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.scope).toBe('global');
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(await lstatOrNull(join(fixture.home, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable global .agents/%s directory with zero writes',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const fixture = await globalFixture();
+      const directory = join(fixture.agents, parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await normalizeProject({
+          cwd: fixture.agents,
+          home: fixture.home,
+          runner: goodRunner,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.scope).toBe('global');
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file === `.agents/${parent}`
+            && GOVERNED_SOURCE_CODES.includes(item.code),
+        )).toBe(true);
+        expect(await lstatOrNull(join(fixture.home, '.claude/CLAUDE.md'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
 
   it('governs a regular file at global .agents/hooks with zero writes', async () => {
     const fixture = await globalFixture();

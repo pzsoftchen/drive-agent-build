@@ -18,6 +18,8 @@ import {
 } from '../init/adoption.ts';
 import {
   pathProblemFrom,
+  practiceParentDiagnostics,
+  practiceParentProblems,
   problemMessage,
   sourceParentDiagnostic,
   sourceParentProblems,
@@ -377,7 +379,14 @@ export async function preflightProject(
   const sourceProblems = await sourceParentProblems(adoption.root);
   const sourcePlan = minimalSourcePlan(scan, adoption.scope);
   const manifestPath = relativePath(adoption.root, adoption.manifestPath);
-  const sourceDiagnostics = sourceProblems.map(sourceParentDiagnostic);
+  // Project practice parents are governed by `preflightPractice`; global scope
+  // has no practice checks, so probe and report them here.
+  const sourceDiagnostics = [
+    ...sourceProblems.map(sourceParentDiagnostic),
+    ...(adoption.scope === 'global'
+      ? practiceParentDiagnostics(await practiceParentProblems(adoption.root))
+      : []),
+  ];
   const diagnostics: Diagnostic[] = [...scan.diagnostics, ...sourceDiagnostics];
   const manifestProbe = await probePath(adoption.root, manifestPath);
   const hasManifest = manifestProbe.present;

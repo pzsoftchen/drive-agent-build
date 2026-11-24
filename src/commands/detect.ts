@@ -10,6 +10,8 @@ import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { contractJson } from '../core/json.ts';
 import {
+  practiceParentDiagnostics,
+  practiceParentProblems,
   probeLstat,
   sourceParentDiagnostic,
   sourceParentProblems,
@@ -516,11 +518,17 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     throw error;
   }
 
-  // Discovery reads `.agents/agents`, `.agents/hooks`, `.agents/memory`,
-  // `.agents/policies` and `.agents/adapters` directly. A regular file or
-  // denied access at any of them is a governed path conflict, not an internal
-  // error, and the command fails before discovery runs.
-  const sourceProblems = (await sourceParentProblems(root)).map(sourceParentDiagnostic);
+  // Discovery reads every `.agents` source parent directly. A regular file,
+  // dangling link or denied access at any of them is a governed path conflict,
+  // not an internal error, and the command fails before discovery runs. Project
+  // practice parents keep their practice-owned codes in `checkPracticePackages`;
+  // global scope has no practice packs, so their conflicts are governed here.
+  const sourceProblems = [
+    ...(await sourceParentProblems(root)).map(sourceParentDiagnostic),
+    ...(sourceRoot.scope === 'global'
+      ? practiceParentDiagnostics(await practiceParentProblems(root))
+      : []),
+  ];
   if (sourceProblems.length > 0) {
     diagnostics.push(...sourceProblems);
     // `path.conflict` normally groups under Safety; for a broken source parent

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { initializeProject, runInit } from '../../src/commands/init.ts';
@@ -13,6 +13,9 @@ import { makeGlobalFixture } from '../helpers/global.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
 const dirs: string[] = [];
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
 
 const goodRunner: CommandRunner = async () => ({
   stdout: '2.1.325 (Claude Code)\n',
@@ -248,6 +251,88 @@ describe('scope-aware init', () => {
     expect(await lstatOrNull(join(home, '.agents/dab.yaml'))).toBeNull();
     expect(await lstatOrNull(join(home, '.claude/CLAUDE.md'))).toBeNull();
   });
+
+  it('governs a regular file at global .agents/notes without writes', async () => {
+    const home = await tempDir('dab-home-init-');
+    await mkdir(join(home, '.agents'), { recursive: true });
+    await writeFile(join(home, '.agents/notes'), 'not a directory\n');
+
+    const result = await initializeProject({
+      cwd: home,
+      path: '.agents',
+      home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(await lstatOrNull(join(home, '.agents/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(home, '.agents/dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(home, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
+  it('governs a dangling global .agents/notes symlink without writes', async () => {
+    const home = await tempDir('dab-home-init-');
+    await mkdir(join(home, '.agents'), { recursive: true });
+    await symlink('missing-notes', join(home, '.agents/notes'), 'dir');
+
+    const result = await initializeProject({
+      cwd: home,
+      path: '.agents',
+      home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(await lstatOrNull(join(home, '.agents/AGENTS.md'))).toBeNull();
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable global .agents/%s directory without writes',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const home = await tempDir('dab-home-init-');
+      const directory = join(home, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await initializeProject({
+          cwd: home,
+          path: '.agents',
+          home,
+          runner: goodRunner,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error' && item.file === `.agents/${parent}`,
+        )).toBe(true);
+        expect(await lstatOrNull(join(home, '.agents/AGENTS.md'))).toBeNull();
+        expect(await lstatOrNull(join(home, '.agents/dab.yaml'))).toBeNull();
+        expect(await lstatOrNull(join(home, '.claude/CLAUDE.md'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
 
   it('leaves user-level settings and gitignore byte-identical in global scope', async () => {
     const home = await tempDir('dab-home-init-');

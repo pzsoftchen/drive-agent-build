@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initializeProject, runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
@@ -12,6 +12,9 @@ import {
 import { makeTempDir } from '../helpers/tmp.ts';
 
 const dirs: string[] = [];
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
 
 async function tempDir(): Promise<string> {
   const dir = await makeTempDir('dab-init-');
@@ -930,6 +933,80 @@ describe('runInit', () => {
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
     expect(await readFile(join(root, '.agents/agents'), 'utf8')).toBe('not a directory\n');
   });
+
+  it('governs a regular file at .agents/notes without an internal error', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/notes'), 'not a directory\n');
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await readFile(join(root, '.agents/notes'), 'utf8')).toBe('not a directory\n');
+  });
+
+  it('governs a dangling .agents/notes symlink without an internal error', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await symlink('missing-notes', join(root, '.agents/notes'), 'dir');
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/notes',
+      }),
+    ]));
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory without an internal error',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const root = await tempDir();
+      const directory = join(root, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await initializeProject({ cwd: root });
+
+        expect(result.ok).toBe(false);
+        expect(result.exitCode).toBe(3);
+        expect(result.diagnostics).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            file: `.agents/${parent}`,
+          }),
+        ]));
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error' && item.file === `.agents/${parent}`,
+        )).toBe(true);
+        expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+        expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+        expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing'))).toBeNull();
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
 
   it('omits Documentation links when the bilingual rule skips an existing and a missing doc', async () => {
     const root = await tempDir();

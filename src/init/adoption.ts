@@ -29,6 +29,7 @@ import {
   type ResolvedProfile,
 } from './practice.ts';
 import {
+  practiceParentDiagnostics,
   practiceParentProblems,
   probeLstat,
   sourceParentDiagnostic,
@@ -432,8 +433,15 @@ export async function prepareNormalizeAdoption(
   const sourceRoot = sourceRootOf(adoption);
   const manifestKey = toPosix(relative(adoption.root, adoption.manifestPath));
   const hasManifest = (await lstatOrNull(adoption.manifestPath)) !== null;
-  const sourceProblems = (await sourceParentProblems(adoption.root))
-    .map(sourceParentDiagnostic);
+  // Project practice parents are probed by the practice planner, which owns
+  // their `practice.docs-path`/`practice.skill-path` codes. Global scope has no
+  // practice packs, so their access and type conflicts are governed here.
+  const sourceProblems = [
+    ...(await sourceParentProblems(adoption.root)).map(sourceParentDiagnostic),
+    ...(adoption.scope === 'global'
+      ? practiceParentDiagnostics(await practiceParentProblems(adoption.root))
+      : []),
+  ];
   const sourceExtras = sourceProblems.length === 0
     ? {}
     : { sourceProblems };

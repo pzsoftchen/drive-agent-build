@@ -37,12 +37,12 @@ DAB v0.1.1 只治理配置，却没有生成让项目的 agent 工作保持可�
 - 可导入的物理 `.claude/skills/dab-*` 目录不会被重复创建：`init` 将其报告为 pending，`dab normalize` 导入后，后续运行会把它投影。非目录条目以 warning pending 报告为 `practice.skill-import-conflict`，不提供 import 提示，init 从不写入或替换它。
 - `feature` manifest 获得与 `generic` 相同的实践行为，因此一次 normalize 可能新增此前不存在的 docs 和 skills。`--dry-run` 和 `practices` JSON 会先展示计划。
 - 新的 generic 项目不再获得双语规则。DAB 自身保留该规则，因此自己的 documentation pack 被 policy skip，而其他项目获得单语 docs；项目规则优先。
-- 命令读取的每个 authored source parent 都会在发现之前校验：`.agents/agents`、`.agents/hooks`、`.agents/memory`、`.agents/policies` 或 `.agents/adapters` 处的普通文件、悬空链接、访问拒绝或符号链接循环是受治理的 `path.conflict`，会在写入前阻断 project 和 global 运行；`.agents/rules` 和 `.agents/skills` 保持 practice 自有的诊断。不可读的 practice skill 目录是受治理的路径错误，而不是后续的发现错误。
+- 命令读取的每个 authored source parent 都会在发现之前校验：`.agents/agents`、`.agents/hooks`、`.agents/memory`、`.agents/notes`、`.agents/policies` 或 `.agents/adapters` 处的普通文件、悬空链接、访问拒绝或符号链接循环是受治理的 `path.conflict`，会在写入前阻断 project 和 global 运行；`.agents/rules` 和 `.agents/skills` 保持 practice 自有的诊断。访问被拒绝的 source parent 和不可读的 practice skill 目录是受治理的路径错误，而不是后续的发现错误；best-effort secret scan 可能跳过不可读子树，但不负责这些错误。
 - Detect score 包含 practice 条目，`--strict` 会在 practice 内容缺失或落后时失败，但两个 non-strict 的政策与保留类 warning 除外。
 
 ## Verification
 
-- `pnpm test`：59 个测试文件、660 个测试通过。
+- `pnpm test`：59 个测试文件、698 个测试通过。
 - `pnpm typecheck`：无错误。
 - `pnpm doc-sync`：配对、链接、排版、预算和 Agent Note 检查通过。
 - `pnpm build`：TypeScript 编译通过。

@@ -62,7 +62,7 @@ Global 布局：
 
 - `dab init ~/.agents` 初始化 global scope：编写源位于 `~/.agents/`，投影位于 `$HOME` 下。
 - `dab init path` 把 `path` 作为确切的 source root，并在缺失时创建它。它拒绝在已有 source root 内部创建 source root。
-- 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。非 import 的未受管 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
+- 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。`.agents` source parent（`agents`、`hooks`、`memory`、`notes`、`policies`、`adapters`、`rules`、`skills`）处的普通文件、悬空链接或不可访问状态是受治理的冲突，会阻止所有写入。非 import 的未受管 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
 - Init 从不导入现有 `.claude/agents` 或 `.claude/skills` 条目，也不会为它们创建 adoption 备份。Import 是 `dab normalize` 的职责。
 - 生成的 manifest 是 v2，包含 `scope`、`profile`、`docs.language`、`targets` 和 `instructions: symlink`。`--profile` 接受 `generic`（默认）或 `feature`；`feature` 是行为相同的兼容别名，且从不覆盖已有的 authored manifest。
 - `docs.language` 控制项目文档语言：`auto`（默认）、`en` 或 `zh`。`auto` 依次采样现有的 `docs/AGENTS.md`、`docs/architecture.md`、根 `AGENTS.md`、`README.md`、`package.json` description，然后读取 locale；没有任何信号时使用 `en`。Init 输出 `Language: <value> (source: <source>)`，JSON 追加 `language: { value, source }`。
@@ -209,6 +209,7 @@ next: use dab-architecture-writing
 
 - `score` 统计全部条目中 `[OK]` 的比例；其他状态都不计入 OK，且 score 永不改变退出码。
 - 已初始化 scope 与未初始化 scope 运行同一份只读 import 计划，因此可导入条目会报告为 `[IMPORTABLE]`，而不是 unmanaged 或 physical-copy 投影漂移。
+- `.agents` source parent（`agents`、`hooks`、`memory`、`notes`、`policies`、`adapters`、`rules`、`skills`）处的普通文件、悬空链接或不可访问状态在其分组中报告为 `[ERROR]` `path.conflict`；project 的 `rules` 和 `skills` practice parents 保持 `practice.docs-path` 和 `practice.skill-path`。Secret scan 是尽力而为，可能跳过不可读子树；source-parent 访问错误由 parent probe 报告。
 - `phase` 为 `initialized` 表示 `dab.yaml` 可解析且 `.agents/` 存在；只有一个 marker 或 manifest 无效时为 `partial`；两者都不存在时为 `uninitialized`。
 - `Profile` 来自有效的 manifest；未初始化 scope，或没有有效 manifest 的 partial scope，显示 `not initialized`。
 - `Documentation` 组出现在所有 project phase，global scope 不显示。没有双语规则时，缺失的 docs 为 `[MISSING]`，next 为 `dab normalize`；存在规则时，它们是 `[WARN]` policy skip，next 为删除规则。内部链接损坏为 `[ERROR]`；行首 `TODO:` 或 `TODO(owner):` 标记和空架构章节为 `[WARN]`，next 为 `use dab-doc-writing` 或 `use dab-architecture-writing`。每个条目的 detail 都包含 `Language: <value> (source: <source>)`。manifest 无效的 partial scope 仍显示该组，但不提供 `dab normalize` next action。
@@ -236,7 +237,7 @@ dab normalize [--dry-run] [--fix] [--json]
 - Adoption 在 source-root 解析前运行。未初始化或 partial 的 project 会获得缺失的最小 authored source：`AGENTS.md`、`dab.yaml`、`.agents/policies/project.yaml`、`.agents/adapters/claude-code.yaml` 和 `.agents/memory/INDEX.md`，以及空的 `.agents/agents`、`.agents/skills`、`.agents/rules`、`.agents/hooks` 和 `.agents/notes` 目录。Global scope 使用 `.agents/AGENTS.md` 和 `.agents/dab.yaml`（位于 `$HOME`）以及相同的 source 子目录。它从不创建 profile 的默认 agents 或 core skills；命名空间的 `dab-*` authoring skills 是例外。full profile skeleton 请使用 `dab init`。
 - Normalize 在 project scope 补齐缺失的 practice artifacts。未初始化或 partial project 的 adoption 包含 documentation 和 authoring packs；已初始化 project 的 convergence 只补缺失的 docs 和 `dab-*` skills。已有文档和 skill 目录永不被覆盖，`--fix` 也从不替换或备份 authored practice 路径。
 - 当 `.agents/rules/docs-bilingual.md` 存在时，缺失的 documentation targets 以 `practice.docs-bilingual-policy` 被 policy skip；已有 docs 作为 skipped 保留，规则本身保留。Authoring skills 仍会安装，target 写入继续。
-- 阻断性的 practice 错误（路径冲突、符号链接逃逸或不可读路径）会阻止所有写入，包括 `.claude`。Practice 写入发生在 target planning 之前，因此新 skill 会在同一次运行中被投影；后续 target 失败会保留幂等的 practice 文件，重跑是安全的。
+- 阻断性的 source 或 practice 错误（`.agents` source parent 处的普通文件、悬空链接、访问拒绝或符号链接循环，逃逸链接或不可读路径）会阻止所有写入，包括 `.claude`。Practice 写入发生在 target planning 之前，因此新 skill 会在同一次运行中被投影；后续 target 失败会保留幂等的 practice 文件，重跑是安全的。
 - 已安装的 `dab-*` skills 是 authored 副本。DAB 从不更新它们；`detect` 会报告落后的 `dab-skill` 标记，等待手工审阅。
 - 人类输出打印 `Language: <value> (source: <source>)`。在 convergence 模式下会列出 practice 的 `create` 和 `skip` 路径；adoption 通过 `adoption.sourceActions` 报告 practice 创建。
 - 现有 authored 文件永不被覆盖。现有 `dab.yaml` 若无法解析，normalize 会以配置错误（YAML 语法错误为 `config.yaml`，schema 或版本错误为 `config.invalid`）停止并零写入；修复文件后重跑。

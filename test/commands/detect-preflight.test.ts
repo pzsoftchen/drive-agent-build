@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject, runDetect } from '../../src/commands/detect.ts';
 import { preflightProject } from '../../src/detect/preflight.ts';
@@ -13,6 +13,10 @@ const goodRunner: CommandRunner = async () => ({
   stderr: '',
   exitCode: 0,
 });
+
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
 
 interface ChecklistItem {
   group: string;
@@ -367,6 +371,75 @@ describe('detect preflight', () => {
       expect.objectContaining({ group: 'Agents', status: 'error' }),
     ]));
   });
+
+  it('governs a regular file at the notes path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/notes', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: expect.stringMatching(/^\.agents\/notes\/?$/),
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Notes', status: 'error' }),
+    ]));
+  });
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable .agents/%s directory during preflight',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const root = await tempDir();
+      const directory = join(root, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await detectProject({ cwd: root, home: dirname(root) });
+
+        expect(result.phase).toBe('partial');
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file?.replace(/\/$/, '') === `.agents/${parent}`,
+        )).toBe(true);
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
+
+  it.each(['hooks', 'rules', 'notes'])(
+    'governs an unreadable global .agents/%s directory during preflight',
+    async (parent) => {
+      if (!canDenyRead) {
+        return;
+      }
+      const home = await tempDir('dab-global-preflight-');
+      const directory = join(home, '.agents', parent);
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o000);
+      try {
+        const result = await detectProject({ cwd: join(home, '.agents'), home });
+
+        expect(result.scope).toBe('global');
+        expect(result.phase).toBe('partial');
+        expect(result.diagnostics.some(
+          (item) => item.severity === 'error'
+            && item.file?.replace(/\/$/, '') === `.agents/${parent}`,
+        )).toBe(true);
+      } finally {
+        await chmod(directory, 0o755);
+      }
+    },
+  );
 
   it('emits a governed diagnostic for a non-practice path with a file parent', async () => {
     const root = await tempDir();
