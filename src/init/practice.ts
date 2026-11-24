@@ -553,6 +553,14 @@ export async function planAuthoredScaffold(
     });
   }
 
+  // Core AGENTS.md is not a target in converge mode, but pack templates link
+  // it when present. Anchor an existing file without planning or writing it;
+  // absence keeps templates on the plain inline form.
+  const coreAgents = input.scope === 'global' ? '.agents/AGENTS.md' : 'AGENTS.md';
+  if ((await probeLstat(join(input.root, coreAgents))).info !== null) {
+    existing.add(coreAgents);
+  }
+
   const anchors = new Set<string>();
   for (const path of existing) {
     if (!policySkippedSet.has(path)) {

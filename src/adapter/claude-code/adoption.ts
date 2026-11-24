@@ -617,13 +617,14 @@ async function planSkills(
 interface AuthoredFacts {
   agents: Map<string, string>;
   skills: Map<string, string>;
+  diagnostics: Diagnostic[];
 }
 
 /**
- * `.agents/rules` and `.agents/skills` are practice-owned parents: a regular
- * file or denied access there makes discovery raise ENOTDIR/EACCES, and the
- * practice checks report the governed diagnostic. Imports treat the affected
- * tree as empty instead of failing; every other `.agents` error stays loud.
+ * Only the exact `.agents/rules` and `.agents/skills` parents are
+ * practice-owned: a failure there is reported by the practice checks, so
+ * imports treat the affected tree as empty. A nested unreadable skill directory
+ * is reported per entry by `discoverSkills` and keeps its sibling facts.
  */
 async function discoverAuthored<T>(
   root: string,
@@ -641,7 +642,8 @@ async function discoverAuthored<T>(
 
 /**
  * Authored names already used under `.agents`. Only valid discovered items are
- * indexed; their discovery diagnostics belong to the normalize pipeline.
+ * indexed; discovery diagnostics surface through the import plan so preflight
+ * and initialized runs report the same governed skill errors.
  */
 async function authoredFacts(input: ClaudeAdoptionInput): Promise<AuthoredFacts> {
   const [agents, skills] = await Promise.all([
@@ -660,7 +662,14 @@ async function authoredFacts(input: ClaudeAdoptionInput): Promise<AuthoredFacts>
       skillNames.set(item.name, item.dir);
     }
   }
-  return { agents: agentNames, skills: skillNames };
+  // Only skill discovery is fault-isolated per entry. Agent diagnostics keep
+  // their existing pipeline ownership, while an unreadable nested skill must
+  // surface here so preflight cannot plan an import around a hidden skill.
+  return {
+    agents: agentNames,
+    skills: skillNames,
+    diagnostics: [...skills.diagnostics],
+  };
 }
 
 /**
@@ -679,6 +688,7 @@ export async function planClaudeAdoption(
   return {
     entries,
     diagnostics: [
+      ...authored.diagnostics,
       ...agents.diagnostics,
       ...skills.diagnostics,
       ...entries.flatMap((entry) => entry.diagnostics),

@@ -661,6 +661,45 @@ See [nested](architecture.md/child.md).
     }
   });
 
+  it('reports an unreadable user skill directory instead of a healthy project', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const project = await initializedProject();
+    await completePractice(project);
+    const directory = join(project.root, '.agents/skills/doc-sync');
+    await chmod(directory, 0o000);
+    try {
+      const result = await detect(project);
+
+      expect(result.exitCode).toBe(3);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'skill.unreadable',
+          severity: 'error',
+          file: '.agents/skills/doc-sync',
+        }),
+      ]));
+      expect(result.checklist).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          group: 'Skills',
+          label: '.agents/skills/doc-sync',
+          status: 'error',
+        }),
+        expect.objectContaining({
+          group: 'Skills',
+          label: 'dab-doc-writing',
+          status: 'ok',
+        }),
+      ]));
+      expect(result.checklist.some(
+        (entry) => entry.label === '.agents/skills/doc-sync' && entry.status === 'ok',
+      )).toBe(false);
+    } finally {
+      await chmod(directory, 0o755);
+    }
+  });
+
   it('reports a skill directory symlinked to a file as a path error', async () => {
     const project = await initializedProject();
     await completePractice(project);

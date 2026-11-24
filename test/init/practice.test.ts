@@ -127,6 +127,47 @@ describe('planAuthoredScaffold anchors', () => {
     expect(plan.policySkipped).toEqual(['skip.md']);
   });
 
+  it('anchors an existing root AGENTS.md in converge mode without planning it', async () => {
+    await writeFile(join(root, 'AGENTS.md'), '# Rules\n');
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['docs/AGENTS.md'] }),
+      files: (context) => ({
+        'docs/AGENTS.md': context.anchors.has('AGENTS.md') ? 'links root' : 'plain root',
+      }),
+    };
+    const plan = await planWith(pack, { mode: 'converge' });
+    expect(plan.files).toEqual({ 'docs/AGENTS.md': 'links root' });
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('omits the root AGENTS.md anchor in converge mode when it is missing', async () => {
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['docs/AGENTS.md'] }),
+      files: (context) => ({
+        'docs/AGENTS.md': context.anchors.has('AGENTS.md') ? 'links root' : 'plain root',
+      }),
+    };
+    const plan = await planWith(pack, { mode: 'converge' });
+    expect(plan.files).toEqual({ 'docs/AGENTS.md': 'plain root' });
+  });
+
+  it('anchors an existing global .agents/AGENTS.md in converge mode', async () => {
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/AGENTS.md'), '# Global rules\n');
+    const pack: PracticePack = {
+      id: 'fake',
+      targets: () => ({ paths: ['docs/AGENTS.md'] }),
+      files: (context) => ({
+        'docs/AGENTS.md': context.anchors.has('.agents/AGENTS.md') ? 'links global' : 'plain',
+      }),
+    };
+    const plan = await planWith(pack, { mode: 'converge', scope: 'global' });
+    expect(plan.files).toEqual({ 'docs/AGENTS.md': 'links global' });
+    expect(plan.skipped).toEqual([]);
+  });
+
   it('skips existing paths and reports policy-skipped paths separately', async () => {
     await writeFile(join(root, 'one.md'), 'authored');
     const pack: PracticePack = {

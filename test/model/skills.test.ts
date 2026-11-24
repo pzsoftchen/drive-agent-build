@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, rm } from 'node:fs/promises';
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { discoverSkills, validateSkillSource } from '../../src/model/skills.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 
 const projects: ProjectFixture[] = [];
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
 
 async function project(): Promise<ProjectFixture> {
   const fixture = await makeProject();
@@ -104,5 +107,56 @@ describe('skill discovery', () => {
     const result = await validateSkillSource(fixture.root, dir);
     expect(result.item).toBeUndefined();
     expect(result.diagnostics.map((d) => d.code)).toContain('skill.missing');
+  });
+
+  it('isolates an unreadable skill directory and keeps valid siblings', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const fixture = await project();
+    await writeProjectFile(
+      fixture.root,
+      '.agents/skills/good/SKILL.md',
+      '---\nname: good\ndescription: Good.\n---\nBody.\n',
+    );
+    const broken = join(fixture.agents, 'skills', 'broken');
+    await mkdir(broken, { recursive: true });
+    await writeFile(join(broken, 'SKILL.md'), '---\nname: broken\ndescription: Broken.\n---\nBody.\n');
+    await chmod(broken, 0o000);
+    try {
+      const result = await discoverSkills(fixture.root, fixture.agents);
+
+      expect(result.items.map((item) => item.name)).toEqual(['good']);
+      expect(result.diagnostics).toEqual([expect.objectContaining({
+        code: 'skill.unreadable',
+        severity: 'error',
+        file: '.agents/skills/broken',
+      })]);
+    } finally {
+      await chmod(broken, 0o755);
+    }
+  });
+
+  it('reports an unreadable skill directory from a single-skill validation', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const fixture = await project();
+    const broken = join(fixture.agents, 'skills', 'broken');
+    await mkdir(broken, { recursive: true });
+    await writeFile(join(broken, 'SKILL.md'), '---\nname: broken\ndescription: Broken.\n---\nBody.\n');
+    await chmod(broken, 0o000);
+    try {
+      const result = await validateSkillSource(fixture.root, broken);
+
+      expect(result.item).toBeUndefined();
+      expect(result.diagnostics).toEqual([expect.objectContaining({
+        code: 'skill.unreadable',
+        severity: 'error',
+        file: '.agents/skills/broken',
+      })]);
+    } finally {
+      await chmod(broken, 0o755);
+    }
   });
 });

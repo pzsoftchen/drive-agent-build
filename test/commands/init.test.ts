@@ -1047,6 +1047,37 @@ describe('runInit', () => {
     },
   );
 
+  it('fails loudly on an unreadable nested user skill directory', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const root = await tempDir();
+    const broken = join(root, '.agents/skills/broken');
+    await mkdir(broken, { recursive: true });
+    await writeFile(
+      join(broken, 'SKILL.md'),
+      '---\nname: broken\ndescription: Broken.\n---\nBody.\n',
+    );
+    await chmod(broken, 0o000);
+    try {
+      const result = await initializeProject({ cwd: root });
+
+      expect(result.ok).toBe(false);
+      expect(result.exitCode).toBe(3);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'skill.unreadable',
+          severity: 'error',
+          file: '.agents/skills/broken',
+        }),
+      ]));
+      expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+      expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    } finally {
+      await chmod(broken, 0o755);
+    }
+  });
+
   it('omits Documentation links when the bilingual rule skips an existing and a missing doc', async () => {
     const root = await tempDir();
     await mkdir(join(root, '.agents/rules'), { recursive: true });

@@ -1,6 +1,6 @@
 import { constants, type Stats } from 'node:fs';
 import { access, lstat, realpath, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Diagnostic } from './diagnostics.ts';
 import { DabError } from './errors.ts';
 import { assertParentInsideRoot, isPathInside } from './paths.ts';
@@ -42,11 +42,12 @@ export function problemMessage(path: string, problem: PathProblem): string {
 const PRACTICE_PARENT_PATHS = ['.agents/rules', '.agents/skills'] as const;
 
 /**
- * True for a filesystem error caused by `.agents/rules` or `.agents/skills`.
- * Those parents are practice-owned: the practice checks report the governed
- * diagnostic, so discovery may treat the affected fact set as empty. Errors
- * under every other `.agents` path stay loud, because no practice check owns
- * them and silently empty facts would hide a broken authored layout.
+ * True only for a filesystem error on the exact `.agents/rules` or
+ * `.agents/skills` parent. Those parents are practice-owned: the practice
+ * checks report the governed diagnostic, so discovery may treat the affected
+ * fact set as empty. Errors on descendants stay loud or become a per-entry
+ * diagnostic, because silently emptying every fact would hide a broken nested
+ * skill or rule directory. Every other `.agents` path likewise stays loud.
  */
 export function isAuthoredPathProblem(error: unknown, root: string): boolean {
   if (!PATH_PROBLEM_CODES.has(errorCode(error) ?? '')) {
@@ -56,8 +57,9 @@ export function isAuthoredPathProblem(error: unknown, root: string): boolean {
   if (path === undefined) {
     return false;
   }
+  const resolvedPath = resolve(path);
   return PRACTICE_PARENT_PATHS.some(
-    (parent) => isPathInside(join(root, parent), path),
+    (parent) => resolvedPath === resolve(join(root, parent)),
   );
 }
 

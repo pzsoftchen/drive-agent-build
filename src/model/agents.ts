@@ -282,7 +282,7 @@ async function parseAgentSource(root: string, absolute: string): Promise<AgentSo
       message: `agent ${data.name} uses memory: project, which creates a second team memory store`,
       file,
       line: 1,
-      hint: 'Use memory: user or memory: local, and put shared knowledge in .agents/memory/.',
+      hint: 'Use memory: user or memory: local, and put shared knowledge in .agents/notes/ and docs (optional advanced: .agents/memory/).',
     });
   }
   if (data.permissionMode === 'auto' || data.permissionMode === 'bypassPermissions') {

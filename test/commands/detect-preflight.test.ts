@@ -505,6 +505,57 @@ describe('detect preflight', () => {
     ).toContain('Language:');
   });
 
+  it('reports an unreadable user skill directory during preflight', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const root = await tempDir();
+    const broken = join(root, '.agents/skills/broken');
+    await mkdir(broken, { recursive: true });
+    await writeFile(
+      join(broken, 'SKILL.md'),
+      '---\nname: broken\ndescription: Broken.\n---\nBody.\n',
+    );
+    await chmod(broken, 0o000);
+    try {
+      const result = await detectProject({ cwd: root, home: dirname(root) });
+
+      expect(result.exitCode).toBe(2);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'skill.unreadable',
+          severity: 'error',
+          file: '.agents/skills/broken',
+        }),
+      ]));
+    } finally {
+      await chmod(broken, 0o755);
+    }
+  });
+
+  it('checks presence, language and policy in preflight but not document content', async () => {
+    const root = await tempDir();
+    await writeProjectFile(
+      root,
+      'docs/AGENTS.md',
+      '# Docs\n\nTODO: replace this.\n\n[missing](missing.md)\n',
+    );
+
+    const { code, payload } = await detectJson({ cwd: root, home: dirname(root) });
+
+    expect(code).toBe(2);
+    const codes = payload.diagnostics.map((item) => item.code);
+    expect(codes).not.toContain('practice.docs-todo');
+    expect(codes).not.toContain('practice.docs-link');
+    expect(payload.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Documentation',
+        label: 'docs/AGENTS.md',
+        status: 'ok',
+      }),
+    ]));
+  });
+
   it('uses the manifest profile and docs language for partial practice entries', async () => {
     const root = await tempDir();
     await writeProjectFile(

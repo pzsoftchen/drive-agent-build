@@ -1401,6 +1401,76 @@ describe('normalize practice layer', () => {
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
   });
 
+  it('fails loudly on an unreadable user skill directory', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const project = await initializedProject();
+    const broken = join(project.root, '.agents/skills/broken');
+    await mkdir(broken, { recursive: true });
+    await writeFile(
+      join(broken, 'SKILL.md'),
+      '---\nname: broken\ndescription: Broken.\n---\nBody.\n',
+    );
+    const projected = join(project.root, '.claude/skills/doc-sync');
+    const before = await readlink(projected);
+    await chmod(broken, 0o000);
+    try {
+      const result = await normalizeProject({
+        cwd: project.root,
+        home: dirname(project.root),
+        runner: goodRunner,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.exitCode).toBe(3);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'skill.unreadable',
+          severity: 'error',
+          file: '.agents/skills/broken',
+        }),
+      ]));
+      expect(result.diagnostics.some((item) => item.code === 'skill.unreadable')).toBe(true);
+      // The valid sibling keeps its projection; the unreadable skill is never
+      // planned or projected.
+      expect(await readlink(projected)).toBe(before);
+      expect(await lstatOrNull(join(project.root, '.claude/skills/broken'))).toBeNull();
+    } finally {
+      await chmod(broken, 0o755);
+    }
+  });
+
+  it('links an existing root AGENTS.md from converged docs', async () => {
+    const project = await initializedProject();
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(join(project.root, 'docs/AGENTS.md'), 'utf8'))
+      .toContain('- [AGENTS.md](../AGENTS.md)');
+  });
+
+  it('omits the root AGENTS.md link when converge has no AGENTS.md', async () => {
+    const project = await initializedProject();
+    await rm(join(project.root, 'AGENTS.md'), { force: true });
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    const docs = await readFile(join(project.root, 'docs/AGENTS.md'), 'utf8');
+    expect(docs).toContain('- Root `AGENTS.md`');
+    expect(docs).not.toContain('](../AGENTS.md)');
+  });
+
   it.each(['hooks', 'rules', 'notes'])(
     'governs an unreadable .agents/%s directory with zero writes',
     async (parent) => {

@@ -349,6 +349,9 @@ describe('detectProject', () => {
     await mkdir(join(project.root, '.claude/agent-memory'), { recursive: true });
     const result = await detectProject(detectOptions(project));
     expect(result.diagnostics.map((item) => item.code)).toContain('memory.project-artifact');
+    const artifact = result.diagnostics.find((item) => item.code === 'memory.project-artifact');
+    expect(artifact?.hint).toContain('.agents/notes/');
+    expect(artifact?.hint).toContain('optional');
   });
 
   it('flags unsafe hook scripts', async () => {

@@ -138,6 +138,9 @@ describe('agent discovery', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.diagnostics.map((item) => item.code)).toContain('agent.memory-project');
+    const memory = result.diagnostics.find((item) => item.code === 'agent.memory-project');
+    expect(memory?.hint).toContain('.agents/notes/');
+    expect(memory?.hint).toContain('optional');
   });
 
   it('rejects auto and bypass permission modes', async () => {

@@ -22,9 +22,12 @@ export interface SourceFacts {
 }
 
 /**
- * A regular file at `.agents/rules` or `.agents/skills` makes discovery raise
- * ENOTDIR. The practice checks report that parent as a governed path error, so
- * the affected fact set stays empty instead of failing the whole command.
+ * A regular file, denied access or link loop at the exact `.agents/rules` or
+ * `.agents/skills` parent makes discovery raise. The practice checks report
+ * that parent as a governed path error, so the affected fact set stays empty
+ * instead of failing the whole command. Nested errors are not suppressed:
+ * skill discovery isolates them per directory and reports `skill.unreadable`,
+ * so one broken skill never empties every skill fact.
  */
 async function discoverOrEmpty<T>(
   root: string,

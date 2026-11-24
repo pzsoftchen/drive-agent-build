@@ -46,7 +46,7 @@ export async function checkAgentsMd(
       severity: 'warning',
       message: `AGENTS.md has ${lineCount} lines; the budget is ${maxLines}`,
       file,
-      hint: 'Move long procedures into skills, architecture into docs, and atomic facts into memory.',
+      hint: 'Move long procedures into skills, architecture into docs, and durable facts into .agents/notes/ (optional advanced: .agents/memory/).',
     });
   }
   return { lineCount, diagnostics };

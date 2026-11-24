@@ -315,7 +315,7 @@ export function compilePolicy(
       severity: 'error',
       message: `agent ${agent.name} uses memory: project`,
       file: agent.file,
-      hint: 'Use memory: user or memory: local; shared knowledge belongs in .agents/memory/.',
+      hint: 'Use memory: user or memory: local; shared knowledge belongs in .agents/notes/ and docs (optional advanced: .agents/memory/).',
     });
   }
   if (agent?.permissionMode === 'auto' || agent?.permissionMode === 'bypassPermissions') {

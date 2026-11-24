@@ -11,7 +11,7 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 ## Decision
 
 - Profiles select practice packs. `generic` is the default, `feature` remains a compatibility alias with the same behavior, and the production registry composes `core`, `documentation` and `authoring`. Documentation and authoring packs are project-scope only.
-- One shared `planAuthoredScaffold` serves `init` (`full`) and `normalize` (`adoption` for uninitialized or partial scopes, `converge` for initialized scopes). Packs declare targets, the planner stats them and builds anchors from existing plus planned paths, and only missing files are rendered.
+- One shared `planAuthoredScaffold` serves `init` (`full`) and `normalize` (`adoption` for uninitialized or partial scopes, `converge` for initialized scopes). Packs declare targets, the planner stats them and builds anchors from existing plus planned paths, and only missing files are rendered. An existing root `AGENTS.md`, or global `.agents/AGENTS.md`, is an anchor without being planned or written, so converge links it from generated docs only when present.
 - The documentation pack owns exactly `docs/AGENTS.md` and `docs/architecture.md`. Generated docs use one language determined by `docs.language` (`auto`, `en` or `zh`) and never create `.zh.md` or `.i18n.yaml` pairs. `auto` samples existing docs, root `AGENTS.md`, `README.md`, the `package.json` description and the locale, then defaults to `en`; the `{ value, source }` resolution is reported.
 - The authoring pack installs `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` under `.agents/skills/`. Each skill is an authored copy with a `dab-skill: <name>@<version>` marker. DAB skips an existing skill directory and never updates an installed skill; a physical `.claude/skills/dab-<name>` entry with no authored source is left pending by `init` and imported by `normalize`.
 - An existing `.agents/rules/docs-bilingual.md` is project policy: it is preserved, missing documentation targets are policy-skipped with `practice.docs-bilingual-policy`, existing docs are skipped, and authoring skills and target writes continue.
@@ -39,12 +39,13 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 - `feature` manifests receive the same practice behavior as `generic`, so a normalize can add docs and skills that did not exist before. `--dry-run` and the `practices` JSON expose the plan first.
 - New generic projects no longer get the bilingual rule. DAB itself keeps the rule, so its own documentation pack is policy-skipped while other projects get single-language docs; project rules win.
 - Every authored source parent a command reads is validated before discovery: a regular file, dangling link, denied access or symlink loop at `.agents/agents`, `.agents/hooks`, `.agents/memory`, `.agents/notes`, `.agents/policies` or `.agents/adapters` is a governed `path.conflict` that blocks project and global runs before writes; `.agents/rules` and `.agents/skills` stay practice-owned diagnostics. Access-denied source parents and unreadable practice skill directories are governed path errors instead of later discovery errors; the best-effort secret scan may skip unreadable subtrees but does not own those errors.
+- A nested unreadable skill directory is reported per skill as `skill.unreadable`; sibling skills still validate and project, so one broken directory cannot empty the whole skill set. Only the exact `.agents/rules` or `.agents/skills` parent may collapse its fact set to empty.
 - The detect score includes practice entries, and `--strict` fails on missing or stale practice content except the two non-strict policy and preserved warnings.
 - New projects keep durable knowledge in `.agents/notes/` and docs. A project that already has hooks or shared memory keeps its files, and `detect` omits the empty optional groups instead of reporting them missing.
 
 ## Verification
 
-- `pnpm test`: 59 test files, 704 tests pass.
+- `pnpm test`: 59 test files, 718 tests pass.
 - `pnpm typecheck`: no errors.
 - `pnpm doc-sync`: pairing, links, wrap, budgets and Agent Note checks pass.
 - `pnpm build`: TypeScript compiles.

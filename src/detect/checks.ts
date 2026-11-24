@@ -560,7 +560,7 @@ export async function checkMemory(
           severity: 'error',
           message: `team memory or auto memory artifact exists in the repository: ${dir}`,
           file: toPosix(relative(root, absolute)),
-          hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/memory/.',
+          hint: 'Keep personal auto memory machine-local; put shared knowledge in .agents/notes/ and docs (optional advanced: .agents/memory/).',
         });
       }
     }
