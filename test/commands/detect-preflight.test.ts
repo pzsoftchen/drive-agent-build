@@ -328,6 +328,46 @@ describe('detect preflight', () => {
     )).toBe(false);
   });
 
+  it('governs a regular file at the hooks path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/hooks', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: expect.stringMatching(/^\.agents\/hooks\/?$/),
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', status: 'error' }),
+    ]));
+  });
+
+  it('governs a regular file at the agents path during preflight', async () => {
+    const root = await tempDir();
+    await writeProjectFile(root, '.agents/agents', 'not a directory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.phase).toBe('partial');
+    expect(result.exitCode).toBe(2);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: expect.stringMatching(/^\.agents\/agents\/?$/),
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Agents', status: 'error' }),
+    ]));
+  });
+
   it('emits a governed diagnostic for a non-practice path with a file parent', async () => {
     const root = await tempDir();
     await writeProjectFile(root, '.agents/policies', 'not a directory\n');

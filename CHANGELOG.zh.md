@@ -6,10 +6,10 @@
 
 - `dab init` 默认写入 `profile: generic` 和 `docs.language: auto`。`--profile generic|feature` 选择 manifest profile；`feature` 是行为相同的兼容别名。`docs.language` 接受 `auto`、`en` 或 `zh`；`auto` 从项目内容和 locale 解析，并在人类输出和 JSON 中报告 `{ value, source }`。
 - `dab init` 和 `dab normalize` 生成单语 `docs/AGENTS.md` 和 `docs/architecture.md`，不生成 `.zh.md` 或 `.i18n.yaml` 配对，并安装 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes` authoring skills。已有 docs 和 skill 目录永不被覆盖，已安装的 `dab-*` skills 也永不自动更新。
-- `dab init` 现在会把可导入的物理 `.claude/skills/dab-*` 目录标记为 pending，跳过对应的 authoring 模板，并把 import 留给 `dab normalize`；非目录条目报告为 `practice.skill-import-conflict`，不提供 import 提示。它从不写入或替换该物理条目。
+- `dab init` 现在会把可导入的物理 `.claude/skills/dab-*` 目录标记为 pending，跳过对应的 authoring 模板，并把 import 留给 `dab normalize`；非目录条目以 warning pending 报告为 `practice.skill-import-conflict`，不提供 import 提示。它从不写入或替换该物理条目。
 - Generic skeleton 不再生成 `.agents/rules/docs-bilingual.md`；已有的 authored 规则会保留，并以 `practice.docs-bilingual-policy` 对缺失的单语 docs 做 policy skip。已有 docs 作为 skipped 保留，悬空的 docs 路径不会阻断它们。Authoring skills 和 target 写入继续。
 - `dab normalize` 在 target planning 之前为未初始化、partial 和已初始化 project scope 补齐缺失的实践文件。`--json` 为 project scope 追加 `practices`，包含 `profile`、`mode`、`language`、`created`、`skipped`、`policySkipped`、`directories`、`skills` 和 `diagnostics`；dry run 和 practice 写入前被阻断的运行保留计划条目，被后续 target 失败阻断的运行报告已写入的文件，global scope 省略该对象。
-- Practice 路径校验拒绝逃逸符号链接、特殊文件和不可读 target。已有 docs 必须是可读普通文件或指向它的仓库内符号链接；skill 目录必须是真实目录或指向它的仓库内符号链接。`.agents/rules` 或 `.agents/skills` 处的普通文件在 `init`、`normalize` 和 `detect` 中是受治理的诊断，而不是内部错误。
+- Practice 路径校验拒绝逃逸符号链接、特殊文件和不可读 target。已有 docs 必须是可读普通文件或指向它的仓库内符号链接；skill 目录必须是真实目录或指向具备读与搜索权限目录的仓库内符号链接。`.agents/rules` 或 `.agents/skills` 处的普通文件在 `init`、`normalize` 和 `detect` 中是受治理的诊断，而不是内部错误。`.agents/agents`、`.agents/hooks`、`.agents/memory`、`.agents/policies` 或 `.agents/adapters` 处的普通文件、悬空链接、访问拒绝或符号链接循环是受治理的 `path.conflict`，project 和 global 运行都会在写入或发现之前阻断。
 - `dab detect` 增加 `Documentation` 组和 `Skills` 中的 authoring skill 条目，检查链接、行首 TODO 标记、空架构章节和 skill 版本标记。缺失的实践文件、TODO、空章节和落后 skills 会让 `--strict` 失败；双语 policy skip 和未加版本标记的保留 skills 保持信息性。
 - DAB 现在 dogfood 实践层：自身的 `docs/AGENTS.md` 指南和 `dab-*` authoring skills 位于 authored source tree，并由 `dab detect` 检查。
 - `dab detect` 为未初始化、partial 和已初始化的 project/global scope 输出只读 checklist，包含 `[OK]`、`[MISSING]`、`[WARN]`、`[ERROR]` 和 `[IMPORTABLE]` 状态、score 和 next actions；JSON 追加 `scope`、`root`、`phase`、`profile`、`checklist`、`score` 和 `nextActions`。已初始化 scope 也会把可导入的物理条目报告为 importable，而不是 unmanaged 或 physical-copy 漂移。

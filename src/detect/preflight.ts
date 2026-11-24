@@ -16,7 +16,12 @@ import {
   type AdoptionPhase,
   type AdoptionRoot,
 } from '../init/adoption.ts';
-import { pathProblemFrom, problemMessage } from '../init/practice-paths.ts';
+import {
+  pathProblemFrom,
+  problemMessage,
+  sourceParentDiagnostic,
+  sourceParentProblems,
+} from '../core/practice-paths.ts';
 import { scanProject } from '../init/scanner.ts';
 import { loadProjectManifest, resolveProjectPaths } from '../model/project-manifest.ts';
 import type { ProjectManifest, ProjectPaths } from '../model/types.ts';
@@ -369,9 +374,11 @@ export async function preflightProject(
   }
 
   const scan = await scanProject(adoption.root);
+  const sourceProblems = await sourceParentProblems(adoption.root);
   const sourcePlan = minimalSourcePlan(scan, adoption.scope);
   const manifestPath = relativePath(adoption.root, adoption.manifestPath);
-  const diagnostics: Diagnostic[] = [...scan.diagnostics];
+  const sourceDiagnostics = sourceProblems.map(sourceParentDiagnostic);
+  const diagnostics: Diagnostic[] = [...scan.diagnostics, ...sourceDiagnostics];
   const manifestProbe = await probePath(adoption.root, manifestPath);
   const hasManifest = manifestProbe.present;
   if (manifestProbe.diagnostic !== undefined) {
@@ -412,24 +419,34 @@ export async function preflightProject(
   // checks already report that path, so the import plan is empty instead of
   // turning preflight into an internal error. Other errors still fail loud.
   let claudePlan: ClaudeAdoptionPlan = { entries: [], diagnostics: [] };
-  try {
-    claudePlan = await planClaudeAdoption({
-      root: adoption.root,
-      scope: adoption.scope,
-      agentsRoot: paths.agents,
-      claudeRoot: paths.claude,
-      manifest,
-    });
-  } catch (error) {
-    if (!isBrokenDefaultSkillsParent(error, adoption.root)) {
-      throw error;
+  const agentsParentBroken = sourceProblems.some(
+    (problem) => problem.path === '.agents/agents',
+  );
+  if (!agentsParentBroken) {
+    try {
+      claudePlan = await planClaudeAdoption({
+        root: adoption.root,
+        scope: adoption.scope,
+        agentsRoot: paths.agents,
+        claudeRoot: paths.claude,
+        manifest,
+      });
+    } catch (error) {
+      if (!isBrokenDefaultSkillsParent(error, adoption.root)) {
+        throw error;
+      }
     }
   }
   diagnostics.push(...claudePlan.diagnostics);
   diagnostics.push(
     ...await checkInstructionEnvironment(adoption.root, home, adoption.scope),
   );
-  diagnostics.push(...await checkSecrets(adoption.root, paths));
+  // The secret scan walks the whole `.agents` tree. A broken agents parent
+  // already fails the checklist, so the walk is skipped rather than raising
+  // the same ENOTDIR as an internal error.
+  if (!agentsParentBroken) {
+    diagnostics.push(...await checkSecrets(adoption.root, paths));
+  }
 
   // A practice path error owns its path. Do not also show the generic
   // "missing directory -> dab normalize" entry for the same conflicting path.
@@ -449,9 +466,20 @@ export async function preflightProject(
     manifestValid,
     claudePlan,
   });
-  diagnostics.push(...planned.diagnostics);
+  // A source-parent conflict owns its path; the generic existence probe for
+  // the same directory would duplicate it with a trailing-slash path.
+  const sourceFiles = new Set(
+    sourceDiagnostics.flatMap((item) => (item.file === undefined ? [] : [item.file])),
+  );
+  diagnostics.push(
+    ...planned.diagnostics.filter(
+      (item) => item.file === undefined
+        || !sourceFiles.has(item.file.replace(/\/$/, '')),
+    ),
+  );
   const entries = planned.entries.filter(
-    (entry) => !governed.has(entry.label.replace(/\/$/, '')),
+    (entry) => !governed.has(entry.label.replace(/\/$/, ''))
+      && !sourceFiles.has(entry.label.replace(/\/$/, '')),
   );
 
   diagnostics.push(...practice.diagnostics);

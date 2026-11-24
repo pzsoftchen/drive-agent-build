@@ -304,6 +304,31 @@ describe('planAuthoredScaffold existing target validation', () => {
     expect(plan.files).toEqual({});
   });
 
+  it('rejects an unreadable directory target where permissions can deny reads', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    await mkdir(join(root, 'x'), { recursive: true });
+    await chmod(join(root, 'x'), 0o000);
+    try {
+      const pack: PracticePack = {
+        id: 'skills',
+        targets: () => ({
+          paths: ['x/SKILL.md'],
+          directories: ['x'],
+          skipChildrenWhenExists: ['x'],
+        }),
+        files: () => ({ 'x/SKILL.md': 'skill' }),
+      };
+      const plan = await planWith(pack);
+      expect(errorFor(plan, 'x')?.code).toBe('path.conflict');
+      expect(errorFor(plan, 'x')?.message).toContain('cannot be accessed');
+      expect(plan.files).toEqual({});
+    } finally {
+      await chmod(join(root, 'x'), 0o755);
+    }
+  });
+
   it('accepts a directory target symlinked to a directory inside the root', async () => {
     await mkdir(join(root, 'real-dir'), { recursive: true });
     await symlink(join(root, 'real-dir'), join(root, 'x'));

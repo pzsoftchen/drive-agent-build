@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { DocsLanguage } from './docs-language.ts';
-import { probeLstat } from './practice-paths.ts';
+import { probeLstat } from '../core/practice-paths.ts';
 import type { PracticeContext, PracticePack, PracticeTargetSet } from './practice.ts';
 import type { ScanResult } from './scanner.ts';
 

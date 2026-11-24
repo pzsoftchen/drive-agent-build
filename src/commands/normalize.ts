@@ -409,10 +409,13 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const scope = preparation.sourceRoot.scope;
   const backupRoot = backupRootFor(root, options.now ?? new Date());
   const practicePlan = preparation.practicePlan;
+  const sourceProblems = preparation.sourceProblems ?? [];
   const practiceWarnings = scope === 'project' ? policySkipWarnings(practicePlan) : [];
-  const practiceDiagnostics = practicePlan === undefined
-    ? [...practiceWarnings]
-    : [...practicePlan.diagnostics, ...practiceWarnings];
+  const practiceDiagnostics = [
+    ...(practicePlan?.diagnostics ?? []),
+    ...practiceWarnings,
+    ...sourceProblems,
+  ];
   const imports = preparation.claudePlan?.entries ?? [];
   const importDiagnostics = preparation.claudePlan?.diagnostics ?? [];
   const preparationDiagnostics = [
@@ -527,6 +530,20 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       planned.skip,
       practiceDiagnostics,
     );
+  }
+
+  // A broken non-practice source parent ( `.agents/agents`, `.agents/hooks`,
+  // `.agents/memory`, `.agents/policies` or `.agents/adapters`) already made
+  // preparation skip imports. Discovery would fail with an internal error, so
+  // report the governed conflict and keep the planned practice fields unread.
+  if (sourceProblems.length > 0) {
+    practices = practicePlan === undefined
+      ? undefined
+      : buildPractices(practicePlan, [], [], practiceDiagnostics);
+    return blockedResult(root, scope, options, preparationDiagnostics, {
+      ...adoptionExtras(adoption),
+      ...practiceExtras(scope, practices),
+    });
   }
 
   const loaded = await loadProjectManifest(root, { scope });

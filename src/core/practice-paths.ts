@@ -1,8 +1,9 @@
 import { constants, type Stats } from 'node:fs';
 import { access, lstat, realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DabError } from '../core/errors.ts';
-import { assertParentInsideRoot, isPathInside } from '../core/paths.ts';
+import type { Diagnostic } from './diagnostics.ts';
+import { DabError } from './errors.ts';
+import { assertParentInsideRoot, isPathInside } from './paths.ts';
 
 export type PathProblem = 'parent-not-directory' | 'access-denied' | 'symlink-loop';
 
@@ -37,18 +38,27 @@ export function problemMessage(path: string, problem: PathProblem): string {
   }
 }
 
+/** Authored parents owned by the practice packs. */
+const PRACTICE_PARENT_PATHS = ['.agents/rules', '.agents/skills'] as const;
+
 /**
- * True for a filesystem error caused by an authored `.agents` path with a file
- * parent, denied access or a symlink loop. Callers that already report the
- * practice parent problem can treat the affected discovery as empty instead of
- * failing with an internal error.
+ * True for a filesystem error caused by `.agents/rules` or `.agents/skills`.
+ * Those parents are practice-owned: the practice checks report the governed
+ * diagnostic, so discovery may treat the affected fact set as empty. Errors
+ * under every other `.agents` path stay loud, because no practice check owns
+ * them and silently empty facts would hide a broken authored layout.
  */
 export function isAuthoredPathProblem(error: unknown, root: string): boolean {
   if (!PATH_PROBLEM_CODES.has(errorCode(error) ?? '')) {
     return false;
   }
   const path = (error as NodeJS.ErrnoException).path;
-  return path !== undefined && isPathInside(join(root, '.agents'), path);
+  if (path === undefined) {
+    return false;
+  }
+  return PRACTICE_PARENT_PATHS.some(
+    (parent) => isPathInside(join(root, parent), path),
+  );
 }
 
 interface ProbeState {
@@ -174,10 +184,27 @@ export type AuthoredDirectoryState =
   | { kind: 'directory'; absolute: string }
   | { kind: 'conflict'; message: string };
 
+async function directoryAccessProblem(
+  absolute: string,
+  path: string,
+): Promise<string | undefined> {
+  try {
+    await access(absolute, constants.R_OK | constants.X_OK);
+    return undefined;
+  } catch (error) {
+    const problem = pathProblemFrom(error);
+    if (problem !== undefined || errorCode(error) === 'ENOENT') {
+      return `${path} cannot be accessed`;
+    }
+    throw error;
+  }
+}
+
 /**
  * Classify an existing authored directory target. Real directories and
  * symlinks that resolve inside the repository to a directory are acceptable;
- * special files, dangling or escaping links and unreadable paths are conflicts.
+ * special files, dangling or escaping links and directories without read or
+ * search permission are conflicts, so later discovery cannot fail with EACCES.
  */
 export async function authoredDirectoryState(
   root: string,
@@ -205,6 +232,10 @@ export async function authoredDirectoryState(
     }
   } else if (!result.info.isDirectory()) {
     return { kind: 'conflict', message: `${path} is not a directory` };
+  }
+  const accessProblem = await directoryAccessProblem(absolute, path);
+  if (accessProblem !== undefined) {
+    return { kind: 'conflict', message: accessProblem };
   }
   return { kind: 'directory', absolute };
 }
@@ -239,4 +270,63 @@ export async function practiceParentProblems(root: string): Promise<PracticePare
     }
   }
   return problems;
+}
+
+/**
+ * Authored parents that discovery and validation read directly. The practice
+ * parents `.agents/rules` and `.agents/skills` are owned by
+ * `practiceParentProblems`; every other parent must still be a directory.
+ */
+export const CORE_SOURCE_PARENT_PATHS = [
+  '.agents/agents',
+  '.agents/hooks',
+  '.agents/memory',
+  '.agents/policies',
+  '.agents/adapters',
+] as const;
+
+/**
+ * Probe the non-practice source parents. A regular file, dangling link,
+ * denied access or symlink loop at any of them makes discovery fail or silently
+ * empty, so commands report a governed `path.conflict` and block before
+ * discovery instead of raising an internal error or hiding the layout.
+ */
+export async function sourceParentProblems(root: string): Promise<PracticeParentProblem[]> {
+  const problems: PracticeParentProblem[] = [];
+  for (const path of CORE_SOURCE_PARENT_PATHS) {
+    const absolute = join(root, path);
+    const link = await probeLstat(absolute);
+    if (link.problem !== undefined) {
+      problems.push({ path, message: problemMessage(path, link.problem) });
+      continue;
+    }
+    if (link.info === null) {
+      continue;
+    }
+    if (link.info.isSymbolicLink()) {
+      const target = await probeStat(absolute);
+      if (target.problem !== undefined) {
+        problems.push({ path, message: problemMessage(path, target.problem) });
+      } else if (target.info === null) {
+        problems.push({ path, message: `${path} is a dangling symlink` });
+      } else if (!target.info.isDirectory()) {
+        problems.push({ path, message: `${path} is not a directory` });
+      }
+      continue;
+    }
+    if (!link.info.isDirectory()) {
+      problems.push({ path, message: `${path} is not a directory` });
+    }
+  }
+  return problems;
+}
+
+export function sourceParentDiagnostic(problem: PracticeParentProblem): Diagnostic {
+  return {
+    code: 'path.conflict',
+    severity: 'error',
+    message: problem.message,
+    file: problem.path,
+    hint: 'Resolve the path conflict manually; DAB never writes through it.',
+  };
 }

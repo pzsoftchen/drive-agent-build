@@ -1,4 +1,4 @@
-import { isAuthoredPathProblem } from '../init/practice-paths.ts';
+import { isAuthoredPathProblem } from '../core/practice-paths.ts';
 import { discoverAgents } from './agents.ts';
 import { discoverHooks } from './hooks.ts';
 import { loadPolicySources, type LoadedPolicySources } from './policy.ts';

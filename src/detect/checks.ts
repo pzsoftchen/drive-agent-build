@@ -6,6 +6,7 @@ import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { sha256 } from '../core/hash.ts';
 import { extractMarkdownLinks } from '../core/markdown-links.ts';
 import { isPathInside, toPosix } from '../core/paths.ts';
+import { pathProblemFrom } from '../core/practice-paths.ts';
 import { scanSecrets } from '../core/security.ts';
 import {
   buildManagedHookCommands,
@@ -469,6 +470,12 @@ async function walkFiles(dir: string, depth = 0): Promise<string[]> {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    // The secret scan is best effort: an unreadable or non-directory subtree is
+    // reported by its owning check (for example the practice skill check), so
+    // it contributes no candidates instead of failing the whole command.
+    if (pathProblemFrom(error) !== undefined) {
       return [];
     }
     throw error;

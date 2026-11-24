@@ -8,8 +8,12 @@ import {
 } from '../core/diagnostics.ts';
 import { DabError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
-import { lstatOrNull } from '../core/fs-atomic.ts';
 import { contractJson } from '../core/json.ts';
+import {
+  probeLstat,
+  sourceParentDiagnostic,
+  sourceParentProblems,
+} from '../core/practice-paths.ts';
 import { DAB_VERSION } from '../core/version.ts';
 import {
   assertRealPathInsideRoot,
@@ -183,12 +187,23 @@ function groupForFile(file: string): string | undefined {
     if (file.startsWith(prefix)) {
       return group;
     }
+    if (file === prefix.slice(0, -1)) {
+      return group;
+    }
   }
   return undefined;
 }
 
 function diagnosticGroup(diagnostic: Diagnostic): string {
   if (SAFETY_CODE_PREFIXES.some((prefix) => diagnostic.code.startsWith(prefix))) {
+    // A path conflict on a recognized authored path belongs to that path's
+    // group; other safety diagnostics stay under Safety.
+    if (diagnostic.code === 'path.conflict' && diagnostic.file !== undefined) {
+      const byFile = groupForFile(diagnostic.file);
+      if (byFile !== undefined) {
+        return byFile;
+      }
+    }
     return 'Safety';
   }
   if (diagnostic.file !== undefined) {
@@ -297,7 +312,9 @@ function importEntry(entry: ClaudeAdoptionEntry): ChecklistEntry {
 }
 
 async function exists(root: string, path: string): Promise<boolean> {
-  return (await lstatOrNull(join(root, path))) !== null;
+  // A file at a parent path raises ENOTDIR instead of ENOENT; the source-parent
+  // probe reports that layout, so the inventory treats it as absent.
+  return (await probeLstat(join(root, path))).info !== null;
 }
 
 function relativePath(root: string, absolute: string): string {
@@ -497,6 +514,43 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
       });
     }
     throw error;
+  }
+
+  // Discovery reads `.agents/agents`, `.agents/hooks`, `.agents/memory`,
+  // `.agents/policies` and `.agents/adapters` directly. A regular file or
+  // denied access at any of them is a governed path conflict, not an internal
+  // error, and the command fails before discovery runs.
+  const sourceProblems = (await sourceParentProblems(root)).map(sourceParentDiagnostic);
+  if (sourceProblems.length > 0) {
+    diagnostics.push(...sourceProblems);
+    // `path.conflict` normally groups under Safety; for a broken source parent
+    // the owning group is clearer and matches the preflight checklist.
+    const sourceFiles = new Set(
+      sourceProblems.flatMap((item) => (item.file === undefined ? [] : [item.file])),
+    );
+    return buildResult({
+      diagnostics,
+      targets: [],
+      scope: sourceRoot.scope,
+      root,
+      phase: adoption.phase,
+      profile,
+      entries: [
+        ...await inventoryEntries(root, paths, diagnostics),
+        ...sourceProblems.map((item) => ({
+          group: item.file === undefined ? 'Safety' : groupForFile(item.file) ?? 'Safety',
+          label: item.file ?? item.code,
+          status: 'error' as const,
+          detail: item.message,
+        })),
+        ...diagnosticEntries(
+          diagnostics.filter(
+            (item) => item.file === undefined || !sourceFiles.has(item.file),
+          ),
+        ),
+      ],
+      strict: options.strict === true,
+    });
   }
 
   // Practice entries own the Documentation group and the dab-* authoring skill

@@ -20,7 +20,7 @@ import {
   practiceParentProblems,
   probeLstat,
   problemMessage,
-} from '../init/practice-paths.ts';
+} from '../core/practice-paths.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import type { Scope } from '../model/scope.ts';
 import { validateSkillSource } from '../model/skills.ts';

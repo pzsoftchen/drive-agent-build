@@ -28,7 +28,12 @@ import {
   type AuthoredScaffoldPlan,
   type ResolvedProfile,
 } from './practice.ts';
-import { practiceParentProblems } from './practice-paths.ts';
+import {
+  practiceParentProblems,
+  probeLstat,
+  sourceParentDiagnostic,
+  sourceParentProblems,
+} from '../core/practice-paths.ts';
 import { scanProject, type ScanResult } from './scanner.ts';
 
 export { minimalSourcePlan, type MinimalSourcePlan } from './minimal-source.ts';
@@ -107,7 +112,11 @@ export async function planSourceWrites(
   const create: string[] = [];
   const skip: string[] = [];
   for (const relativePath of Object.keys(plan.files)) {
-    if ((await lstatOrNull(join(root, relativePath))) === null) {
+    // This is a reporting-only plan for blocked and dry runs. A path-state
+    // error on the parent is already governed by the caller, so the path is
+    // reported as skipped instead of failing with an internal error.
+    const state = await probeLstat(join(root, relativePath));
+    if (state.info === null && state.problem === undefined) {
       create.push(relativePath);
     } else {
       skip.push(relativePath);
@@ -172,6 +181,11 @@ export interface NormalizeAdoptionPreparation {
   /** Practice docs/skills plan. In adoption mode its files are the source plan. */
   practicePlan?: AuthoredScaffoldPlan;
   claudePlan?: ClaudeAdoptionPlan;
+  /**
+   * Governed conflicts at non-practice `.agents` source parents. They block
+   * every write, so import planning is skipped and discovery never runs.
+   */
+  sourceProblems?: Diagnostic[];
   diagnostics: Diagnostic[];
 }
 
@@ -418,8 +432,16 @@ export async function prepareNormalizeAdoption(
   const sourceRoot = sourceRootOf(adoption);
   const manifestKey = toPosix(relative(adoption.root, adoption.manifestPath));
   const hasManifest = (await lstatOrNull(adoption.manifestPath)) !== null;
+  const sourceProblems = (await sourceParentProblems(adoption.root))
+    .map(sourceParentDiagnostic);
+  const sourceExtras = sourceProblems.length === 0
+    ? {}
+    : { sourceProblems };
+  // Import planning reads the authored agents and skills trees. A broken core
+  // source parent already blocks the run, so the plan is skipped instead of
+  // failing discovery with an internal error.
   const importPlan = (manifest: ProjectManifest, paths: ProjectPaths) =>
-    input.suppressImports === true
+    input.suppressImports === true || sourceProblems.length > 0
       ? Promise.resolve(undefined)
       : planImports(adoption, manifest, paths);
 
@@ -442,7 +464,8 @@ export async function prepareNormalizeAdoption(
           manifest: loaded.manifest,
           paths,
           claudePlan: await importPlan(loaded.manifest, paths),
-          diagnostics: [sourceProblem],
+          ...sourceExtras,
+          diagnostics: [sourceProblem, ...sourceProblems],
         };
       }
       const scan = await scanProject(adoption.root);
@@ -465,7 +488,8 @@ export async function prepareNormalizeAdoption(
         paths,
         practicePlan,
         claudePlan,
-        diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics],
+        ...sourceExtras,
+        diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
       };
     }
     await assertProjectHomeNotGlobal(adoption, input.home);
@@ -480,7 +504,8 @@ export async function prepareNormalizeAdoption(
         paths,
         sourcePlan: { ...plan, files, manifest: loaded.manifest },
         claudePlan: await importPlan(loaded.manifest, paths),
-        diagnostics: [sourceProblem, ...scan.diagnostics],
+        ...sourceExtras,
+        diagnostics: [sourceProblem, ...scan.diagnostics, ...sourceProblems],
       };
     }
     const claudePlan = await importPlan(loaded.manifest, paths);
@@ -510,7 +535,8 @@ export async function prepareNormalizeAdoption(
       },
       practicePlan,
       claudePlan,
-      diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics],
+      ...sourceExtras,
+      diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
     };
   }
 
@@ -526,7 +552,8 @@ export async function prepareNormalizeAdoption(
       paths,
       sourcePlan: plan,
       claudePlan: await importPlan(plan.manifest, paths),
-      diagnostics: [sourceProblem, ...scan.diagnostics],
+      ...sourceExtras,
+      diagnostics: [sourceProblem, ...scan.diagnostics, ...sourceProblems],
     };
   }
   const rawPracticePlan = await planPractices({
@@ -552,7 +579,8 @@ export async function prepareNormalizeAdoption(
     },
     practicePlan,
     claudePlan,
-    diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics],
+    ...sourceExtras,
+    diagnostics: [...scan.diagnostics, ...practicePlan.diagnostics, ...sourceProblems],
   };
 }
 

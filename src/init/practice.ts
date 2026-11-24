@@ -17,7 +17,7 @@ import {
   pathProblemFrom,
   probeLstat,
   problemMessage,
-} from './practice-paths.ts';
+} from '../core/practice-paths.ts';
 import type { ScanResult } from './scanner.ts';
 import { renderAgentFromProposal, renderAgentsMd, templateFiles, type DocumentationLinks } from './templates.ts';
 

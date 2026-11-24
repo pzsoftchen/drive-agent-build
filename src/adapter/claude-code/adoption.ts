@@ -19,7 +19,7 @@ import {
   resolveInside,
   toPosix,
 } from '../../core/paths.ts';
-import { isAuthoredPathProblem } from '../../init/practice-paths.ts';
+import { isAuthoredPathProblem } from '../../core/practice-paths.ts';
 import { discoverAgents, validateAgentSource } from '../../model/agents.ts';
 import { DiagnosticCodes } from '../../model/diagnostics-codes.ts';
 import { getGeneratedTarget } from '../../model/project-manifest.ts';
@@ -620,9 +620,10 @@ interface AuthoredFacts {
 }
 
 /**
- * A regular file at `.agents/skills` (or an unreadable authored tree) makes
- * discovery raise ENOTDIR/EACCES. The practice checks own that diagnostic, so
- * imports treat the affected tree as empty instead of failing the command.
+ * `.agents/rules` and `.agents/skills` are practice-owned parents: a regular
+ * file or denied access there makes discovery raise ENOTDIR/EACCES, and the
+ * practice checks report the governed diagnostic. Imports treat the affected
+ * tree as empty instead of failing; every other `.agents` error stays loud.
  */
 async function discoverAuthored<T>(
   root: string,

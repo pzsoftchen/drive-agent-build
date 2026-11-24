@@ -1213,6 +1213,162 @@ describe('normalize practice layer', () => {
       .toBe(settings);
   });
 
+  it('governs a regular file at .agents/hooks during adoption with zero writes', async () => {
+    const root = await tempDir('dab-practice-hooks-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/hooks'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(result.practices?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'path.conflict', file: '.agents/hooks' }),
+    ]));
+    expect(await readFile(join(root, '.agents/hooks'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'docs'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/hooks in converge mode with zero writes', async () => {
+    const project = await initializedProject();
+    await rm(join(project.root, '.agents/hooks'), { recursive: true, force: true });
+    await writeFile(join(project.root, '.agents/hooks'), 'not a directory\n');
+    const settings = await readFile(join(project.root, '.claude/settings.json'), 'utf8');
+
+    const result = await normalizeProject({
+      cwd: project.root,
+      home: dirname(project.root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(await readFile(join(project.root, '.claude/settings.json'), 'utf8')).toBe(settings);
+    expect(await lstatOrNull(join(project.root, 'docs/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(project.root, '.agents/skills/dab-doc-writing'))).toBeNull();
+  });
+
+  it('governs a dangling .agents/hooks symlink with zero writes', async () => {
+    const root = await tempDir('dab-practice-hooks-dangling-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await symlink('missing-hooks', join(root, '.agents/hooks'), 'dir');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect((await lstat(join(root, '.agents/hooks'))).isSymbolicLink()).toBe(true);
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/agents with zero writes', async () => {
+    const root = await tempDir('dab-practice-agents-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/agents'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/agents',
+      }),
+    ]));
+    expect(await readFile(join(root, '.agents/agents'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a regular file at .agents/policies with zero writes', async () => {
+    const root = await tempDir('dab-practice-policies-file-');
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/policies'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/policies',
+      }),
+    ]));
+    expect(await readFile(join(root, '.agents/policies'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('governs a regular file at global .agents/hooks with zero writes', async () => {
+    const fixture = await globalFixture();
+    await rm(join(fixture.agents, 'hooks'), { recursive: true, force: true });
+    await writeFile(join(fixture.agents, 'hooks'), 'not a directory\n');
+
+    const result = await normalizeProject({
+      cwd: fixture.agents,
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.scope).toBe('global');
+    expect(result.practices).toBeUndefined();
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(await readFile(join(fixture.agents, 'hooks'), 'utf8')).toBe('not a directory\n');
+    expect(await lstatOrNull(join(fixture.home, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
   it('converges missing docs on an initialized project', async () => {
     const project = await initializedProject();
 

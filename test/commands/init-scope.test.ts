@@ -223,6 +223,32 @@ describe('scope-aware init', () => {
     expect(await lstatOrNull(join(home, '.claude/settings.json'))).toBeNull();
   });
 
+  it('governs a regular file at global .agents/hooks without writes', async () => {
+    const home = await tempDir('dab-home-init-');
+    await mkdir(join(home, '.agents'), { recursive: true });
+    await writeFile(join(home, '.agents/hooks'), 'not a directory\n');
+
+    const result = await initializeProject({
+      cwd: home,
+      path: '.agents',
+      home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(await lstatOrNull(join(home, '.agents/AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(home, '.agents/dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(home, '.claude/CLAUDE.md'))).toBeNull();
+  });
+
   it('leaves user-level settings and gitignore byte-identical in global scope', async () => {
     const home = await tempDir('dab-home-init-');
     const settings = '{"permissions":{"allow":["Bash(ls)"]}}\n';

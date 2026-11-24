@@ -65,7 +65,9 @@ import {
   authoredDirectoryState,
   practiceParentProblems,
   probeStat,
-} from '../init/practice-paths.ts';
+  sourceParentDiagnostic,
+  sourceParentProblems,
+} from '../core/practice-paths.ts';
 import { scanProject, type ScanResult } from '../init/scanner.ts';
 import {
   renderAgentFromProposal,
@@ -200,9 +202,12 @@ async function pendingSkillImports(
       directories.splice(index, 1);
     }
     if (state.kind === 'conflict') {
+      // Pending conflicts are warnings in init: init leaves the physical entry
+      // untouched, skips the template and still completes the remaining safe
+      // writes. A user resolves it by hand; there is no import action.
       diagnostics.push({
         code: 'practice.skill-import-conflict',
-        severity: 'error',
+        severity: 'warning',
         message: `existing Claude skill path is not an importable directory: ${state.message}`,
         file: target,
         hint: `Remove ${target} or replace it with a directory, then rerun dab init.`,
@@ -669,6 +674,24 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       );
     }
     throw error;
+  }
+
+  // Discovery reads `.agents/agents`, `.agents/hooks`, `.agents/memory`,
+  // `.agents/policies` and `.agents/adapters` directly. A regular file or
+  // denied access at any of them would fail as an internal error, so report a
+  // governed conflict and block before any write or discovery.
+  const sourceProblems = await sourceParentProblems(layout.scopeRoot);
+  if (sourceProblems.length > 0) {
+    const sourceDiagnostics = sourceProblems.map(sourceParentDiagnostic);
+    return blocked(
+      scope,
+      root,
+      layout.scopeRoot,
+      language,
+      [...scan.diagnostics, ...sourceDiagnostics],
+      sourceDiagnostics,
+      dryRun,
+    );
   }
 
   const authoredConflicts = await findAuthoredConflicts(layout.scopeRoot);

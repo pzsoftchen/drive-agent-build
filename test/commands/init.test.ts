@@ -888,6 +888,49 @@ describe('runInit', () => {
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
   });
 
+  it('governs a regular file at .agents/hooks without an internal error', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/hooks'), 'not a directory\n');
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/AGENTS.md'))).toBeNull();
+    expect(await readFile(join(root, '.agents/hooks'), 'utf8')).toBe('not a directory\n');
+  });
+
+  it('governs a regular file at .agents/agents without an internal error', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/agents'), 'not a directory\n');
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/agents',
+      }),
+    ]));
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await readFile(join(root, '.agents/agents'), 'utf8')).toBe('not a directory\n');
+  });
+
   it('omits Documentation links when the bilingual rule skips an existing and a missing doc', async () => {
     const root = await tempDir();
     await mkdir(join(root, '.agents/rules'), { recursive: true });
@@ -938,10 +981,12 @@ describe('runInit', () => {
     expect(result.pending).toEqual(expect.arrayContaining([
       expect.objectContaining({
         code: 'practice.skill-import-conflict',
-        severity: 'error',
+        severity: 'warning',
         file: '.claude/skills/dab-doc-writing',
       }),
     ]));
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
     expect(result.pending.every((item) => !item.hint?.includes('dab normalize'))).toBe(true);
   });
 

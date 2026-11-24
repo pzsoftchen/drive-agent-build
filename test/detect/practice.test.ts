@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
@@ -63,6 +63,9 @@ Run pnpm test.
 const projects: ProjectFixture[] = [];
 const homes: string[] = [];
 const dirs: string[] = [];
+const canDenyRead = process.platform !== 'win32'
+  && typeof process.getuid === 'function'
+  && process.getuid() !== 0;
 
 async function initializedProject(): Promise<ProjectFixture> {
   const project = await makeProject();
@@ -422,6 +425,114 @@ See [nested](architecture.md/child.md).
     ]));
   });
 
+  it('governs a regular file at .agents/hooks on an initialized project', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await rm(join(project.root, '.agents/hooks'), { recursive: true, force: true });
+    await writeProjectFile(project.root, '.agents/hooks', 'not a directory\n');
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', label: '.agents/hooks', status: 'error' }),
+    ]));
+  });
+
+  it('governs a dangling .agents/hooks symlink on an initialized project', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await rm(join(project.root, '.agents/hooks'), { recursive: true, force: true });
+    await symlink('missing-hooks', join(project.root, '.agents/hooks'), 'dir');
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', label: '.agents/hooks', status: 'error' }),
+    ]));
+  });
+
+  it('governs a regular file at .agents/agents on an initialized project', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    await rm(join(project.root, '.agents/agents'), { recursive: true, force: true });
+    await writeProjectFile(project.root, '.agents/agents', 'not a directory\n');
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/agents',
+      }),
+    ]));
+  });
+
+  it('reports an unreadable authoring skill directory as a path error', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const project = await initializedProject();
+    await completePractice(project);
+    const directory = join(project.root, '.agents/skills/dab-doc-writing');
+    await chmod(directory, 0o000);
+    try {
+      const result = await detect(project);
+
+      expect(result.exitCode).toBe(3);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'practice.skill-path',
+          severity: 'error',
+          file: '.agents/skills/dab-doc-writing',
+        }),
+      ]));
+    } finally {
+      await chmod(directory, 0o755);
+    }
+  });
+
+  it('reports an unreadable docs directory as a path error', async () => {
+    if (!canDenyRead) {
+      return;
+    }
+    const project = await initializedProject();
+    await completePractice(project);
+    const directory = join(project.root, 'docs');
+    await chmod(directory, 0o000);
+    try {
+      const result = await detect(project);
+
+      expect(result.exitCode).toBe(3);
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'practice.docs-path',
+          severity: 'error',
+          file: 'docs/AGENTS.md',
+        }),
+      ]));
+    } finally {
+      await chmod(directory, 0o755);
+    }
+  });
+
   it('reports a skill directory symlinked to a file as a path error', async () => {
     const project = await initializedProject();
     await completePractice(project);
@@ -513,5 +624,31 @@ See [nested](architecture.md/child.md).
       (entry) => (AUTHORING_SKILL_NAMES as readonly string[]).includes(entry.label),
     )).toBe(false);
     expect(result.diagnostics.some((item) => item.code.startsWith('practice.'))).toBe(false);
+  });
+
+  it('governs a regular file at global .agents/hooks', async () => {
+    const fixture = await makeGlobalFixture();
+    homes.push(fixture.home);
+    await rm(join(fixture.agents, 'hooks'), { recursive: true, force: true });
+    await writeFile(join(fixture.agents, 'hooks'), 'not a directory\n');
+
+    const result = await detectProject({
+      cwd: fixture.agents,
+      home: fixture.home,
+      runner: goodRunner,
+    });
+
+    expect(result.scope).toBe('global');
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'path.conflict',
+        severity: 'error',
+        file: '.agents/hooks',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', label: '.agents/hooks', status: 'error' }),
+    ]));
   });
 });

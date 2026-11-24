@@ -3,6 +3,7 @@ import { basename, join, relative } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
+import { pathProblemFrom } from '../core/practice-paths.ts';
 
 export type ProjectLanguage =
   | 'typescript'
@@ -171,7 +172,13 @@ async function existingAgentFiles(root: string): Promise<string[]> {
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (error) {
+    // A regular file at `.agents/agents` raises ENOTDIR instead of ENOENT. The
+    // command source-parent probe reports that layout as `path.conflict`, so
+    // the scan itself stays empty instead of failing with an internal error.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    if (pathProblemFrom(error) !== undefined) {
       return [];
     }
     throw error;
