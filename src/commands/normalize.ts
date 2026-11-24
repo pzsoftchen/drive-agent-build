@@ -34,13 +34,17 @@ import { checkClaudeCode } from '../adapter/claude-code/version.ts';
 import { checkAgentHooks, checkHookSafety, checkSecrets } from '../detect/checks.ts';
 import {
   applyNormalizeAdoption,
+  planManagedSkillWrites,
   planSourceWrites,
   prepareNormalizeAdoption,
+  summarizeManagedSkills,
   writeSourceFiles,
+  type ManagedSkillSummary,
   type MinimalSourcePlan,
   type NormalizeAdoptionResult,
 } from '../init/adoption.ts';
 import type { DocsLanguageResolution } from '../init/docs-language.ts';
+import { applyManagedSkillWrites } from '../init/managed-skills.ts';
 import type { AuthoredScaffoldPlan } from '../init/practice.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
 import { discoverSourceFacts } from '../model/facts.ts';
@@ -73,6 +77,12 @@ export interface NormalizeOptions {
    * existing `.claude` tree is not imported as an init side effect.
    */
   suppressImports?: boolean;
+  /**
+   * Internal: skip managed authoring-skill planning/updates. `dab init` sets it
+   * so init never updates an existing installed skill; only `dab normalize`
+   * owns managed updates.
+   */
+  suppressManagedSkills?: boolean;
 }
 
 export interface NormalizeIO {
@@ -100,8 +110,24 @@ export interface NormalizePracticesResult {
   /** Practice-owned directories, never core `.agents` directories. */
   directories: string[];
   skills: {
+    /** Authoring skill files created this run (or planned by a dry run). */
     created: string[];
+    /** Existing skill files and directories left untouched. */
     skipped: string[];
+    /** Managed stale skills rewritten to the current template. */
+    updated: string[];
+    /** Managed legacy markers upgraded when the body matched the template. */
+    migrated: string[];
+    /** User-modified bodies preserved with a warning. */
+    modified: string[];
+    /** Newer or uncomparable installed versions preserved with a warning. */
+    newer: string[];
+    /** Legacy-marker bodies that differ from the template and were preserved. */
+    legacy: string[];
+    /** Skills without a managed marker, preserved with a warning. */
+    unversioned: string[];
+    /** Markers naming another skill, preserved with a warning. */
+    markerMismatch: string[];
   };
   diagnostics: Diagnostic[];
 }
@@ -165,11 +191,26 @@ function policySkipWarnings(plan: AuthoredScaffoldPlan | undefined): Diagnostic[
   return (plan?.policySkipped ?? []).filter(isDocsPracticePath).map(policySkipDiagnostic);
 }
 
+function uniquePaths(...lists: readonly (readonly string[])[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const list of lists) {
+    for (const path of list) {
+      if (!seen.has(path)) {
+        seen.add(path);
+        result.push(path);
+      }
+    }
+  }
+  return result;
+}
+
 function buildPractices(
   plan: AuthoredScaffoldPlan,
   created: readonly string[],
   skipped: readonly string[],
   diagnostics: readonly Diagnostic[],
+  managed: ManagedSkillSummary = summarizeManagedSkills(undefined),
 ): NormalizePracticesResult {
   const practiceCreated = created.filter(
     (path) => isDocsPracticePath(path) || isAuthoringSkillPath(path),
@@ -193,8 +234,23 @@ function buildPractices(
     policySkipped: plan.policySkipped.filter(isDocsPracticePath),
     directories: plan.directories.filter(isPracticeDirectory),
     skills: {
-      created: practiceCreated.filter(isAuthoringSkillPath),
-      skipped: practiceSkipped.filter(isAuthoringSkillPath),
+      // The authoring pack writes missing files; the managed writer only
+      // creates a missing SKILL.md when the pack skipped an existing directory.
+      created: uniquePaths(
+        practiceCreated.filter(isAuthoringSkillPath),
+        managed.created,
+      ),
+      skipped: uniquePaths(
+        practiceSkipped.filter(isAuthoringSkillPath),
+        managed.skipped,
+      ),
+      updated: managed.updated,
+      migrated: managed.migrated,
+      modified: managed.modified,
+      newer: managed.newer,
+      legacy: managed.legacy,
+      unversioned: managed.unversioned,
+      markerMismatch: managed.markerMismatch,
     },
     diagnostics: [...diagnostics],
   };
@@ -404,15 +460,28 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     home,
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.suppressImports === true ? { suppressImports: true } : {}),
+    ...(options.suppressManagedSkills === true ? { suppressManagedSkills: true } : {}),
   });
   const root = preparation.sourceRoot.root;
   const scope = preparation.sourceRoot.scope;
   const backupRoot = backupRootFor(root, options.now ?? new Date());
   const practicePlan = preparation.practicePlan;
   const sourceProblems = preparation.sourceProblems ?? [];
+  const managedDiagnostics = preparation.managedSkills?.diagnostics ?? [];
+  // The authoring pack creates missing skills it planned; the managed writer
+  // owns existing stale/legacy files and missing SKILL.md under a user-owned
+  // directory. Exactly one writer therefore plans each skill file.
+  const managedWritePlan = preparation.managedSkills === undefined
+    ? undefined
+    : planManagedSkillWrites(
+      preparation.managedSkills,
+      new Set(Object.keys(practicePlan?.files ?? {})),
+    );
+  const managed = summarizeManagedSkills(managedWritePlan);
   const practiceWarnings = scope === 'project' ? policySkipWarnings(practicePlan) : [];
   const practiceDiagnostics = [
     ...(practicePlan?.diagnostics ?? []),
+    ...managedDiagnostics,
     ...practiceWarnings,
     ...sourceProblems,
   ];
@@ -442,9 +511,16 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     const practicesFor = (
       created: readonly string[],
       skipped: readonly string[],
+      managedSummary: ManagedSkillSummary = managed,
     ): NormalizePracticesResult | undefined => practicePlan === undefined
       ? undefined
-      : buildPractices(practicePlan, created, skipped, practiceDiagnostics);
+      : buildPractices(
+        practicePlan,
+        created,
+        skipped,
+        practiceDiagnostics,
+        managedSummary,
+      );
 
     // Any invalid import candidate gates the minimal source copy as well, so a
     // rejected plan writes neither `.agents` nor `.claude`. Planned practice
@@ -458,7 +534,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       });
     }
     const applied = await applyNormalizeAdoption(
-      { ...preparation, claudePlan: undefined },
+      { ...preparation, claudePlan: undefined, managedSkills: managedWritePlan },
       { dryRun: options.dryRun === true, backupRoot },
     );
     adoption = {
@@ -466,7 +542,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       sourceActions: applied.actions,
       diagnostics: [...adoption.diagnostics, ...applied.diagnostics],
     };
-    practices = practicesFor(applied.created, applied.skipped);
+    practices = practicesFor(applied.created, applied.skipped, applied.managed);
     if (hasErrors(applied.diagnostics)) {
       const planned = await planSourceWrites(root, sourcePlan);
       practices = practicesFor(planned.create, planned.skip);
@@ -511,8 +587,8 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   // practice error returns before anything is written.
   let practiceSourcePlan: MinimalSourcePlan | undefined;
   if (preparation.phase === 'initialized' && practicePlan !== undefined) {
-    if (hasErrors(practicePlan.diagnostics)) {
-      practices = buildPractices(practicePlan, [], [], practiceDiagnostics);
+    if (hasErrors(practicePlan.diagnostics) || hasErrors(managedDiagnostics)) {
+      practices = buildPractices(practicePlan, [], [], practiceDiagnostics, managed);
       return blockedResult(root, scope, options, preparationDiagnostics, {
         ...adoptionExtras(adoption),
         ...practiceExtras(scope, practices),
@@ -529,6 +605,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       planned.create,
       planned.skip,
       practiceDiagnostics,
+      managed,
     );
   }
 
@@ -539,7 +616,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   if (sourceProblems.length > 0) {
     practices = practicePlan === undefined
       ? undefined
-      : buildPractices(practicePlan, [], [], practiceDiagnostics);
+      : buildPractices(practicePlan, [], [], practiceDiagnostics, managed);
     return blockedResult(root, scope, options, preparationDiagnostics, {
       ...adoptionExtras(adoption),
       ...practiceExtras(scope, practices),
@@ -593,15 +670,29 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
 
   // Practice writes run after the source-tree safety gate but before target
   // planning, so the new files become projections of this same normalization.
+  // Managed skill writes share this phase; a dry run reports the same plan
+  // without touching bytes.
   if (practiceSourcePlan !== undefined && practicePlan !== undefined
-    && !blockedBeforePlanning && options.dryRun !== true) {
-    const written = await writeSourceFiles(root, practiceSourcePlan);
-    practices = buildPractices(
-      practicePlan,
-      written.created,
-      written.skipped,
-      practiceDiagnostics,
-    );
+    && !blockedBeforePlanning) {
+    if (options.dryRun !== true) {
+      const written = await writeSourceFiles(root, practiceSourcePlan);
+      if (managedWritePlan !== undefined) {
+        await applyManagedSkillWrites(root, managedWritePlan, { dryRun: false });
+      }
+      practices = buildPractices(
+        practicePlan,
+        written.created,
+        written.skipped,
+        practiceDiagnostics,
+        managed,
+      );
+    }
+    if (managed.actions.length > 0) {
+      adoption = {
+        ...adoption,
+        sourceActions: [...adoption.sourceActions, ...managed.actions],
+      };
+    }
   }
 
   const facts = await discoverSourceFacts(root, paths);
@@ -734,7 +825,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   // after every plan is clean; `.claude` stays untouched on earlier failures.
   if (preparation.claudePlan !== undefined) {
     const imported = await applyNormalizeAdoption(
-      { ...preparation, sourcePlan: undefined },
+      { ...preparation, sourcePlan: undefined, managedSkills: undefined },
       { dryRun: false, backupRoot },
     );
     // Apply returns absolute paths; NormalizeResult paths are root-relative.
@@ -826,12 +917,17 @@ function formatHuman(result: NormalizeResult): string {
     lines.push(`  ${action}`);
   }
   if (result.practices?.mode === 'converge') {
-    // Adoption already reports these paths through its source actions.
-    for (const file of [
-      ...result.practices.created,
-      ...result.practices.skills.created,
-    ]) {
+    // Adoption already reports these paths through its source actions. A skill
+    // the managed writer created (an existing directory without SKILL.md) is
+    // already in the action list as `create skill`, so do not print it twice.
+    const actions = new Set(result.actions);
+    for (const file of result.practices.created) {
       lines.push(`  create ${file}`);
+    }
+    for (const file of result.practices.skills.created) {
+      if (!actions.has(`create skill ${file}`)) {
+        lines.push(`  create ${file}`);
+      }
     }
     for (const file of [
       ...result.practices.skipped,
