@@ -197,6 +197,26 @@ describe('projection planning and application', () => {
     expect(withFix.actions.some((item) => item.type === 'backup-and-replace')).toBe(true);
   });
 
+  it('leaves a target owned by the adoption import plan alone', async () => {
+    const project = await fixture();
+    const { projections } = await discoverProjections(project.root, paths(project.root));
+    const projection = projections.find((item) => item.kind === 'agent');
+    if (projection === undefined) {
+      throw new Error('missing projection');
+    }
+    const target = join(project.root, projection.target);
+    await mkdir(join(project.root, '.claude/agents'), { recursive: true });
+    await writeFile(target, 'physical copy\n');
+
+    const plan = await planProjectionActions(project.root, projections, generated(projections), {
+      fix: true,
+      importedTargets: new Set([projection.target]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.actions.some((item) => item.projection.target === projection.target)).toBe(false);
+  });
+
   it('removes a managed link whose source disappeared', async () => {
     const project = await fixture();
     const { projections } = await discoverProjections(project.root, paths(project.root));

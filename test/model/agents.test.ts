@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { rm } from 'node:fs/promises';
-import { discoverAgents } from '../../src/model/agents.ts';
+import { join } from 'node:path';
+import { discoverAgents, validateAgentSource } from '../../src/model/agents.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 
 const projects: ProjectFixture[] = [];
@@ -214,5 +215,23 @@ describe('agent discovery', () => {
     const result = await discoverAgents(fixture.root, fixture.agents);
 
     expect(result.diagnostics.map((item) => item.code)).toContain('agent.hook-handler');
+  });
+
+  it('validates a single agent source for adoption', async () => {
+    const fixture = await project();
+    const file = join(fixture.root, '.agents/agents/reviewer.md');
+    await writeProjectFile(fixture.root, '.agents/agents/reviewer.md', agent('reviewer'));
+    const result = await validateAgentSource(fixture.root, file);
+    expect(result.item?.name).toBe('reviewer');
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  });
+
+  it('rejects memory: project from a single agent source', async () => {
+    const fixture = await project();
+    const file = join(fixture.root, '.agents/agents/reviewer.md');
+    await writeProjectFile(fixture.root, '.agents/agents/reviewer.md', agent('reviewer', 'memory: project\n'));
+    const result = await validateAgentSource(fixture.root, file);
+    expect(result.item).toBeUndefined();
+    expect(result.diagnostics.map((d) => d.code)).toContain('agent.memory-project');
   });
 });

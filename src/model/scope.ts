@@ -13,6 +13,16 @@ export interface SourceRoot {
   instructions: string;
 }
 
+export interface ScopeMarker {
+  scope: Scope;
+  root: string;
+  sourceRoot: string;
+  manifestPath: string;
+  instructionsPath: string;
+  hasManifest: boolean;
+  hasAgents: boolean;
+}
+
 const MISSING_HINT = 'Run "dab init" in the project root or "dab init ~/.agents" for global scope.';
 const GLOBAL_HINT = 'Run dab init ~/.agents for global scope.';
 const NESTED_HINT = 'Run "dab init" from the repository root instead.';
@@ -97,6 +107,69 @@ async function findProjectRoot(cwd: string, home: string): Promise<string | null
     }
     candidate = parent;
   }
+}
+
+async function findGitRoot(cwd: string): Promise<string> {
+  let candidate = cwd;
+  for (;;) {
+    if (await exists(join(candidate, '.git'))) {
+      return candidate;
+    }
+    const parent = dirname(candidate);
+    if (parent === candidate) {
+      return cwd;
+    }
+    candidate = parent;
+  }
+}
+
+export async function resolveScopeMarker(
+  options: { cwd: string; home: string },
+): Promise<ScopeMarker> {
+  const cwd = resolve(options.cwd);
+  const home = resolve(options.home);
+  const globalSource = join(home, '.agents');
+  const globalInfo = await canonical(globalSource);
+  if (globalInfo.exists) {
+    const cwdInfo = await canonical(cwd);
+    if (isPathInside(globalInfo.real, cwdInfo.real)) {
+      return {
+        scope: 'global',
+        root: home,
+        sourceRoot: globalSource,
+        manifestPath: join(globalSource, 'dab.yaml'),
+        instructionsPath: join(globalSource, 'AGENTS.md'),
+        hasManifest: await hasManifest(globalSource),
+        hasAgents: globalInfo.exists,
+      };
+    }
+  }
+
+  const found = await findProjectRoot(cwd, home);
+  if (found !== null) {
+    return {
+      scope: 'project',
+      root: found,
+      sourceRoot: join(found, '.agents'),
+      manifestPath: join(found, 'dab.yaml'),
+      instructionsPath: join(found, 'AGENTS.md'),
+      hasManifest: await hasManifest(found),
+      hasAgents: await hasAgentsTree(found),
+    };
+  }
+
+  // Uninitialized project: anchor on the nearest git root, or cwd when the
+  // directory is not tracked by git. Neither marker exists on this path.
+  const root = await findGitRoot(cwd);
+  return {
+    scope: 'project',
+    root,
+    sourceRoot: join(root, '.agents'),
+    manifestPath: join(root, 'dab.yaml'),
+    instructionsPath: join(root, 'AGENTS.md'),
+    hasManifest: false,
+    hasAgents: false,
+  };
 }
 
 export async function resolveSourceRoot(

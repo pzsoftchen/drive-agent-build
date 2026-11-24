@@ -87,16 +87,25 @@ export async function assertParentInsideRoot(root: string, relativePath: string)
 export async function realPathNearest(root: string, relativePath: string): Promise<string> {
   const absolute = resolveInside(root, relativePath);
   let current = absolute;
-  let info = await lstatOrNullPath(current);
-  while (info === null) {
+  while (true) {
+    const info = await lstatOrNullPath(current);
+    if (info !== null) {
+      try {
+        return await realpath(current);
+      } catch (error) {
+        // A dangling symlink has lstat metadata but no realpath; judge it by
+        // its parent. Replacing or removing the entry never follows the link.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+      }
+    }
     const next = dirname(current);
     if (next === current) {
-      break;
+      return current;
     }
     current = next;
-    info = await lstatOrNullPath(current);
   }
-  return realpath(current);
 }
 
 export async function assertRealPathInsideRoot(

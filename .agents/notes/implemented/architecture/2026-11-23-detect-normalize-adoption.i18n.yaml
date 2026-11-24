@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-23-detect-normalize-adoption.md
+translation: .agents/notes/implemented/architecture/2026-11-23-detect-normalize-adoption.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: d889b6f6d03115711d42c4e60d0ca1045dc6188f1b4ca943f59e994da8c5ab76
+    translation: 8735908faa04be5408a41875fc9a60d0a2b48280b23d42af858b6479df75ed28
+  - index: 2
+    level: 2
+    source: 51e2b2b1d728cdc3f798adffbeaeac5cccc2d8cdebeec340ebbfaf7ae5ef004f
+    translation: 8319dccab07d36c469fc9acf9331ce16746ef63eb07684570bc21209807aec2f
+  - index: 3
+    level: 2
+    source: 6e849b8d9e5163866427204fd7de17a8f1d53635fbaaf586f734a9b89942c8a7
+    translation: 86cd890beeef2f12ec160ef9150d7bd732e47448b90f65e78a5f51d8766b2704
+  - index: 4
+    level: 2
+    source: b2dba92e0074d16482bf0218157ad914420f0ad875faf66021007799ae6d0bc0
+    translation: 35ac23d3dea4215078bfef2de9c153b4612ae13d3af26c64273be71aae714dff
+  - index: 5
+    level: 2
+    source: abb372c9d50f030e2a2f2d1e0a691b8d59b928da8b2ce422b8725acc1d5607d8
+    translation: 50335ede3ee1c02e1668af075467eb2c19828c391b45dc2a47cc18da3066fd56
+  - index: 6
+    level: 2
+    source: e7f6ba8be745964b67f5c21796ec41a872b3ede6c6fc3fadac2de734379b9d99
+    translation: 696fb672f521f4b81280e329c4b12ede0506a9931e405952f816398b88910611
+  - index: 7
+    level: 2
+    source: 4817baabe3a082f25ee94e79ea9c968918d217f9f36a6cf92546a374a5e462bf
+    translation: 562422f339e8487fe3f1ef7ec48460833ce65d460bd318745aa0fbabffc4e1bb

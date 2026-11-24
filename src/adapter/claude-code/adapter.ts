@@ -149,7 +149,10 @@ async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePl
     input.paths.root,
     discovered.projections,
     generatedRecord,
-    { fix: input.fix },
+    {
+      fix: input.fix,
+      importedTargets: new Set(input.importedTargets ?? []),
+    },
   );
 
   const backupTargets = new Set(
@@ -295,7 +298,13 @@ async function detect(input: TargetContext): Promise<TargetDetectOutcome> {
     ...await checkInstructions(input.paths.root, input.paths, options.instructions, generated),
   );
   diagnostics.push(
-    ...await checkProjections(input.paths.root, input.paths, discovered.projections, generated),
+    ...await checkProjections(
+      input.paths.root,
+      input.paths,
+      discovered.projections,
+      generated,
+      new Set(input.importedTargets ?? []),
+    ),
   );
 
   const projected = new Set(

@@ -5,7 +5,6 @@ import { dirname, join, resolve } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject, runNormalize } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
-import { ConfigError } from '../../src/core/errors.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
 import {
   getGeneratedTarget,
@@ -305,9 +304,9 @@ describe('normalizeProject', () => {
     expect(await readFile(settingsPath, 'utf8')).not.toBe('{"permissions":{}}\n');
   });
 
-  it('blocks a physical agent copy before any write, then fixes with backup', async () => {
+  it('blocks a physical rule copy before any write, then fixes with backup', async () => {
     const project = await projectFixture();
-    const target = join(project.root, '.claude/agents/reviewer.md');
+    const target = join(project.root, '.claude/rules/testing.md');
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, 'physical copy\n');
 
@@ -329,10 +328,42 @@ describe('normalizeProject', () => {
     });
 
     expect(fixed.ok).toBe(true);
-    expect(await readlink(target)).toContain('.agents/agents/reviewer.md');
-    const backup = fixed.backups.find((item) => item.endsWith('.claude/agents/reviewer.md'));
+    expect(await readlink(target)).toContain('.agents/rules/testing.md');
+    const backup = fixed.backups.find((item) => item.endsWith('.claude/rules/testing.md'));
     expect(backup).toMatch(/^\.dab\/backups\//);
     expect(await readFile(join(project.root, backup ?? ''), 'utf8')).toBe('physical copy\n');
+  });
+
+  it('imports physical agent and skill copies with --fix', async () => {
+    const project = await projectFixture();
+    const agentTarget = join(project.root, '.claude/agents/reviewer.md');
+    await mkdir(dirname(agentTarget), { recursive: true });
+    await writeFile(
+      agentTarget,
+      '---\nname: reviewer\ndescription: Physical.\n---\nPhysical.\n',
+    );
+    const skillTarget = join(project.root, '.claude/skills/doc-sync');
+    await mkdir(skillTarget, { recursive: true });
+    await writeFile(
+      join(skillTarget, 'SKILL.md'),
+      '---\nname: doc-sync\ndescription: Physical.\n---\nPhysical.\n',
+    );
+
+    const fixed = await normalizeProject({
+      cwd: project.root,
+      fix: true,
+      now: new Date('2026-11-16T12:00:00Z'),
+    });
+
+    expect(fixed.ok).toBe(true);
+    expect(await readlink(agentTarget)).toBe('../../.agents/agents/reviewer.md');
+    expect(await readlink(skillTarget)).toBe('../../.agents/skills/doc-sync');
+    expect(fixed.adoption?.backups.some((item) => item.endsWith('.claude/agents/reviewer.md')))
+      .toBe(true);
+    expect(fixed.adoption?.backups.some((item) => item.endsWith('.claude/skills/doc-sync')))
+      .toBe(true);
+    expect(fixed.backups.some((item) => item.endsWith('.claude/agents/reviewer.md'))).toBe(false);
+    expect(fixed.backups.some((item) => item.endsWith('.claude/skills/doc-sync'))).toBe(false);
   });
 
   it('blocks agent hooks that do not reference a managed project hook', async () => {
@@ -634,15 +665,11 @@ Unsafe.
     }
   });
 
-  it('rejects Windows and missing manifests', async () => {
+  it('rejects unsupported platforms', async () => {
     const project = await projectFixture();
     await expect(
       normalizeProject({ cwd: project.root, platform: 'win32' }),
     ).rejects.toMatchObject({ code: 'platform.unsupported' });
-
-    const empty = await makeProject();
-    projects.push(empty);
-    await expect(normalizeProject({ cwd: empty.root })).rejects.toBeInstanceOf(ConfigError);
   });
 
   it('rejects a symlinked generated directory that escapes the project', async () => {
@@ -661,13 +688,14 @@ Unsafe.
     }
   });
 
-  it('emits a versioned JSON error envelope', async () => {
+  it('emits a versioned JSON error envelope for an invalid manifest', async () => {
     const project = await makeProject();
     projects.push(project);
+    await writeProjectFile(project.root, 'dab.yaml', 'version: nope\n');
     const stdout: string[] = [];
 
     const code = await runNormalize(
-      { cwd: project.root, json: true },
+      { cwd: project.root, home: dirname(project.root), json: true },
       { stdout: (value) => stdout.push(value), stderr: () => undefined },
     );
 
@@ -677,7 +705,8 @@ Unsafe.
       error: { code: string };
     };
     expect(payload.schemaVersion).toBe(1);
-    expect(payload.error.code).toBe('config.missing');
+    expect(payload.error.code).toBe('config.invalid');
+    expect(await readFile(join(project.root, 'dab.yaml'), 'utf8')).toBe('version: nope\n');
   });
 
   it('emits machine-readable JSON from runNormalize', async () => {

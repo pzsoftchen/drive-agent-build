@@ -42,11 +42,37 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 - `dab init` 拒绝在已有 source root 内部创建 source root，因此嵌套 `.agents` tree 是错误。
 - Project 命令只写入仓库根下；global 命令只写入 `$HOME` 下。超出 scope root 的 target path 是错误。
 
+## Adoption 阶段
+
+`dab detect` 和 `dab normalize` 在需要 manifest 之前先解析 phase：
+
+| Phase | Markers |
+|---|---|
+| `initialized` | `dab.yaml` 可解析且 `.agents/` 存在。 |
+| `partial` | 只有一个 marker 存在，或 `dab.yaml` 存在但无法解析。 |
+| `uninitialized` | 两个 marker 都不存在。 |
+
+- Project root 是最近的、包含 `dab.yaml` 或 `.agents/` 的祖先目录；未初始化 project 使用最近的 `.git` 祖先目录，找不到时使用当前目录。
+- 仅当当前目录位于 `~/.agents` 内时才选择 global scope。root 是 `$HOME`，source root 是 `~/.agents`；完全缺失的 `~/.agents` 需要先运行 `dab init ~/.agents`。
+- 无效的 authored `dab.yaml` 会报告为 `[ERROR]`，且永不被覆盖。`normalize` 以配置错误（YAML 语法错误为 `config.yaml`，schema 或版本错误为 `config.invalid`）停止并零写入。
+- Adoption 只写入缺失的最小 source 文件；现有 authored 文件永不被替换。
+- `dab detect` 在任何 phase 都只读。未初始化和 partial scope 会输出 checklist 并退出 `2`；已初始化 scope 保持正常的 `0`/`3`/`4` 退出码和 `--strict` 语义。
+
+## Detect Checklist
+
+- `dab detect` 按 Instructions、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组。
+- 状态包括 `[OK]`、`[MISSING]`、`[WARN]`、`[ERROR]` 和 `[IMPORTABLE]`。`[IMPORTABLE]` 表示物理 `.claude/agents` 或 `.claude/skills` 条目可导入 `.agents`。
+- Detect 在每个 phase（包括 `initialized`）运行只读 import 计划；可导入条目不会同时报告为 unmanaged 或 physical-copy 投影漂移。
+- `score` 统计全部条目中的 `[OK]` 条目。它仅供参考，绝不决定退出码。
+- `nextActions` 是非 OK 条目去重后的 `next` 提示；被阻止的 preflight（例如无效 manifest 或 `$HOME` 冲突）不会建议 `dab normalize`。
+- JSON payload 追加 `scope`、`root`、`phase`、`profile`、`checklist`、`score` 和 `nextActions`，同时保留 `targets`、`diagnostics` 和 `summary`；`schemaVersion` 保持 `1`。
+- 未初始化和 partial scope 返回这一完整结果对象，其中 `ok: false`、`exitCode: 2`，不再使用保留给用法、校验和后端错误的 `{ ok: false, error }` 信封。
+
 ## 核心循环
 
-1. `dab init` 扫描仓库并为一个 scope 写入编写骨架。
-2. `dab normalize` 解析 scope root，预检每个启用的 target，并在全部预检通过后才写入。
-3. `dab detect` 在不写入的前提下检查漂移、所有权和 scope。
+1. `dab init` 扫描仓库并为一个 scope 写入完整的编写骨架。
+2. `dab normalize` 先采用缺失的最小 source、导入物理 Claude agents 和 skills，再预检每个启用的 target，并在全部预检通过后才写入。
+3. `dab detect` 在不写入的前提下检查漂移、所有权、phase 和 scope。
 4. `dab policy explain --target <provider>` 展示单个 target 的最终结果。
 
 ## Target 与 Adapter
@@ -94,10 +120,24 @@ generated:
 - Manifest 的 `generated` 记录是 target path 所有权的权威依据。
 - 已记录的 instruction 产物或 projection 符号链接发生漂移时会原地修复（`repair`/`repair-link`），不需要 `--fix` 或备份。已记录的 settings 文件与预期内容不一致时会先备份再重写，即使它是符号链接或目录。
 - 未记录且尚不匹配预期产物的 path 是 unmanaged。`normalize` 和 `detect` 会报告它，`normalize` 没有 `--fix` 时不写入任何内容。
-- Projection target 上的物理文件或目录即使已记录也是冲突。`dab normalize --fix` 会先把它移入带时间戳的 `.dab/backups/` 目录再替换；unmanaged 符号链接和 settings 文件同样需要 `--fix`。
+- 物理 `.claude/agents/*.md` 文件或 `.claude/skills/<dir>` 目录是 import 候选，不是 unmanaged 冲突。其他物理 projection target、settings 文件和无法解析的条目仍是冲突；`dab normalize --fix` 会先把它们移入带时间戳的 `.dab/backups/` 目录再替换或移除。
+- 已有 authored `.agents` source 的未记录条目符号链接由 `--fix` 先备份再修复。没有 authored source 的链接是冲突，需要手动移除；DAB 从不导入或删除 unmanaged 链接。
 - `normalize` 会采用并记录未记录但已指向预期 source 的符号链接，或已匹配配置模式的 instruction 产物，无需重写。
 - 已配置但没有安全映射的 target 会以 `target.unsupported` 失败。一个 target 失败会阻止所有 target 的写入，`--dry-run` 运行同一预检和退出码但不写入。
 - 根 `CLAUDE.md` 归用户所有，始终是致命冲突。
+
+## Normalize adoption 与 import
+
+- Adoption 在 source-root 解析前运行。未初始化或 partial scope 会获得缺失的最小 source：`AGENTS.md`、`dab.yaml`、项目策略、Claude Code 策略和 memory index，以及空的 agents、skills、rules、hooks 和 notes 目录。它复用 `init` 的渲染函数，但不创建 profile agents 或 skills。
+- Import 是受控迁移，不是 unmanaged 冲突：物理 `.claude/agents/*.md` 和 `.claude/skills/<dir>/SKILL.md` 条目会复制到 `.agents`，备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。不需要 `--fix`。
+- `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件保留在备份中。
+- Import 保留 `.claude` 的 basename 或目录名。frontmatter `name` 是 fact id；不一致会警告，但不会重命名。
+- All-or-nothing 门禁覆盖 adoption 和 import：任何非法候选或不安全路径都会阻止所有 source 和 `.claude` 写入。后续 target 预检失败时，`.claude` 保持不变；幂等的 source 副本可能已经存在。
+- Import 对已初始化和未初始化/partial scope 都运行，覆盖 project 和 global scope。Global scope 下 `.claude` 条目链接到 `~/.agents`；`~/.claude/settings.json` 和 `$HOME/.gitignore` 永不读写。
+- `dab init` 从不导入或备份现有 `.claude` 条目；adoption 和 import 仍是 normalize 的职责。
+- `dab normalize --dry-run` 预览 source 写入、import、backup 和 symlink 动作及计划备份路径；真实运行时人类输出也会列出 adoption source 动作、import 动作和 adoption 备份。
+- 本阶段只导入 agents 和 skills。rules、settings、hooks 和 instructions 仍是 unmanaged 或冲突的 `.claude` 内容，需要单独采用。
+- Import 是幂等的。导入新条目的那次运行会在下一次运行时记录这些投影；重跑 `dab normalize` 可让生成记录和 `dab detect` 收敛。
 
 ## Claude Code 指令
 
@@ -122,8 +162,9 @@ generated:
 - `src/adapter/types.ts` 定义 target adapter 契约。
 - `src/adapter/registry.ts` 把 provider 名映射到 adapter；只注册了 `claude-code`。
 - `src/adapter/claude-code/` 编译策略、渲染 settings 并管理指令和投影产物。
-- `src/detect/` 包含漂移和安全检查。
-- `src/init/` 扫描仓库并渲染模板。
+- `src/adapter/claude-code/adoption.ts` 规划并应用 agent 和 skill import、备份和逐项符号链接。
+- `src/detect/` 包含漂移和安全检查、checklist 渲染和未初始化 preflight。
+- `src/init/` 扫描仓库、渲染模板、解析 adoption phase 并规划最小 source。
 - `src/docs/` 运行双语文档门禁。
 
 ## 生成输出
@@ -132,7 +173,7 @@ generated:
 - `.claude/CLAUDE.md` 默认是指向 scope 指令的符号链接，生成的导入垫片是显式 fallback。
 - `.claude/agents/`、`.claude/skills/` 和 `.claude/rules/` 包含逐项符号链接。
 - `dab.yaml` 保存 `scope`、`targets` 以及逐 target 的生成记录，包含 source 哈希、target 哈希和投影清单。
-- `.dab/backups/` 在 `--fix` 采用 unmanaged path 前保存原始文件。
+- `.dab/backups/` 在 `--fix` 采用 unmanaged path 前、以及 import 替换 `.claude` 条目之前保存原始文件。
 
 ## Frontmatter 兼容性
 
@@ -147,6 +188,7 @@ generated:
 
 - 每个支持 `--json` 的命令都在顶层包含 `schemaVersion: 1`。
 - 版本覆盖顶层信封和任意嵌套 provider payload。不同命令使用不同的 payload 形状（`targets`、`target`、`normalize`）；嵌套 payload 不单独携带版本。
+- `detect --json` 追加 `scope`、`root`、`phase`、`profile`、`checklist`、`score` 和 `nextActions`；`normalize --json` 追加 `scope` 和 `adoption`，包含 source actions、imported entries 和 backups。
 - `normalize --json` 包含绝对 `root`；`init --json` 包含 `root`（source root）和 `scopeRoot`（created、skipped 以及嵌套 normalize 路径的基准）。其他 JSON 路径相对于该基准。
 - `--json` 不能与 `--help` 或 `--version` 组合使用。
 - 发布可以新增字段；删除字段或改变含义必须提升 schema version。
@@ -179,6 +221,8 @@ execute:
 - Adapter 只映射 facts 和解析 provider options；绝不拥有 agent、skill 或 rule 定义。
 - 无法表达的 provider 语义会显式失败，而不是静默扩大权限；一个 target 失败会阻止所有写入。
 - 本阶段 DAB 不合并 project 和 global scope，也不采用 global settings。
+- 本阶段 DAB 只导入 `.claude/agents` 和 `.claude/skills`；rules、settings、hooks 和 instructions 不被采用。
+- Global import 写入 `$HOME` 下，但从不管理 `~/.claude/settings.json` 或 `$HOME/.gitignore`。
 - 路径 deny 规则是工具级护栏，不是沙箱；`Bash`、`Grep`、`Glob`、`NotebookEdit` 和包装命令可以绕过。
 - Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。
 - v0.1 没有 eval 循环；证据工作记录在 `docs/roadmap.md`。

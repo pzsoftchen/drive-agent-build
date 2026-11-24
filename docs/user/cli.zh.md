@@ -31,6 +31,9 @@ npm 包名是 `@saydone/dab`；`npx dab` 会解析到另一个包。需要 Node.
 - 从子目录运行时，其他命令向上查找到最近的项目 manifest 或 source tree。
 - 位于 `$HOME/.agents` 内时，命令使用 global scope；global source root 始终是 `$HOME/.agents`。
 - Project 和 global scope 独立检查和 normalize。没有 `dab global` 命令，也没有跨 scope 合并。
+- Adoption 在需要 manifest 之前先解析 phase：`initialized` 表示 manifest 可解析且 `.agents/` 存在，`partial` 表示只有一个 marker 或 manifest 无效，`uninitialized` 表示两者都不存在。
+- 未初始化的 project 以最近的、包含 `.git` 的祖先目录为根，找不到时使用当前目录。
+- Global scope 要求 `~/.agents` 存在；完全缺失时先运行 `dab init ~/.agents`，再做第一次 global 检查。
 - v0.1 的所有命令都拒绝 Windows。
 
 ## `dab init`
@@ -60,6 +63,7 @@ Global 布局：
 - `dab init ~/.agents` 初始化 global scope：编写源位于 `~/.agents/`，投影位于 `$HOME` 下。
 - `dab init path` 把 `path` 作为确切的 source root，并在缺失时创建它。它拒绝在已有 source root 内部创建 source root。
 - 扫描仓库并写入缺失的编写文件。编写源冲突会在写入前停止。未受管的 `.claude` 冲突会作为 pending 报告，交给 `dab normalize --fix`。
+- Init 从不导入现有 `.claude/agents` 或 `.claude/skills` 条目，也不会为它们创建 adoption 备份。Import 是 `dab normalize` 的职责。
 - 生成的 manifest 是 v2，包含 `scope`、`targets` 和 `instructions: symlink`。
 - JSON 输出包含 `root`（source root）和 `scopeRoot`（路径基准）；`created`、`skipped` 以及嵌套 normalize 路径都相对于 `scopeRoot`。
 - `--dry-run` 预览编写文件写入和 pending 冲突，不写入任何内容。`--ai` 让 Claude Code 生成提案，确认后才写入；不能与 `--dry-run` 同时使用。
@@ -126,11 +130,73 @@ paths:
 dab detect [--strict] [--json]
 ```
 
-只检查不写入。它验证 scope、启用的 target adapter、Claude Code 版本、祖先指令文件、指令产物、投影、settings、策略、hooks、记忆、敏感信息、AGENTS.md 大小和链接。每个 fact 输出一行 `kind name: target=status`。
+只读运行。它会在需要 manifest 之前解析 scope 和 adoption phase，因此未初始化或 partial scope 会返回 checklist，而不是 source-root 错误。随后它校验 scope、启用的 target adapter、Claude Code 版本、祖先指令文件、指令产物、投影、settings、策略、hooks、记忆、敏感信息、AGENTS.md 大小和链接。
 
-- `--strict` 在存在项目或配置类 warning（如 unknown frontmatter 或漂移）时以退出码 3 结束。环境类 warning（例如未安装 Claude Code）不会导致失败。
+人类输出先打印 `dab detect`，再打印 `Scope`、`Root` 和 `Profile`，按 Instructions、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组，然后打印 `score: <ok>/<total> (<percent>%)`，并为每个不同的下一步输出一行 `next:`。
+
+```text
+dab detect
+Scope: project
+Root: /path/to/project
+Profile: not initialized
+
+Instructions
+  [OK] AGENTS.md
+
+Agents
+  [OK] .agents/agents/
+  [IMPORTABLE] .claude/agents/extra.md (.agents/agents/extra.md) -> dab normalize --dry-run
+
+Skills
+  [OK] .agents/skills/
+
+Rules
+  [OK] .agents/rules/
+
+Policy
+  [OK] .agents/policies/project.yaml
+  [OK] .agents/adapters/claude-code.yaml
+
+Hooks
+  [OK] .agents/hooks/
+
+Memory
+  [OK] .agents/memory/INDEX.md
+
+Notes
+  [OK] .agents/notes/
+
+Generated target
+  [MISSING] dab.yaml -> dab normalize
+  [MISSING] .claude/settings.json -> dab normalize
+
+score: 9/12 (75%)
+next: dab normalize --dry-run
+next: dab normalize
+```
+
+| 状态 | 含义 |
+|---|---|
+| `[OK]` | 事实符合。 |
+| `[MISSING]` | 应有的事实或产物缺失。 |
+| `[WARN]` | 非致命问题，例如漂移或环境警告。 |
+| `[ERROR]` | 需要修复的错误。 |
+| `[IMPORTABLE]` | 物理 `.claude/agents` 或 `.claude/skills` 条目，可由 `dab normalize` 导入 `.agents`。 |
+
+- `score` 统计全部条目中 `[OK]` 的比例；其他状态都不计入 OK，且 score 永不改变退出码。
+- 已初始化 scope 与未初始化 scope 运行同一份只读 import 计划，因此可导入条目会报告为 `[IMPORTABLE]`，而不是 unmanaged 或 physical-copy 投影漂移。
+- `phase` 为 `initialized` 表示 `dab.yaml` 可解析且 `.agents/` 存在；只有一个 marker 或 manifest 无效时为 `partial`；两者都不存在时为 `uninitialized`。
+- `Profile` 来自有效的 manifest；未初始化 scope，或没有有效 manifest 的 partial scope，显示 `not initialized`。
+- 未初始化和 partial scope 始终退出 `2`，且从不写入；`--strict` 不改变这一点。
+- 已初始化 scope 保持现有退出码：干净时为 `0`，`--strict` 警告和校验失败退出 `3`，Claude Code 版本不兼容退出 `4`。
+- `--strict` 在存在项目或配置类警告（如 unknown frontmatter 或漂移）时以 `3` 退出；环境类警告（如缺少 Claude Code 可执行文件）不会失败。
 - Global scope 会跳过祖先和个人记忆检查，因为用户级 Claude 数据不是项目产物。
+- Global scope 下 `~/.claude/settings.json` 和 `$HOME/.gitignore` 归用户所有且只读；global settings 不会被采用。
 - Unmanaged target path 和缺失的生成记录会作为漂移报告。
+
+`--json` 保留 `targets`、`diagnostics`、`summary` 和 `schemaVersion: 1`，并追加 `scope`、`root`、`phase`、已知时的 `profile`，以及 `checklist`、`score` 和 `nextActions`。每个 checklist 条目包含 `group`、`label`、`status`、可选的 `detail`、可选的 `file` 和可选的 `next`。
+
+未初始化和 partial scope 返回这一完整结果对象，其中 `ok: false`、`exitCode: 2`；不再使用保留给用法、校验和后端错误的 `{ ok: false, error }` 信封。由于字段只是追加，`schemaVersion` 仍为 `1`。
 
 ## `dab normalize`
 
@@ -138,13 +204,49 @@ dab detect [--strict] [--json]
 dab normalize [--dry-run] [--fix] [--json]
 ```
 
-规划或应用投影修复、`.claude/CLAUDE.md` 指令产物、`.claude/settings.json`、`dab.yaml` 生成记录和 `.gitignore`。它会在写入前预检每个启用的 target；一个 target 失败会阻止所有写入。冲突会在写入前停止。`--fix` 会在替换前把冲突文件备份到 `.dab/backups/`。
+规划或应用 authored source adoption、Claude import、投影修复、`.claude/CLAUDE.md` 指令产物、`.claude/settings.json`、`dab.yaml` 生成记录和 `.gitignore`。它在写入前预检每个启用的 target；一个 target 失败会阻止所有 target 写入。`--fix` 会在替换前把非 import 的冲突路径备份到 `.dab/backups/`。
 
-JSON 输出包含顶层结果和每个启用 target 的条目：
+- Adoption 在 source-root 解析前运行。未初始化或 partial 的 project 会获得缺失的最小 authored source：`AGENTS.md`、`dab.yaml`、`.agents/policies/project.yaml`、`.agents/adapters/claude-code.yaml` 和 `.agents/memory/INDEX.md`，以及空的 `.agents/agents`、`.agents/skills`、`.agents/rules`、`.agents/hooks` 和 `.agents/notes` 目录。Global scope 使用 `.agents/AGENTS.md` 和 `.agents/dab.yaml`（位于 `$HOME`）以及相同的 source 子目录。它从不创建默认 agents 或 skills；full profile skeleton 请使用 `dab init`。
+- 现有 authored 文件永不被覆盖。现有 `dab.yaml` 若无法解析，normalize 会以配置错误（YAML 语法错误为 `config.yaml`，schema 或版本错误为 `config.invalid`）停止并零写入；修复文件后重跑。
+- Import 在每次 normalize 时运行，不只发生在 adoption 期间。物理 `.claude/agents/<name>.md` 和 `.claude/skills/<name>/SKILL.md` 条目会复制到 `.agents`，原 `.claude` 条目会备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。
+- 保留 basename 和 skill 目录名。frontmatter `name` 不一致会警告，但不会重命名。首次 import 会复制整个 skill 目录（包括额外文件）。当 `.agents/skills/<name>` 已存在时，额外文件不会合并；它们保留在备份中并产生警告。
+- 现有 `.agents` source 优先。当 `.claude` 内容不同时，normalize 保留 source、备份 `.claude`、发出警告并仍然创建链接。已指向 source 的 managed 符号链接会被跳过。
+- Import 不需要 `--fix`；`--fix` 只处理非 import 的 unmanaged 冲突。`.claude/agents` 或 `.claude/skills` 上的目录符号链接是冲突，因为 DAB 逐项拥有条目。
+- 已记录的 projection 符号链接发生漂移时会原地修复，不需要 `--fix`。未记录但已有 authored `.agents` source 的条目符号链接由 `--fix` 先备份再修复；没有 authored source 的链接是冲突，必须手动移除，因为 DAB 从不导入或删除 unmanaged 链接。
+- 任何非法 import 候选都会阻止所有写入：不写 adoption source 文件、不 import、不备份。后续 target 预检失败时，`.claude` 保持不变，幂等的 source 副本可能已经存在。
+- `--dry-run` 预览 adoption source 动作以及 import、backup、symlink 计划和计划备份路径，并运行同一预检但不写入。人类输出列出 adoption source 动作、import 动作和 adoption 备份；`--json` 提供 `adoption.imports`、`adoption.importActions` 以及计划或实际 `adoption.backups`。顶层 `actions` 在 target 动作之前包含 adoption 动作。
+- Global scope 使用相同的 import 规则：`$HOME/.claude` 下的物理条目链接到 `~/.agents`，且不在 `$HOME` 根写入任何内容。
+- Import 是幂等的。导入新条目的那次运行会在下一次运行时记录这些投影，因此 import 后重跑 `dab normalize` 可让 `dab detect` 干净。
+
+JSON 输出包含顶层结果、`scope` 和 `adoption` 对象（含 `phase`、可选的 `sourcePlan`、`sourceActions`、`importActions`、`imports`、`backups` 和 `diagnostics`），以及每个启用 target 的条目：
 
 ```json
 {
   "actions": [],
+  "adoption": {
+    "backups": [
+      ".dab/backups/2026-11-23T00-00-00-000Z/.claude/agents/extra.md"
+    ],
+    "diagnostics": [],
+    "importActions": [
+      "import .claude/agents/extra.md -> .agents/agents/extra.md",
+      "backup .claude/agents/extra.md -> .dab/backups/2026-11-23T00-00-00-000Z/.claude/agents/extra.md",
+      "symlink .claude/agents/extra.md -> ../../.agents/agents/extra.md"
+    ],
+    "imports": [
+      {
+        "diagnostics": [],
+        "kind": "agent",
+        "name": "extra",
+        "replaceTarget": true,
+        "source": ".claude/agents/extra.md",
+        "target": ".agents/agents/extra.md",
+        "writeSource": true
+      }
+    ],
+    "phase": "initialized",
+    "sourceActions": []
+  },
   "backups": [],
   "diagnostics": [],
   "dryRun": false,
@@ -157,6 +259,7 @@ JSON 输出包含顶层结果和每个启用 target 的条目：
   "ok": true,
   "root": "/path/to/project",
   "schemaVersion": 1,
+  "scope": "project",
   "settings": {
     "changed": false,
     "path": ".claude/settings.json",
@@ -185,7 +288,7 @@ JSON 输出包含顶层结果和每个启用 target 的条目：
 ```
 
 - 结果包含绝对 `root`；其他路径相对于该基准，包括 `gitignore.path` 和 backup 条目。
-- `--dry-run` 运行同一预检和退出码，但不写入。
+- `--dry-run` 运行同一预检和退出码，但不写入。在未初始化或 partial scope 上，它预览 adoption source，且没有 target 计划，因为 target 计划需要已写入的 source。Import 计划位于 `--json` 的 `adoption.imports`、`adoption.importActions` 和计划中的 `adoption.backups`；顶层 `actions` 和 `backups` 重复这些计划字符串和路径。
 - Global scope 下 `~/.claude/settings.json` 和 `$HOME/.gitignore` 只读，normalize 会警告 global settings 尚未采用。
 
 ## `dab policy explain`
@@ -241,5 +344,6 @@ dab policy explain --agent reviewer
 
 - 生成文件永远不手工编辑。
 - `.claude/settings.local.json` 归用户所有，DAB 从不读写它。
-- 本阶段 global settings 和 `$HOME/.gitignore` 只读；采用和合并计划单独进行。
-- `--fix` 必须显式指定，因为它可能在备份后替换冲突文件。
+- 本阶段 global settings 和 `$HOME/.gitignore` 只读；global agents 和 skills 仍会导入，settings 的采用和合并计划单独进行。
+- `--fix` 必须显式指定，因为它可能在备份后替换非 import 的冲突文件。
+- `dab init` 是一次性的 full profile 初始化入口；对已有 project 或已有 global source，请使用 `dab detect` 和 `dab normalize`。

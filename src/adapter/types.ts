@@ -15,6 +15,13 @@ export interface TargetContext {
   target: TargetConfig;
   facts: SourceFacts;
   runner?: CommandRunner;
+  /**
+   * Root-relative `.claude` targets that the adoption import step owns. Detect
+   * must not report them as unmanaged or physical copies, and normalize
+   * adapters must not plan competing backup/replace or removal actions; the
+   * import step replaces them after planning.
+   */
+  importedTargets?: readonly string[];
 }
 
 export interface TargetNormalizeInput extends TargetContext {

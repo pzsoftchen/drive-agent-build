@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { discoverSkills } from '../../src/model/skills.ts';
+import { discoverSkills, validateSkillSource } from '../../src/model/skills.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 
 const projects: ProjectFixture[] = [];
@@ -87,5 +87,22 @@ describe('skill discovery', () => {
     const result = await discoverSkills(fixture.root, fixture.agents);
 
     expect(result.diagnostics.map((item) => item.code)).toContain('skill.duplicate-name');
+  });
+
+  it('validates a single skill directory for adoption', async () => {
+    const fixture = await project();
+    await writeProjectFile(fixture.root, '.agents/skills/doc-sync/SKILL.md', '---\nname: doc-sync\ndescription: Sync.\n---\nBody.\n');
+    const result = await validateSkillSource(fixture.root, join(fixture.root, '.agents/skills/doc-sync'));
+    expect(result.item?.name).toBe('doc-sync');
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  });
+
+  it('reports a missing SKILL.md from a single skill directory', async () => {
+    const fixture = await project();
+    const dir = join(fixture.root, '.agents/skills/empty');
+    await mkdir(dir, { recursive: true });
+    const result = await validateSkillSource(fixture.root, dir);
+    expect(result.item).toBeUndefined();
+    expect(result.diagnostics.map((d) => d.code)).toContain('skill.missing');
   });
 });

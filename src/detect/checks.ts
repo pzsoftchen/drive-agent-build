@@ -205,6 +205,7 @@ export async function checkProjections(
   paths: ProjectPaths,
   projections: readonly Projection[],
   generated: GeneratedTarget | undefined,
+  importedTargets: ReadonlySet<string> = new Set(),
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
   const managed = new Map(
@@ -213,6 +214,11 @@ export async function checkProjections(
   const expected = new Set(projections.map((projection) => projection.target));
 
   for (const projection of projections) {
+    if (importedTargets.has(projection.target)) {
+      // The adoption import migrates this entry; detect reports it as
+      // [IMPORTABLE] instead of as a projection conflict.
+      continue;
+    }
     const absolute = join(root, projection.target);
     const info = await lstatOrNull(absolute);
     if (info === null) {
@@ -311,7 +317,7 @@ export async function checkProjections(
     }
     for (const entry of entries) {
       const target = `${prefix}/${entry.name}`;
-      if (!expected.has(target) && !managed.has(target)) {
+      if (!expected.has(target) && !managed.has(target) && !importedTargets.has(target)) {
         diagnostics.push({
           code: 'projection.unmanaged',
           severity: 'warning',
