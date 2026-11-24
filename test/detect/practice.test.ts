@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { DAB_VERSION } from '../../src/core/version.ts';
+import { PRACTICE_NON_STRICT_WARNING_CODES } from '../../src/detect/practice.ts';
 import {
   AUTHORING_SKILL_NAMES,
   renderAuthoringSkill,
@@ -14,7 +15,10 @@ import {
   type AuthoringSkillName,
 } from '../../src/init/skill-templates.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
-import { populateProject } from '../helpers/initialized.ts';
+import {
+  populateProject,
+  syncGeneratedProjections,
+} from '../helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
@@ -108,13 +112,28 @@ async function writeSkill(
   await writeProjectFile(project.root, `.agents/skills/${name}/SKILL.md`, text);
 }
 
-/** Refresh generated projection hashes without changing managed skill content. */
-async function refreshProjections(project: ProjectFixture): Promise<void> {
-  await normalizeProject({ cwd: project.root, runner: goodRunner });
+/**
+ * Refresh the recorded hash for the rewritten skill without running normalize,
+ * so only the managed-skill state can drive warnings and strict failures.
+ */
+async function syncSkillHash(project: ProjectFixture): Promise<void> {
+  await syncGeneratedProjections(project.root);
 }
 
 function skillCodes(result: { diagnostics: Array<{ code: string }> }): string[] {
   return codes(result).filter((code) => code.startsWith('practice.skill-'));
+}
+
+/** Warning codes that `--strict` turns into a validation failure. */
+function strictWarningCodes(result: {
+  diagnostics: Array<{ code: string; severity: string }>;
+}): string[] {
+  return result.diagnostics
+    .filter(
+      (item) => item.severity === 'warning'
+        && !PRACTICE_NON_STRICT_WARNING_CODES.has(item.code),
+    )
+    .map((item) => item.code);
 }
 
 function skillRows(
@@ -135,6 +154,20 @@ afterEach(async () => {
 });
 
 describe('detect practice layer', () => {
+  it('keeps stale and missing skill warnings strict, and preserved states non-strict', () => {
+    expect(PRACTICE_NON_STRICT_WARNING_CODES.has('practice.skill-stale')).toBe(false);
+    expect(PRACTICE_NON_STRICT_WARNING_CODES.has('practice.skill-missing')).toBe(false);
+    for (const code of [
+      'practice.skill-newer',
+      'practice.skill-modified',
+      'practice.skill-legacy',
+      'practice.skill-unversioned',
+      'practice.skill-marker-mismatch',
+    ]) {
+      expect(PRACTICE_NON_STRICT_WARNING_CODES.has(code)).toBe(true);
+    }
+  });
+
   it('warns on TODO and empty architecture sections', async () => {
     const project = await initializedProject();
     await completePractice(project);
@@ -285,7 +318,7 @@ See [missing](nope.md).
       DOC_SKILL_FILE,
       '---\nname: dab-doc-writing\ndescription: Writes docs.\n---\nBody without a marker.\n',
     );
-    await normalizeProject({ cwd: project.root, runner: goodRunner });
+    await syncSkillHash(project);
 
     const unversioned = await detect(project);
     expect(unversioned.diagnostics).toEqual(expect.arrayContaining([
@@ -303,6 +336,7 @@ See [missing](nope.md).
 
     const staleText = await renderAuthoringSkill(DOC_SKILL, '0.0.0');
     await writeSkill(project, DOC_SKILL, staleText);
+    await syncSkillHash(project);
 
     const stale = await detect(project);
     expect(stale.diagnostics).toEqual(expect.arrayContaining([
@@ -312,6 +346,10 @@ See [missing](nope.md).
         file: DOC_SKILL_FILE,
       }),
     ]));
+    // The recorded projection hash is fresh, so the only strict-failing
+    // warning is the stale state itself.
+    expect(codes(stale)).not.toContain('generated.manifest-stale');
+    expect(strictWarningCodes(stale)).toEqual(['practice.skill-stale']);
     const staleRows = skillRows(stale, DOC_SKILL);
     expect(staleRows).toHaveLength(1);
     expect(staleRows[0]).toMatchObject({ status: 'warn', next: 'dab normalize' });
@@ -340,7 +378,7 @@ See [missing](nope.md).
       await completePractice(project);
       const text = await renderAuthoringSkill(DOC_SKILL, version);
       await writeSkill(project, DOC_SKILL, text);
-      await refreshProjections(project);
+      await syncSkillHash(project);
 
       const result = await detect(project);
 
@@ -365,7 +403,7 @@ See [missing](nope.md).
     await completePractice(project);
     const modified = `${await renderAuthoringSkill(DOC_SKILL, DAB_VERSION)}\nLocal note.\n`;
     await writeSkill(project, DOC_SKILL, modified);
-    await refreshProjections(project);
+    await syncSkillHash(project);
 
     const result = await detect(project);
 
@@ -380,6 +418,7 @@ See [missing](nope.md).
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: 'warn' });
     expect(rows[0]?.next).toBeUndefined();
+    expect(strictWarningCodes(result)).toEqual([]);
     expect(result.nextActions).not.toContain('dab normalize');
     expect((await detect(project, true)).exitCode).toBe(0);
     expect(await readFile(join(project.root, DOC_SKILL_FILE), 'utf8')).toBe(modified);
@@ -391,7 +430,7 @@ See [missing](nope.md).
     const legacy = `${(await renderAuthoringSkill(DOC_SKILL, '0.0.0'))
       .replace(/ sha256=[0-9a-f]{64}/, '')}\nLocal note.\n`;
     await writeSkill(project, DOC_SKILL, legacy);
-    await refreshProjections(project);
+    await syncSkillHash(project);
 
     const result = await detect(project);
 
@@ -410,12 +449,75 @@ See [missing](nope.md).
     expect(await readFile(join(project.root, DOC_SKILL_FILE), 'utf8')).toBe(legacy);
   });
 
+  it('renders a migratable legacy skill as a warn row without a next', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    // A legacy marker whose stripped body equals the current template is
+    // migrated by normalize, so detect keeps the warn row without auto-next.
+    const migratable = (await renderAuthoringSkill(DOC_SKILL, '0.0.0'))
+      .replace(/ sha256=[0-9a-f]{64}/, '');
+    await writeSkill(project, DOC_SKILL, migratable);
+    await syncSkillHash(project);
+
+    const result = await detect(project);
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-legacy',
+        severity: 'info',
+        file: DOC_SKILL_FILE,
+      }),
+    ]));
+    expect(result.diagnostics.some(
+      (item) => item.code === 'practice.skill-legacy' && item.severity === 'warning',
+    )).toBe(false);
+    const rows = skillRows(result, DOC_SKILL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'warn' });
+    expect(rows[0]?.detail).toContain('will be migrated by dab normalize');
+    expect(rows[0]?.next).toBeUndefined();
+    expect((await detect(project, true)).exitCode).toBe(0);
+    expect(await readFile(join(project.root, DOC_SKILL_FILE), 'utf8')).toBe(migratable);
+  });
+
+  it('reports a managed skill plan path error as a blocking error row', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    const target = '.agents/skill-sources/dab-doc-writing.md';
+    await writeProjectFile(
+      project.root,
+      target,
+      await renderAuthoringSkill(DOC_SKILL, DAB_VERSION),
+    );
+    await rm(join(project.root, DOC_SKILL_FILE), { force: true });
+    await symlink(join(project.root, target), join(project.root, DOC_SKILL_FILE));
+
+    const result = await detect(project);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-path',
+        severity: 'error',
+        file: DOC_SKILL_FILE,
+      }),
+    ]));
+    const rows = skillRows(result, DOC_SKILL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      status: 'error',
+      next: 'resolve the path conflict manually',
+    });
+    // The shared plan refuses symlinked SKILL.md files; detect only reports it.
+    expect((await lstat(join(project.root, DOC_SKILL_FILE))).isSymbolicLink()).toBe(true);
+  });
+
   it('reports an unversioned managed skill as non-strict without a next', async () => {
     const project = await initializedProject();
     await completePractice(project);
     const unversioned = await loadAuthoringSkillTemplate(DOC_SKILL);
     await writeSkill(project, DOC_SKILL, unversioned);
-    await refreshProjections(project);
+    await syncSkillHash(project);
 
     const result = await detect(project);
 
@@ -441,7 +543,7 @@ See [missing](nope.md).
       'dab-skill: dab-other-skill@',
     );
     await writeSkill(project, DOC_SKILL, mismatched);
-    await refreshProjections(project);
+    await syncSkillHash(project);
 
     const result = await detect(project);
 

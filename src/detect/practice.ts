@@ -597,6 +597,14 @@ function addSkillStale(
   });
 }
 
+function managedDiagnostic(
+  diagnostics: readonly Diagnostic[],
+  code: string,
+  file: string,
+): Diagnostic | undefined {
+  return diagnostics.find((item) => item.code === code && item.file === file);
+}
+
 /**
  * Map the shared managed-skill state onto detect. Diagnostics for preserved
  * states come from `planManagedSkills`, so detect and normalize agree on the
@@ -629,16 +637,28 @@ function addManagedSkillState(
         'content differs from the marker hash; preserved',
       );
       return;
-    case 'legacy':
+    case 'legacy': {
+      const legacy = managedDiagnostic(
+        diagnostics,
+        MANAGED_SKILL_DIAGNOSTIC_CODES.legacy,
+        state.file,
+      );
+      // An info diagnostic means the body equals the current template, so
+      // normalize will migrate it. That is still a warn row with no auto-next.
       addSkillWarning(
         collector,
         state.name,
-        `legacy marker version ${state.version ?? 'unknown'} has no hash; preserved`,
+        legacy?.severity === 'info'
+          ? `legacy marker version ${state.version ?? 'unknown'} will be migrated by dab normalize`
+          : `legacy marker version ${state.version ?? 'unknown'} has no hash; preserved`,
       );
       return;
+    }
     case 'unversioned': {
-      const mismatch = diagnostics.find(
-        (item) => item.code === MANAGED_SKILL_DIAGNOSTIC_CODES.mismatch,
+      const mismatch = managedDiagnostic(
+        diagnostics,
+        MANAGED_SKILL_DIAGNOSTIC_CODES.mismatch,
+        state.file,
       );
       addSkillWarning(
         collector,

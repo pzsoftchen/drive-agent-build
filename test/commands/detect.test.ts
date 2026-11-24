@@ -11,8 +11,11 @@ import {
   renderAuthoringSkill,
 } from '../../src/init/practice-authoring.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
-import { populateProject } from '../helpers/initialized.ts';
-import { makeInitializedProject } from '../helpers/initialized.ts';
+import {
+  makeInitializedProject,
+  populateProject,
+  syncGeneratedProjections,
+} from '../helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
 
@@ -727,22 +730,30 @@ describe('runDetect', () => {
     const skillFile = '.agents/skills/dab-doc-writing/SKILL.md';
     const modified = `${await renderAuthoringSkill('dab-doc-writing', DAB_VERSION)}\nLocal note.\n`;
     await writeProjectFile(project.root, skillFile, modified);
-    await normalizeProject({ cwd: project.root, runner: goodRunner });
+    await syncGeneratedProjections(project.root);
 
     const modifiedResult = await detectProject(detectOptions(project));
     expect(modifiedResult.exitCode).toBe(0);
     expect(modifiedResult.diagnostics.map((item) => item.code)).toContain(
       'practice.skill-modified',
     );
+    expect(modifiedResult.diagnostics.map((item) => item.code)).not.toContain(
+      'generated.manifest-stale',
+    );
     expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(0);
     expect(await readFile(join(project.root, skillFile), 'utf8')).toBe(modified);
 
     const stale = await renderAuthoringSkill('dab-doc-writing', '0.0.0');
     await writeProjectFile(project.root, skillFile, stale);
+    await syncGeneratedProjections(project.root);
 
     const staleResult = await detectProject(detectOptions(project));
     expect(staleResult.diagnostics.map((item) => item.code)).toContain(
       'practice.skill-stale',
+    );
+    // Only the stale state drives the strict failure in this fixture.
+    expect(staleResult.diagnostics.map((item) => item.code)).not.toContain(
+      'generated.manifest-stale',
     );
     expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(3);
     expect(await readFile(join(project.root, skillFile), 'utf8')).toBe(stale);
