@@ -50,6 +50,7 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 
 - [Documentation guide](docs/AGENTS.md)
 - [Why DAB exists](docs/concepts/why-dab.md)
+- [Engineering discipline](docs/concepts/engineering-discipline.md)
 - [Roadmap](docs/roadmap.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
@@ -60,3 +61,4 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - [Agent Note 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.md)
 - [Agent Note 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.md)
 - [Agent Note 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.md)
+- [Agent Note 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md)

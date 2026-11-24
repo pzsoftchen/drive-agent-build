@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md
+translation: .agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: 4bd0adf28d1dc2b675f8819b2b146ef75938b568ff158e9587748c4f9275893b
+    translation: 17592a4a53eaa8d00f0975379f44f4cccd540a1c7e85e69e07d2602304950ede
+  - index: 2
+    level: 2
+    source: d3bced610a83ac3bbe1bf97b80b130fadcab2a851f39fddcd472eb1f367ba6c0
+    translation: 0c6d1b21c1bd2191cf86bb3763dca8d4980af1a9e4b44f556ef0522e037fc184
+  - index: 3
+    level: 2
+    source: caa730608f7f91c76e8ceedbeeca481d48e2bd4b5df7f9207ed076f06e1bf2fd
+    translation: fde711412c2fcf81e4b9ee0ca25ecb99714162eff0ea04b56322de5f07902cce
+  - index: 4
+    level: 2
+    source: 412a9e4af787dd735e616781cf4a4e50258cfece0a6a1b699a098358a1c2be94
+    translation: 849fd8f641e56ad249dd1fe5e3c3b55b2dbb73a9866e29f7ab4a847f364bb415
+  - index: 5
+    level: 2
+    source: 4000507a0c0c718258b5537bd2e1519e8805e360d49adfa932e04a04e03391a3
+    translation: 15fe0c4f792163d868b9858517960fbe826bf3e9035067d5ae1d81c0fc160649
+  - index: 6
+    level: 2
+    source: 8dfa3767983135a34a3f23c77c57135fb06bafe5f3b373a3db93731b14888226
+    translation: 39e567be35bd525a41e969ff0cabdf2d19cda495a4cc32649ae7a7296265d710
+  - index: 7
+    level: 2
+    source: df8108d4b55b9234764be1bae013f06e28d664a0f0800dbf2975f4657048a1c3
+    translation: 1dd07b6f805ef7c8beb320e04740a2906e02e7ac9d0554ca2e9dcbe361bfcdcd
