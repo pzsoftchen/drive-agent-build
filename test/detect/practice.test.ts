@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject } from '../../src/commands/detect.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
@@ -9,6 +9,10 @@ import {
   AUTHORING_SKILL_NAMES,
   renderAuthoringSkill,
 } from '../../src/init/practice-authoring.ts';
+import {
+  loadAuthoringSkillTemplate,
+  type AuthoringSkillName,
+} from '../../src/init/skill-templates.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
 import { populateProject } from '../helpers/initialized.ts';
 import { makeProject, writeProjectFile, type ProjectFixture } from '../helpers/project.ts';
@@ -91,6 +95,35 @@ function detect(project: ProjectFixture, strict = false) {
 
 function codes(result: { diagnostics: Array<{ code: string }> }): string[] {
   return result.diagnostics.map((item) => item.code);
+}
+
+const DOC_SKILL: AuthoringSkillName = 'dab-doc-writing';
+const DOC_SKILL_FILE = '.agents/skills/dab-doc-writing/SKILL.md';
+
+async function writeSkill(
+  project: ProjectFixture,
+  name: AuthoringSkillName,
+  text: string,
+): Promise<void> {
+  await writeProjectFile(project.root, `.agents/skills/${name}/SKILL.md`, text);
+}
+
+/** Refresh generated projection hashes without changing managed skill content. */
+async function refreshProjections(project: ProjectFixture): Promise<void> {
+  await normalizeProject({ cwd: project.root, runner: goodRunner });
+}
+
+function skillCodes(result: { diagnostics: Array<{ code: string }> }): string[] {
+  return codes(result).filter((code) => code.startsWith('practice.skill-'));
+}
+
+function skillRows(
+  result: Awaited<ReturnType<typeof detect>>,
+  label: string,
+) {
+  return result.checklist.filter(
+    (entry) => entry.group === 'Skills' && entry.label === label,
+  );
 }
 
 afterEach(async () => {
@@ -247,10 +280,9 @@ See [missing](nope.md).
   it('reports stale markers as strict but unversioned markers as non-strict/no-next', async () => {
     const project = await initializedProject();
     await completePractice(project);
-    const skillFile = '.agents/skills/dab-doc-writing/SKILL.md';
     await writeProjectFile(
       project.root,
-      skillFile,
+      DOC_SKILL_FILE,
       '---\nname: dab-doc-writing\ndescription: Writes docs.\n---\nBody without a marker.\n',
     );
     await normalizeProject({ cwd: project.root, runner: goodRunner });
@@ -260,38 +292,174 @@ See [missing](nope.md).
       expect.objectContaining({
         code: 'practice.skill-unversioned',
         severity: 'warning',
-        file: skillFile,
+        file: DOC_SKILL_FILE,
       }),
     ]));
-    const unversionedEntry = unversioned.checklist.find(
-      (entry) => entry.group === 'Skills' && entry.label === 'dab-doc-writing',
-    );
-    expect(unversionedEntry).toMatchObject({ status: 'warn' });
-    expect(unversionedEntry?.next).toBeUndefined();
+    expect(skillRows(unversioned, DOC_SKILL)).toEqual([
+      expect.objectContaining({ status: 'warn' }),
+    ]);
+    expect(skillRows(unversioned, DOC_SKILL)[0]?.next).toBeUndefined();
     expect((await detect(project, true)).exitCode).toBe(0);
 
-    await writeProjectFile(
-      project.root,
-      skillFile,
-      '---\nname: dab-doc-writing\ndescription: Writes docs.\n---\n'
-        + '<!-- dab-skill: dab-doc-writing@0.0.0 -->\nBody.\n',
-    );
-    await normalizeProject({ cwd: project.root, runner: goodRunner });
+    const staleText = await renderAuthoringSkill(DOC_SKILL, '0.0.0');
+    await writeSkill(project, DOC_SKILL, staleText);
 
     const stale = await detect(project);
     expect(stale.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({
         code: 'practice.skill-stale',
         severity: 'warning',
-        file: skillFile,
+        file: DOC_SKILL_FILE,
       }),
     ]));
-    const staleEntry = stale.checklist.find(
-      (entry) => entry.group === 'Skills' && entry.label === 'dab-doc-writing',
-    );
-    expect(staleEntry).toMatchObject({ status: 'warn' });
-    expect(staleEntry?.next).toBeDefined();
+    const staleRows = skillRows(stale, DOC_SKILL);
+    expect(staleRows).toHaveLength(1);
+    expect(staleRows[0]).toMatchObject({ status: 'warn', next: 'dab normalize' });
     expect((await detect(project, true)).exitCode).toBe(3);
+    // Detect is read-only: the stale install is still on disk.
+    expect(await readFile(join(project.root, DOC_SKILL_FILE), 'utf8')).toBe(staleText);
+  });
+
+  it('reports a current managed skill as OK with its marker version', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+
+    const result = await detect(project);
+
+    expect(skillCodes(result)).toEqual([]);
+    expect(skillRows(result, DOC_SKILL)).toEqual([
+      expect.objectContaining({ status: 'ok', detail: `version ${DAB_VERSION}` }),
+    ]);
+    expect((await detect(project, true)).exitCode).toBe(0);
+  });
+
+  it.each(['9.9.9', 'future'])(
+    'reports version %s with a matching hash as non-strict newer without a next',
+    async (version) => {
+      const project = await initializedProject();
+      await completePractice(project);
+      const text = await renderAuthoringSkill(DOC_SKILL, version);
+      await writeSkill(project, DOC_SKILL, text);
+      await refreshProjections(project);
+
+      const result = await detect(project);
+
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'practice.skill-newer',
+          severity: 'warning',
+          file: DOC_SKILL_FILE,
+        }),
+      ]));
+      const rows = skillRows(result, DOC_SKILL);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: 'warn' });
+      expect(rows[0]?.next).toBeUndefined();
+      expect((await detect(project, true)).exitCode).toBe(0);
+      expect(await readFile(join(project.root, DOC_SKILL_FILE), 'utf8')).toBe(text);
+    },
+  );
+
+  it('reports a modified managed skill as non-strict, preserved and without a next', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    const modified = `${await renderAuthoringSkill(DOC_SKILL, DAB_VERSION)}\nLocal note.\n`;
+    await writeSkill(project, DOC_SKILL, modified);
+    await refreshProjections(project);
+
+    const result = await detect(project);
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-modified',
+        severity: 'warning',
+        file: DOC_SKILL_FILE,
+      }),
+    ]));
+    const rows = skillRows(result, DOC_SKILL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'warn' });
+    expect(rows[0]?.next).toBeUndefined();
+    expect(result.nextActions).not.toContain('dab normalize');
+    expect((await detect(project, true)).exitCode).toBe(0);
+    expect(await readFile(join(project.root, DOC_SKILL_FILE), 'utf8')).toBe(modified);
+  });
+
+  it('reports a preserved legacy managed skill as non-strict without a next', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    const legacy = `${(await renderAuthoringSkill(DOC_SKILL, '0.0.0'))
+      .replace(/ sha256=[0-9a-f]{64}/, '')}\nLocal note.\n`;
+    await writeSkill(project, DOC_SKILL, legacy);
+    await refreshProjections(project);
+
+    const result = await detect(project);
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-legacy',
+        severity: 'warning',
+        file: DOC_SKILL_FILE,
+      }),
+    ]));
+    const rows = skillRows(result, DOC_SKILL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'warn' });
+    expect(rows[0]?.next).toBeUndefined();
+    expect((await detect(project, true)).exitCode).toBe(0);
+    expect(await readFile(join(project.root, DOC_SKILL_FILE), 'utf8')).toBe(legacy);
+  });
+
+  it('reports an unversioned managed skill as non-strict without a next', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    const unversioned = await loadAuthoringSkillTemplate(DOC_SKILL);
+    await writeSkill(project, DOC_SKILL, unversioned);
+    await refreshProjections(project);
+
+    const result = await detect(project);
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-unversioned',
+        severity: 'warning',
+        file: DOC_SKILL_FILE,
+      }),
+    ]));
+    const rows = skillRows(result, DOC_SKILL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'warn' });
+    expect(rows[0]?.next).toBeUndefined();
+    expect((await detect(project, true)).exitCode).toBe(0);
+  });
+
+  it('reports a marker naming another skill as a non-strict mismatch without duplicates', async () => {
+    const project = await initializedProject();
+    await completePractice(project);
+    const mismatched = (await renderAuthoringSkill(DOC_SKILL, DAB_VERSION)).replace(
+      'dab-skill: dab-doc-writing@',
+      'dab-skill: dab-other-skill@',
+    );
+    await writeSkill(project, DOC_SKILL, mismatched);
+    await refreshProjections(project);
+
+    const result = await detect(project);
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-marker-mismatch',
+        severity: 'warning',
+        file: DOC_SKILL_FILE,
+      }),
+    ]));
+    expect(result.diagnostics.filter(
+      (item) => item.code === 'practice.skill-unversioned',
+    )).toEqual([]);
+    const rows = skillRows(result, DOC_SKILL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'warn' });
+    expect(rows[0]?.next).toBeUndefined();
+    expect((await detect(project, true)).exitCode).toBe(0);
   });
 
   it('governs a broken link whose parent component is a file', async () => {

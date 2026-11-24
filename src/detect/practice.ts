@@ -2,8 +2,6 @@ import { dirname, join, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
 import { isPathInside } from '../core/paths.ts';
-import { parseSkillMarker } from '../core/skill-marker.ts';
-import { compareVersions, parseVersion } from '../core/version-compare.ts';
 import { scanMarkdown, slugifyHeading } from '../docs/markdown.ts';
 import {
   resolveDocsLanguage,
@@ -11,6 +9,11 @@ import {
 } from '../init/docs-language.ts';
 import { AUTHORING_SKILL_NAMES, authoringPack } from '../init/practice-authoring.ts';
 import { documentationPack } from '../init/practice-docs.ts';
+import {
+  MANAGED_SKILL_DIAGNOSTIC_CODES,
+  planManagedSkills,
+  type ManagedSkillState,
+} from '../init/managed-skills.ts';
 import {
   planAuthoredScaffold,
   type AuthoredScaffoldPlan,
@@ -42,7 +45,6 @@ const ARCHITECTURE_NEXT = `use ${ARCHITECTURE_SKILL}`;
 const DOC_NEXT = `use ${DOC_SKILL}`;
 const POLICY_NEXT = 'delete .agents/rules/docs-bilingual.md, then run dab normalize';
 const MANUAL_PATH_NEXT = 'resolve the path conflict manually';
-const MANUAL_SKILL_NEXT = 'review and merge the newer skill manually';
 const LINK_NEXT = 'fix the link';
 
 /**
@@ -51,7 +53,11 @@ const LINK_NEXT = 'fix the link';
  */
 export const PRACTICE_NON_STRICT_WARNING_CODES: ReadonlySet<string> = new Set([
   'practice.docs-bilingual-policy',
-  'practice.skill-unversioned',
+  MANAGED_SKILL_DIAGNOSTIC_CODES.modified,
+  MANAGED_SKILL_DIAGNOSTIC_CODES.legacy,
+  MANAGED_SKILL_DIAGNOSTIC_CODES.newer,
+  MANAGED_SKILL_DIAGNOSTIC_CODES.mismatch,
+  MANAGED_SKILL_DIAGNOSTIC_CODES.unversioned,
 ]);
 
 const TODO_MARKER = /^[ \t]*TODO(?:\(owner\))?:/;
@@ -250,7 +256,7 @@ function reportPlanConflicts(
 type SkillFileState =
   | { kind: 'missing' }
   | { kind: 'invalid'; diagnostics: Diagnostic[] }
-  | { kind: 'present'; text: string }
+  | { kind: 'present' }
   | { kind: 'conflict'; message: string };
 
 async function skillFileState(
@@ -275,14 +281,7 @@ async function skillFileState(
     return { kind: 'invalid', diagnostics: validated.diagnostics };
   }
 
-  try {
-    return { kind: 'present', text: await readTextFile(absolute) };
-  } catch (error) {
-    return {
-      kind: 'conflict',
-      message: `skill file cannot be read: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
+  return { kind: 'present' };
 }
 
 function stripInlineCode(line: string): string {
@@ -548,19 +547,31 @@ function addSkillPath(
   });
 }
 
-function addSkillUnversioned(collector: PracticeCollector, name: string): void {
-  collector.addDiagnostic({
-    code: 'practice.skill-unversioned',
-    severity: 'warning',
-    message: `authoring skill has no dab-skill version marker: ${name}`,
-    file: skillFile(name),
-    hint: 'DAB preserves authored skills without a version marker; no next action is required.',
+function addSkillCurrent(
+  collector: PracticeCollector,
+  name: string,
+  version: string,
+): void {
+  collector.addEntry({
+    group: 'Skills',
+    label: name,
+    status: 'ok',
+    detail: `version ${version}`,
   });
+}
+
+function addSkillWarning(
+  collector: PracticeCollector,
+  name: string,
+  detail: string,
+  next?: string,
+): void {
   collector.addEntry({
     group: 'Skills',
     label: name,
     status: 'warn',
-    detail: 'authored skill without a version marker is preserved',
+    detail,
+    ...(next === undefined ? {} : { next }),
   });
 }
 
@@ -575,15 +586,71 @@ function addSkillStale(
     severity: 'warning',
     message: `authoring skill version ${markerVersion} is older than ${currentVersion}`,
     file: skillFile(name),
-    hint: 'Review and merge the newer skill text manually; DAB never overwrites authored skills.',
+    hint: 'Run dab normalize to update the unmodified managed skill; DAB never overwrites modified skills.',
   });
   collector.addEntry({
     group: 'Skills',
     label: name,
     status: 'warn',
     detail: `version ${markerVersion} is older than ${currentVersion}`,
-    next: MANUAL_SKILL_NEXT,
+    next: NORMALIZE_NEXT,
   });
+}
+
+/**
+ * Map the shared managed-skill state onto detect. Diagnostics for preserved
+ * states come from `planManagedSkills`, so detect and normalize agree on the
+ * hash/version algorithm; only the strict stale state has no plan diagnostic.
+ */
+function addManagedSkillState(
+  collector: PracticeCollector,
+  state: ManagedSkillState,
+  version: string,
+  diagnostics: readonly Diagnostic[],
+): void {
+  switch (state.status) {
+    case 'current':
+      addSkillCurrent(collector, state.name, state.version ?? version);
+      return;
+    case 'stale':
+      addSkillStale(collector, state.name, state.version ?? 'unknown', version);
+      return;
+    case 'newer':
+      addSkillWarning(
+        collector,
+        state.name,
+        `version ${state.version ?? 'unknown'} is newer or cannot be compared; preserved`,
+      );
+      return;
+    case 'modified':
+      addSkillWarning(
+        collector,
+        state.name,
+        'content differs from the marker hash; preserved',
+      );
+      return;
+    case 'legacy':
+      addSkillWarning(
+        collector,
+        state.name,
+        `legacy marker version ${state.version ?? 'unknown'} has no hash; preserved`,
+      );
+      return;
+    case 'unversioned': {
+      const mismatch = diagnostics.find(
+        (item) => item.code === MANAGED_SKILL_DIAGNOSTIC_CODES.mismatch,
+      );
+      addSkillWarning(
+        collector,
+        state.name,
+        mismatch === undefined ? 'no dab-skill marker; preserved' : mismatch.message,
+      );
+      return;
+    }
+    case 'missing':
+      // Existing skill discovery reports a directory without SKILL.md.
+      return;
+  }
 }
 
 function addSkillFileProblem(
@@ -779,28 +846,26 @@ export async function checkPracticePackages(
       continue;
     }
 
-    const marker = parseSkillMarker(fileState.text);
-    if (marker === undefined || marker.name !== name) {
-      addSkillUnversioned(collector, name);
+    const managed = await planManagedSkills({ root, version, names: [name] });
+    for (const diagnostic of managed.diagnostics) {
+      collector.addDiagnostic(diagnostic);
+    }
+    const managedState = managed.states.find((item) => item.name === name);
+    if (managedState === undefined) {
+      // A path or read problem is a blocking error; the plan has no state.
+      const error = managed.diagnostics.find((item) => item.severity === 'error');
+      if (error !== undefined) {
+        collector.addEntry({
+          group: 'Skills',
+          label: name,
+          status: 'error',
+          detail: error.message,
+          next: MANUAL_PATH_NEXT,
+        });
+      }
       continue;
     }
-    const markerVersion = marker.version;
-    const found = parseVersion(markerVersion);
-    const current = parseVersion(version);
-    if (found === undefined) {
-      addSkillUnversioned(collector, name);
-      continue;
-    }
-    if (current !== undefined && compareVersions(found, current) < 0) {
-      addSkillStale(collector, name, markerVersion, version);
-      continue;
-    }
-    collector.addEntry({
-      group: 'Skills',
-      label: name,
-      status: 'ok',
-      detail: `version ${markerVersion}`,
-    });
+    addManagedSkillState(collector, managedState, version, managed.diagnostics);
   }
 
   return { entries: collector.entries, diagnostics: collector.diagnostics };

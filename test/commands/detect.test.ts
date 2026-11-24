@@ -721,6 +721,33 @@ describe('runDetect', () => {
     expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(3);
   });
 
+  it('keeps modified managed skills non-strict while stale skills fail strict', async () => {
+    const project = await initialized();
+    await completePractice(project);
+    const skillFile = '.agents/skills/dab-doc-writing/SKILL.md';
+    const modified = `${await renderAuthoringSkill('dab-doc-writing', DAB_VERSION)}\nLocal note.\n`;
+    await writeProjectFile(project.root, skillFile, modified);
+    await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    const modifiedResult = await detectProject(detectOptions(project));
+    expect(modifiedResult.exitCode).toBe(0);
+    expect(modifiedResult.diagnostics.map((item) => item.code)).toContain(
+      'practice.skill-modified',
+    );
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(0);
+    expect(await readFile(join(project.root, skillFile), 'utf8')).toBe(modified);
+
+    const stale = await renderAuthoringSkill('dab-doc-writing', '0.0.0');
+    await writeProjectFile(project.root, skillFile, stale);
+
+    const staleResult = await detectProject(detectOptions(project));
+    expect(staleResult.diagnostics.map((item) => item.code)).toContain(
+      'practice.skill-stale',
+    );
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode).toBe(3);
+    expect(await readFile(join(project.root, skillFile), 'utf8')).toBe(stale);
+  });
+
   it('maps initialized diagnostics into checklist entries', async () => {
     const project = await initialized();
     await completePractice(project);
