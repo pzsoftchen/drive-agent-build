@@ -10,6 +10,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - [docs/AGENTS.md](AGENTS.md) — this standard: tiers, placement, writing, slop and verification rules. English only and pairing-exempt.
 - [docs/architecture.md](architecture.md) — architecture facts: layout, composition, runtime flows, module boundaries, extension points and invariants. Paired with `architecture.zh.md` and `docs/architecture.i18n.yaml`.
 - [docs/concepts/why-dab.md](concepts/why-dab.md) — why DAB exists and the problem it solves. Paired.
+- [docs/concepts/engineering-discipline.md](concepts/engineering-discipline.md) — the engineering-discipline model: rules, enforcement levels, portability and provenance. Paired.
 - [docs/roadmap.md](roadmap.md) — direction and planned milestones. Paired.
 - [docs/development.md](development.md) — setup, checks, development loop and release procedure. Paired.
 - [docs/user/cli.md](user/cli.md) — CLI commands, flags, output contracts and exit codes. Paired.
@@ -29,6 +30,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - Setup, checks, development workflow and release steps belong in [docs/development.md](development.md).
 - CLI syntax, flags, outputs and exit codes belong in [docs/user/cli.md](user/cli.md).
 - User-facing Claude Code behavior belongs in [docs/user/claude-code.md](user/claude-code.md).
+- The discipline model belongs in [docs/concepts/engineering-discipline.md](concepts/engineering-discipline.md). Roadmap owns capability gates, status and planned work; README and Why DAB link to the model instead of restating its enforcement matrix.
 - Direction and milestones belong in [docs/roadmap.md](roadmap.md); other documents link to it instead of announcing planned work.
 - Root `AGENTS.md` holds agent rules and a documentation index only.
 - Link a new document from its owner document and from the root `AGENTS.md` Documentation index.
@@ -37,6 +39,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 ## Writing rules
 
 - Describe the current state. Do not narrate history, planned work or implementation progress.
+- Concept documents describe problems and models. Capability gates, status and planned work belong in [docs/roadmap.md](roadmap.md).
 - Write one physical line per paragraph so diffs stay reviewable. Use continuation lines only inside fenced code, tables and list items that need them.
 - Human-facing documents in this repository remain paired English and Simplified Chinese; [.agents/rules/docs-bilingual.md](../.agents/rules/docs-bilingual.md) owns the pair structure, update rule and translation prohibitions.
 - Use relative links to files that exist. Never use absolute links or link to an example that is not in the repository.

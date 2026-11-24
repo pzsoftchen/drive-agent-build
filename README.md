@@ -6,7 +6,7 @@ DAB is the long-term direction: driving agents as Builders. The current implemen
 
 ## How DAB fits
 
-The working model is `Agent = Model + Harness`. DAB is not a third term in that equation; it drives how the harness is configured and how the resulting work converges into a deliverable.
+The working model is `Agent = Model + Harness`. DAB is not a third term in that equation; it is the control plane that configures the harness and governs how the resulting work converges into a deliverable.
 
 ```text
                          Builder
@@ -25,7 +25,7 @@ The working model is `Agent = Model + Harness`. DAB is not a third term in that 
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness loop: think -> act -> observe
+                 Harness loop: think -> act -> observe -> continue
                                |
                                v
                          Model + Project
@@ -37,7 +37,7 @@ The actors have distinct responsibilities:
 
 - A Builder is the person accountable for intent, constraints, judgment and acceptance.
 - An Agent is the execution actor that performs building work inside the harness.
-- DAB is conceptually a driving system; this repository implements its control plane.
+- DAB is the control plane; this repository implements it.
 - The Harness is the execution engine: loop, tools, context, permissions and sessions.
 
 ### Nested loops
@@ -46,27 +46,37 @@ The actors have distinct responsibilities:
 - The DAD task loop drives one development task to completion and acceptance evidence.
 - The DAB goal loop is a research direction for decomposing and integrating multiple tasks into one accepted goal.
 
-Single-task closure belongs to DAD. DAB begins when multiple tasks must converge into a larger goal.
+Single-task closure belongs to DAD; DAB begins when multiple tasks must converge into a larger goal.
 
-[Read the full conceptual model](docs/concepts/why-dab.md).
+DAB does not replace the model, implement the agent loop or become another runtime. The conceptual model is in [Why DAB exists](docs/concepts/why-dab.md); this diagram is the visual overview.
+
+## The problems DAB addresses
+
+DAB exists because agent capability and project configuration alone do not produce reliable delivery. It addresses four problems in order:
+
+1. Configuration drift and cross-agent interference: the same fact is duplicated across targets, generated configuration is edited by hand, and target-specific semantics leak into shared instructions.
+2. Engineering discipline that is not enforceable: practices live in prompts and conversations instead of configuration and checks.
+3. Single-task delivery that is not measured: agent activity is confused with accepted work, and acceptance is not reproducible.
+4. Goal-level delivery that has no model: decomposition, integration, overall acceptance and cross-task learning are undefined.
+
+The first two problems are the foundation; the third validates the development loop; the fourth is research. The detailed argument is in [Why DAB exists](docs/concepts/why-dab.md).
+
+## The route at a glance
+
+The route is a capability ladder. Versions are milestones, not the route itself.
+
+| Layer | Question | Evidence gate |
+|---|---|---|
+| L1 Config governance and target isolation | Can authored facts be projected into each target without drift or cross-agent leakage? | `detect --strict`, idempotent `normalize`, foreign-edit detection, target-neutral shared instructions, cross-agent contract test. |
+| L2 Engineering discipline | Are the project's rules explicit, enforceable where possible, and portable across targets? | Every rule has an enforcement level; gate rules have checks; target-specific rules live in adapter overlays. |
+| L3 Single-task delivery | Can one development task be completed and accepted with reproducible evidence? | Fixed task suite, baseline comparison, stable harness events, recorded time/cost/interventions/scope violations. |
+| L4 Goal-level delivery | Can multiple tasks be integrated into one accepted goal? | Recurring goal-level failures from L3 use, then a minimal goal-loop prototype. |
+
+The evidence gates and release mapping are in [Roadmap](docs/roadmap.md).
 
 ## Current status
 
-The diagram describes the combined target model. The DAD configuration-governance foundation is released as `@saydone/dab@0.1.2`, including the practice layer and managed authoring skills. Single-task evidence is next; DAB is not yet scheduled.
-
-| Capability | Status |
-|---|---|
-| DAD authored facts, projections, drift checks and policy explanation | Released in 0.1.1 |
-| DAD independent project/global scopes and v2 manifests | Released in 0.1.1 |
-| DAD practice layer: generic profile, single-language docs and authoring skills | Released in 0.1.2 |
-| DAD managed authoring skills: packaged templates, marker hashes and managed updates | Released in 0.1.2 |
-| DAD advanced hooks and shared memory | Optional; not scaffolded by default |
-| DAD evidence for one development task | Planned for v0.2; next |
-| DAD memory and operational hardening | Planned for v0.3 |
-| DAD Codex and DSH adapters | After single-task evidence |
-| DAB goal decomposition and cross-task convergence | Research; gated by DAD evidence |
-
-Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release v0.1.2](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
+The current release `0.1.2` includes the Claude Code governance foundation and the practice layer. Capability and milestone status is tracked in [Roadmap](docs/roadmap.md).
 
 ## Quick start
 
@@ -109,17 +119,6 @@ Use `dab init ~/.agents` to initialize the independent global scope.
 
 The generic profile focuses on configuration drift and the documentation, notes and skills discipline. Hooks and shared memory stay advanced and opt-in: existing hooks are still validated and compiled where applicable, and existing memory is still preserved and validated.
 
-## Why DAB exists
-
-I started DAB from a change in where leverage lives. As agents take on more execution, I believe the Builder's advantage moves from completing every step by hand to designing the conditions under which agents can build reliably.
-
-Two observations shaped my thinking:
-
-- A DeepSeek operator developer described a likely shift from designing, writing and optimizing operators to driving agents that perform that work.
-- Robin Li's Builder framing broadens the creator role beyond people who write code.
-
-I first explored a narrower practice, DAD (Drive Agent Development): defining how agents should carry out development work and driving them through that process. DAB keeps DAD's authored facts, projections, drift detection and decisions, plus optional shared memory, then adds the delivery-oriented convergence described above. Development is the first scope because I am the first Builder, not because it is the endpoint.
-
 ## Design principles
 
 - DAB is a control plane, not an agent runtime.
@@ -130,9 +129,9 @@ I first explored a narrower practice, DAD (Drive Agent Development): defining ho
 
 ## What DAB does not guarantee
 
-- v0.1 is currently a single-developer, macOS and Linux, Claude Code-first implementation.
+- The 0.1.x line is currently a single-developer, macOS and Linux, Claude Code-first implementation.
 - It does not implement the DAB goal loop, a task graph, cross-task learning or automatic memory promotion.
-- v0.2 will validate one development task at a time; it will not by itself prove DAB.
+- The v0.2 milestone will validate one development task at a time; it will not by itself prove DAB.
 - Path deny rules are tool-level guardrails, not a sandbox.
 - Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.
 - Windows junctions, a GUI, a plugin marketplace and automatic DAD migration are out of scope.
@@ -143,15 +142,18 @@ Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/
 
 - [Documentation guide](docs/AGENTS.md)
 - [Why DAB exists](docs/concepts/why-dab.md)
+- [Engineering discipline](docs/concepts/engineering-discipline.md)
 - [Roadmap](docs/roadmap.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
 - [CLI](docs/user/cli.md)
 - [Claude Code integration](docs/user/claude-code.md)
+- [Superpowers docs](docs/superpowers/README.md)
 - [Agent Note 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.md)
 - [Agent Note 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.md)
 - [Agent Note 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.md)
 - [Agent Note 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.md)
+- [Agent Note 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md)
 
 ## License
 

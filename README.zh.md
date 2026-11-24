@@ -2,11 +2,11 @@
 
 # DAB：驱动 Agent 成为构建者
 
-DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD（Drive Agent Development）：先让 Agent 通过受治理的项目配置变得可可靠驾驶，再证明单个开发任务能够完成并通过验收。
+DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD（Drive Agent Development）：先让 Agent 通过受治理的项目配置变得可靠可驾驶，再证明单个开发任务能够完成并通过验收。
 
 ## DAB 位于哪里
 
-工作模型是 `Agent = Model + Harness`。DAB 不是这个等式中的第三项；它负责驾驶 Harness 如何被配置，以及工作如何收敛为可交付结果。
+工作模型是 `Agent = Model + Harness`。DAB 不是这个等式中的第三项；它是配置 harness、治理工作如何收敛为可交付结果的控制面。
 
 ```text
                          Builder
@@ -25,7 +25,7 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 +------------------------------+---------------------------+
                                | configures + directs
                                v
-                 Harness loop: think -> act -> observe
+                 Harness loop: think -> act -> observe -> continue
                                |
                                v
                          Model + Project
@@ -36,37 +36,47 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 不同角色承担不同责任：
 
 - Builder 是对意图、约束、判断和验收负责的人。
-- Agent 是在 Harness 中执行构建工作的执行主体。
-- DAB 在产品概念上是驾驶系统；本仓库实现的是它的控制面。
+- Agent 是在 harness 内执行构建工作的执行主体。
+- DAB 是控制面；本仓库实现它。
 - Harness 是执行引擎，提供循环、工具、上下文、权限和会话。
 
-### 嵌套 Loop
+### 嵌套循环
 
 - Harness Loop 负责局部执行：`think -> act -> observe -> continue`。
 - DAD 任务循环负责把一个开发任务驾驶到完成，并产生验收证据。
 - DAB 目标循环是研究方向，负责把多个任务分解、集成并收敛为一个通过验收的整体目标。
 
-单任务闭包属于 DAD。只有当多个任务必须共同收敛到一个更大目标时，DAB 才真正开始。
+单任务闭包属于 DAD；当多个任务必须收敛到一个更大目标时，DAB 才开始。
 
-[阅读完整概念说明](docs/concepts/why-dab.zh.md)。
+DAB 不替代模型，不实现 Agent Loop，也不成为另一个 runtime。概念模型见 [DAB 为什么存在](docs/concepts/why-dab.zh.md)；上图是可视化概览。
+
+## DAB 要解决的问题
+
+DAB 存在，是因为 Agent 能力和项目配置本身不会自动产生可靠交付。它按顺序解决四个问题：
+
+1. 配置漂移与跨 Agent 干扰：同一事实被复制到多个 target，生成配置被手改，target 专属语义混进共享指令。
+2. 不可执行的工程纪律：实践只存在于提示词和对话中，而不是配置和检查。
+3. 未被度量的单任务交付：Agent 活动被误认为已接受的工作，验收不可复现。
+4. 没有模型的目标级交付：拆解、集成、整体验收和跨任务学习都没有定义。
+
+前两个问题是地基；第三个验证开发循环；第四个是研究。详细论证见 [DAB 为什么存在](docs/concepts/why-dab.zh.md)。
+
+## 路线一瞥
+
+路线是能力阶梯。版本是里程碑，不是路线本身。
+
+| 层 | 问题 | 证据门禁 |
+|---|---|---|
+| L1 配置治理与目标隔离 | 编写事实能否投影到每个 target，而不漂移、不跨 Agent 泄漏？ | `detect --strict`、幂等 `normalize`、外部手改检测、目标中立的共享指令、跨 Agent 合同测试。 |
+| L2 工程纪律 | 项目规则是否显式、尽可能可强制，并能跨 target 移植？ | 每条规则都有强制级别；gate 规则有检查；target 专属规则放在 adapter overlay。 |
+| L3 单任务交付 | 单个开发任务能否用可复现证据完成并通过验收？ | 固定任务集、基线对比、稳定的 harness 事件、记录耗时/成本/干预/范围越界。 |
+| L4 目标级交付 | 多个任务能否集成为一个被接受的目标？ | L3 使用中反复出现目标级失败，然后最小目标循环原型。 |
+
+证据门禁和版本映射见 [路线图](docs/roadmap.zh.md)。
 
 ## 当前状态
 
-图中的方式是 DAB/DAD 的组合目标模型。DAD 配置治理基础已发布为 `@saydone/dab@0.1.2`，包含实践层和受管 authoring skills。下一步是单任务证据；DAB 尚未排期。
-
-| 能力 | 状态 |
-|---|---|
-| DAD 编写事实、投影、漂移检测和策略解释 | 已在 0.1.1 发布 |
-| DAD 独立的 project/global scope 与 v2 manifest | 已在 0.1.1 发布 |
-| DAD 实践层：generic profile、单语 docs 和 authoring skills | 已在 0.1.2 发布 |
-| DAD 受管 authoring skills：包内模板、marker hash 和受管更新 | 已在 0.1.2 发布 |
-| DAD 高级 hooks 与共享记忆 | 可选；默认不生成 |
-| DAD 单开发任务证据 | 计划在 v0.2 提供，这是下一步 |
-| DAD 记忆与运行加固 | 计划在 v0.3 提供 |
-| DAD Codex 与 DSH adapter | 在单任务证据之后 |
-| DAB 目标拆解与跨任务收敛 | 研究阶段，以 DAD 证据为前置条件 |
-
-发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release v0.1.2](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
+当前发布 `0.1.2` 包含 Claude Code 治理基础和实践层。能力和里程碑状态见 [路线图](docs/roadmap.zh.md)。
 
 ## 快速开始
 
@@ -109,17 +119,6 @@ pnpm link --global
 
 Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hooks 与共享记忆保持高级、可选：已有 hooks 仍会被校验并在适用时编译，已有记忆仍会被保留和校验。
 
-## DAB 为什么存在
-
-我从个人杠杆正在发生变化这一点开始思考 DAB。当 Agent 承担越来越多执行工作时，我相信构建者的优势不再是亲手完成每一步，而是设计让 Agent 可靠构建的条件。
-
-两个判断影响了我的想法：
-
-- 一位 DeepSeek 算子开发者判断，工作重心可能从设计、编写和优化算子，转向驾驶 Agent 完成这些工作。
-- 李彦宏提出的 Builder，把创造者的范围从编写代码的人扩展到更广泛的人群。
-
-我最早实践的是一个更窄的做法：DAD（Drive Agent Development，驱动 Agent 开发），即定义 Agent 应如何开展开发工作，并驾驶 Agent 按这个过程执行。DAB 保留 DAD 的编写事实、投影、漂移检测和决策，以及可选的共享记忆，再增加前面描述的面向交付的收敛。开发是第一个范围，因为我自己就是第一位构建者，而不是因为开发就是终点。
-
 ## 设计原则
 
 - DAB 是控制面，不是 Agent runtime。
@@ -130,9 +129,9 @@ Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hoo
 
 ## DAB 不保证什么
 
-- v0.1 当前是单开发者、macOS 和 Linux、Claude Code 优先的实现。
+- 0.1.x 系列当前是单开发者、macOS 和 Linux、Claude Code 优先的实现。
 - 它不实现 DAB 目标循环、任务图、跨任务学习或自动记忆提升。
-- v0.2 将验证单个开发任务，不代表 DAB 已被证明。
+- v0.2 里程碑将验证单个开发任务，不代表 DAB 已被证明。
 - 路径 deny 规则是工具级护栏，不是沙箱。
 - Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。
 - Windows junction、GUI、插件市场和自动 DAD 迁移不在范围内。
@@ -143,15 +142,18 @@ Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hoo
 
 - [文档指南](docs/AGENTS.md)
 - [DAB 为什么存在](docs/concepts/why-dab.zh.md)
+- [工程纪律](docs/concepts/engineering-discipline.zh.md)
 - [路线图](docs/roadmap.zh.md)
 - [架构](docs/architecture.zh.md)
 - [开发](docs/development.zh.md)
 - [CLI](docs/user/cli.zh.md)
 - [Claude Code 集成](docs/user/claude-code.zh.md)
+- [Superpowers 文档](docs/superpowers/README.md)
 - [Agent 决策记录 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.zh.md)
 - [Agent 决策记录 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.zh.md)
 - [Agent 决策记录 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.zh.md)
 - [Agent 决策记录 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.zh.md)
+- [Agent 决策记录 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.zh.md)
 
 ## 许可证
 

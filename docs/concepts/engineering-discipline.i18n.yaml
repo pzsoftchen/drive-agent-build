@@ -1,0 +1,39 @@
+version: 1
+source: docs/concepts/engineering-discipline.md
+translation: docs/concepts/engineering-discipline.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: ccc97e1ef0d881c7cd611a7a93d5ad6f4f270397172ebd859c92bf844bfa5eb3
+    translation: d188c113f842a437ffc7f9d2f5cfb234f661f099ede65db5a69ef346cc0d58af
+  - index: 2
+    level: 2
+    source: 76702666e0679852f29221600e697c20d7d17ff20a04e40c07cc13c06fefaa9c
+    translation: 007a4c09e8d42d3ae8d57c423584e80ed536a090bccb08ad670816625506441b
+  - index: 3
+    level: 2
+    source: 6b9aec54690f86db1f4e7ed40ef32e75aae4adc9cb58e595789373bad9261a0c
+    translation: bc1f6e30fb463f4c47a94e00cbb05f2c0522de3cf1801a0d7ce7c142a0ce718b
+  - index: 4
+    level: 2
+    source: a7caefc50a073842fc9220bcb911a0360c482519cc1c2af304581d8c6e07a556
+    translation: 7067e0516d9692e72c14ad911fcc86179210f665b7e5b718a7d5fef4d4342e65
+  - index: 5
+    level: 2
+    source: c604b845f3dae4493bce22c744300cee917e22433e922a4178b8932016680e9a
+    translation: 0eb46fcfc456f7a16c705a9d86994b586e9951ffb33800069c13973c4b1e2fc5
+  - index: 6
+    level: 2
+    source: a850ab7d25b26171f6d1463a0c92438349ae364442c8516df480aa2d22ef8bac
+    translation: c46aa5cbf9260abd8632e95b27421466908a46d921e2ff6eca18d0bb68dedd75
+  - index: 7
+    level: 2
+    source: 1a897a506427d0ecea891c52ea23fb20ed1a1301f7b5eaac4be676a775080c3d
+    translation: 94d7ea69a13193ffbdaf86daefbc115069fb4c560340e4fc501c89ebae3d5cc7
