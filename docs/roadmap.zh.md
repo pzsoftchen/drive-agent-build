@@ -24,7 +24,7 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 
 - `generic` 是默认 profile；`feature` 保留为行为相同的兼容别名。
 - `init` 和 `normalize` 通过同一个 planner 生成单语 `docs/AGENTS.md`、`docs/architecture.md` 和 `dab-*` authoring skills。
-- `detect` 报告 Documentation 组和 authoring skill 状态；`normalize` 补齐缺失的实践文件，不覆盖 authored docs 或 skills。
+- `detect` 报告 Documentation 组和 authoring skill 状态；`normalize` 补齐缺失的实践文件，同时保留 authored docs、已修改 skills 和用户自定义 skills。
 - `dab-*` authoring skills 在 `skills/` 中有 canonical 模板，并使用版本/hash marker 和受管更新：`normalize` 更新未修改的较旧副本，保留 modified、legacy、newer 和 unversioned 副本。
 - 已有 `.agents/rules/docs-bilingual.md` 的项目保留该规则，生成的 docs 被 policy skip。
 - Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。

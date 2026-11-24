@@ -24,7 +24,7 @@ DAB is the long-term direction. The product roadmap follows DAD first: prove rel
 
 - `generic` is the default profile; `feature` remains a compatibility alias with the same behavior.
 - `init` and `normalize` scaffold single-language `docs/AGENTS.md` and `docs/architecture.md` and the `dab-*` authoring skills from one planner.
-- `detect` reports a Documentation group and authoring skill state; `normalize` fills missing practice files without overwriting authored docs or skills.
+- `detect` reports a Documentation group and authoring skill state; `normalize` fills missing practice files while preserving authored docs, modified skills and user-defined skills.
 - The `dab-*` authoring skills have canonical templates in `skills/`, a version/hash marker and managed updates: `normalize` updates unmodified older copies and preserves modified, legacy, newer and unversioned copies.
 - Projects with `.agents/rules/docs-bilingual.md` keep the rule and are policy-skipped for generated docs.
 - The generic profile focuses on configuration drift and the documentation, notes and skills discipline.

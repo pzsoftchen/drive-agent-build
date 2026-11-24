@@ -74,7 +74,7 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 - `profile` 选择 `init` 和 `normalize` 生成的实践。`generic` 是默认值；`feature` 是行为相同的兼容别名，已有的 authored manifest 优先于 CLI flag。
 - Practice pack 在 `targets()` 中声明候选路径，在 `files()` 中声明渲染内容，并按需声明自有目录或 `skipChildrenWhenExists`。生产注册表组合 `core`、`documentation` 和 `authoring`；documentation 和 authoring pack 只在 project scope 运行。
-- `planAuthoredScaffold` 是 `init` 和 `normalize` 背后唯一的 authored 文件规划器。`init` 使用 `full`，`normalize` 对未初始化或 partial scope 使用 `adoption`，对已初始化 scope 使用 `converge`。它 stat 候选路径，用现有路径和计划路径构建 anchors，并且只渲染缺失文件，因此现有 authored 文件永不被覆盖。存在的根 `AGENTS.md`（或 global `.agents/AGENTS.md`）只作为 anchor，不会被规划或写入，因此 converge 只在它存在时才从生成的 docs 链接它。现有 target 在保留前会先校验：documentation 文件必须是可读的普通文件或指向仓库内普通文件的符号链接，skill 目录必须是真实目录或指向仓库内具备读与搜索权限目录的符号链接。逃逸链接、特殊文件以及不可读的文件或目录在任何写入前都是受治理的错误。
+- `planAuthoredScaffold` 是 `init` 和 `normalize` 背后唯一的 authored 文件规划器。`init` 使用 `full`，`normalize` 对未初始化或 partial scope 使用 `adoption`，对已初始化 scope 使用 `converge`。它 stat 候选路径，用现有路径和计划路径构建 anchors，并且只渲染缺失文件，因此 planner 永不覆盖现有 authored 文件。存在的根 `AGENTS.md`（或 global `.agents/AGENTS.md`）只作为 anchor，不会被规划或写入，因此 converge 只在它存在时才从生成的 docs 链接它。现有 target 在保留前会先校验：documentation 文件必须是可读的普通文件或指向仓库内普通文件的符号链接，skill 目录必须是真实目录或指向仓库内具备读与搜索权限目录的符号链接。逃逸链接、特殊文件以及不可读的文件或目录在任何写入前都是受治理的错误。
 - Documentation pack 拥有 `docs/AGENTS.md` 和 `docs/architecture.md`。它只写一种语言，从不创建 `.zh.md` 或 `.i18n.yaml` 配对；`docs/AGENTS.md` 是 AGENTS 文件，继续豁免配对。
 - `docs.language` 为 `auto`、`en` 或 `zh`。`auto` 采样现有的 `docs/AGENTS.md`、`docs/architecture.md`、根 `AGENTS.md`、`README.md`、`package.json` description 和 locale，然后默认 `en`。解析结果携带 `{ value, source }`，并由 `init`、`normalize` 和 `detect` 报告。
 - `.agents/rules/docs-bilingual.md` 是项目政策信号，不是错误：缺失的 documentation targets 被 policy skip，规则本身保留。已有 docs 作为 skipped 保留，因此悬空的 docs 路径不会阻止 skills 或 target 写入。
@@ -171,7 +171,7 @@ generated:
 
 - Adoption 在 source-root 解析前运行。未初始化或 partial scope 会获得缺失的最小 source：`AGENTS.md`、`dab.yaml`、项目策略和 Claude Code 策略，以及空的 agents、skills、rules 和 notes 目录。Hooks 和共享记忆不会被采用；已有的 hooks 和记忆文件保持原位，并保留现有的校验行为。它复用 `init` 的渲染函数，但不创建 profile agents 或 core skills；命名空间的 `dab-*` authoring skills 是例外。
 - Import 是受控迁移，不是 unmanaged 冲突：物理 `.claude/agents/*.md` 和 `.claude/skills/<dir>/SKILL.md` 条目会复制到 `.agents`，备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。不需要 `--fix`。
-- `.agents` 是事实源。现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件保留在备份中。
+- Import 期间，`.agents` 是事实源：现有 source 文件或 skill 目录永不被覆盖；内容不同的 `.claude` 会产生警告。首次 import 会复制整个 skill 目录（包括额外文件）；当 `.agents/skills/<name>` 已存在时，额外文件保留在备份中。
 - Import 保留 `.claude` 的 basename 或目录名。frontmatter `name` 是 fact id；不一致会警告，但不会重命名。
 - All-or-nothing 门禁覆盖 adoption 和 import：任何非法候选或不安全路径都会阻止所有 source 和 `.claude` 写入。后续 target 预检失败时，`.claude` 保持不变；幂等的 source 副本可能已经存在。
 - Import 对已初始化和未初始化/partial scope 都运行，覆盖 project 和 global scope。Global scope 下 `.claude` 条目链接到 `~/.agents`；`~/.claude/settings.json` 和 `$HOME/.gitignore` 永不读写。

@@ -56,4 +56,5 @@ The three `dab-*` authoring skills were Markdown strings inside `src/init/practi
 - [Architecture](../../../../docs/architecture.md)
 - [CLI](../../../../docs/user/cli.md)
 - [Claude Code integration](../../../../docs/user/claude-code.md)
+- [Practice layer](2026-11-23-practice-layer.md)
 - [Design spec](../../../../docs/superpowers/specs/2026-11-24-managed-skills-design.md)

@@ -50,7 +50,7 @@ targets:
 ## Adoption and import
 
 - `dab normalize` copies physical `.claude/agents/*.md` files and `.claude/skills/<dir>/SKILL.md` directories into the authored `.agents` tree. Rules, `.claude/settings.json`, hooks and `CLAUDE.md` are not imported in this phase.
-- `.agents` is the source of truth. An existing source file or skill directory is never overwritten; when the `.claude` content differs, normalize warns and keeps the `.agents` copy.
+- During import, `.agents` is the source of truth: an existing source file or skill directory is never overwritten; when the `.claude` content differs, normalize warns and keeps the `.agents` copy.
 - The original `.claude` entry is backed up under `.dab/backups/<timestamp>/` and replaced with a per-entry symlink. A first import copies the whole skill directory, including extra files; when `.agents/skills/<name>` already exists, extra skill files are not merged and stay in the backup.
 - Imports use the `.claude` basename or directory name. The frontmatter `name` remains the fact id; a mismatch warns but does not rename the entry.
 - Imports do not need `--fix`. A directory symlink at `.claude/agents` or `.claude/skills` is a conflict because DAB owns entries one by one.
@@ -64,7 +64,7 @@ targets:
 
 - `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` are authored copies installed at `.agents/skills/<name>/SKILL.md` and projected to `.claude/skills/<name>` as per-entry symlinks.
 - The canonical templates live in `skills/<name>/SKILL.md` inside the installed `@saydone/dab` package and are included in its npm `files`. DAB reads them from the package root; it never calls `npx skills`, a network installer or a remote registry.
-- Each installed copy carries a `<!-- dab-skill: <name>@<version> sha256=<hash> -->` marker. `dab init` installs missing skills only. `dab normalize` updates an unmodified copy whose marker version is older, and migrates a legacy marker without a hash when the body matches the current template. Modified, newer, unversioned and marker-mismatched copies are preserved with warnings; managed updates create no backups.
+- Each installed copy carries a `<!-- dab-skill: <name>@<version> sha256=<hash> -->` marker. `dab init` installs missing skills only. `dab normalize` updates an unmodified copy whose marker version is older, and migrates a legacy marker without a hash when the body matches the current template. Modified copies, newer or uncomparable versions, missing markers, mismatched markers and legacy markers whose body differs are preserved with warnings; managed updates create no backups.
 - `dab detect` reports the current, stale, newer, modified, legacy, unversioned and marker-mismatch states. `practice.skill-stale` fails `--strict`; the preserved states do not.
 
 ## Memory model

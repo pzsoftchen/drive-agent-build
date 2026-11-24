@@ -56,4 +56,5 @@ Status: implemented
 - [架构](../../../../docs/architecture.zh.md)
 - [CLI](../../../../docs/user/cli.zh.md)
 - [Claude Code 集成](../../../../docs/user/claude-code.zh.md)
+- [实践层](2026-11-23-practice-layer.zh.md)
 - [设计规格](../../../../docs/superpowers/specs/2026-11-24-managed-skills-design.md)

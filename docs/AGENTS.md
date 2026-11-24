@@ -25,7 +25,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - Architecture facts belong in [docs/architecture.md](architecture.md), not in this guide or in root `AGENTS.md`.
 - Durable decisions belong in `.agents/notes/` with context, alternatives, consequences and verification, following the [notes guide](../.agents/notes/AGENTS.md).
 - Durable team knowledge belongs in `.agents/notes/` and project docs; `.agents/memory/` is an optional advanced capability and is not scaffolded by default.
-- Authoring skill content lives in the canonical `skills/<name>/SKILL.md` templates shipped with the package. `.agents/skills/dab-*` are managed copies with a version/hash marker; edit the template and run `dab normalize`, not the installed copy.
+- Authoring skill content lives in the canonical `skills/<name>/SKILL.md` templates shipped with the package. `.agents/skills/dab-*` are managed copies with a version/hash marker; edit the template, bump the package version or delete the installed copy, then run `dab normalize`. A same-version template edit does not rewrite an installed copy.
 - Setup, checks, development workflow and release steps belong in [docs/development.md](development.md).
 - CLI syntax, flags, outputs and exit codes belong in [docs/user/cli.md](user/cli.md).
 - User-facing Claude Code behavior belongs in [docs/user/claude-code.md](user/claude-code.md).
