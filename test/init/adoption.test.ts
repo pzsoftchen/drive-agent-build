@@ -142,16 +142,16 @@ describe('minimalSourcePlan', () => {
       'dab.yaml',
       '.agents/policies/project.yaml',
       '.agents/adapters/claude-code.yaml',
-      '.agents/memory/INDEX.md',
     ]));
     expect(Object.keys(plan.files).some((file) => file.startsWith('.agents/agents/'))).toBe(false);
     expect(Object.keys(plan.files).some((file) => file.startsWith('.agents/skills/'))).toBe(false);
+    expect(Object.keys(plan.files).some((file) => file.startsWith('.agents/hooks/'))).toBe(false);
+    expect(Object.keys(plan.files).some((file) => file.startsWith('.agents/memory/'))).toBe(false);
     expect(plan.directories).toEqual([
       '.agents/agents',
       '.agents/skills',
       '.agents/notes',
       '.agents/rules',
-      '.agents/hooks',
     ]);
     expect(plan.manifest.scope).toBe('project');
     expect(plan.manifest.profile).toBe('generic');
@@ -192,8 +192,6 @@ describe('writeSourceFiles', () => {
     for (const directory of plan.directories) {
       expect((await lstat(join(project.root, directory))).isDirectory()).toBe(true);
     }
-    expect(await readFile(join(project.root, '.agents/memory/INDEX.md'), 'utf8'))
-      .toBe(plan.files['.agents/memory/INDEX.md']);
   });
 
   it('plans writes without touching the filesystem', async () => {

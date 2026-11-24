@@ -7,7 +7,6 @@ import {
   renderAgentsMd,
   renderClaudeCodePolicy,
   renderDabYaml,
-  renderMemoryIndex,
   renderProjectPolicy,
   type DocumentationLinks,
 } from './templates.ts';
@@ -28,7 +27,6 @@ const MINIMAL_DIRECTORIES = [
   '.agents/skills',
   '.agents/notes',
   '.agents/rules',
-  '.agents/hooks',
 ] as const;
 
 function minimalManifest(scan: ScanResult, scope: Scope): ProjectManifest {
@@ -67,7 +65,6 @@ export function minimalSourcePlan(
       [manifest]: renderDabYaml(scan, scope, { profile: 'generic' }),
       '.agents/policies/project.yaml': renderProjectPolicy(),
       '.agents/adapters/claude-code.yaml': renderClaudeCodePolicy(),
-      '.agents/memory/INDEX.md': renderMemoryIndex(),
     },
     directories: [...MINIMAL_DIRECTORIES],
     manifest: minimalManifest(scan, scope),

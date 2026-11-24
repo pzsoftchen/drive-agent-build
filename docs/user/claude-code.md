@@ -62,6 +62,7 @@ targets:
 
 ## Memory model
 
+- Shared memory is an advanced, opt-in capability. DAB does not scaffold `.agents/memory/` by default; existing files are still validated and managed.
 - Shared team facts live in `.agents/memory/` and are reviewed in pull requests.
 - Personal auto memory stays machine-local and is never committed.
 - Agents may use `memory: user` or `memory: local`, but `memory: project` is rejected because it creates a second team memory store.
@@ -69,6 +70,8 @@ targets:
 - In global scope, ancestor and personal-memory checks are skipped because user-level Claude data is not a project artifact.
 
 ## Permissions and hooks
+
+Hooks are an advanced, opt-in capability. DAB does not scaffold `.agents/hooks/` by default; existing hooks are still validated and projected into `.claude/settings.json`.
 
 Project policy is compiled into `.claude/settings.json`. Project deny rules are a hard boundary for Claude Code file tools, but `Bash`, wrapper commands and other tools can bypass path rules. Agent definitions can narrow tools and append hooks, but cannot remove project hooks. Agent hooks must invoke a generated command from a managed `.agents/hooks/<id>/` entry; arbitrary inline shell commands are rejected. The accepted form is `node "${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"` for node hooks or `"${CLAUDE_PROJECT_DIR}/.agents/hooks/<id>/<entry>"` for exec hooks; agent hook ids must not collide with project hook ids. Hook scripts are checked for path escapes, duplicate ids, line endings, executability and secrets.
 

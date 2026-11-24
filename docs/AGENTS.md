@@ -24,6 +24,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - Every fact has exactly one home. The owner document holds the detail; other documents link to it instead of repeating it.
 - Architecture facts belong in [docs/architecture.md](architecture.md), not in this guide or in root `AGENTS.md`.
 - Durable decisions belong in `.agents/notes/` with context, alternatives, consequences and verification, following the [notes guide](../.agents/notes/AGENTS.md).
+- Durable team knowledge belongs in `.agents/notes/` and project docs; `.agents/memory/` is an optional advanced capability and is not scaffolded by default.
 - Setup, checks, development workflow and release steps belong in [docs/development.md](development.md).
 - CLI syntax, flags, outputs and exit codes belong in [docs/user/cli.md](user/cli.md).
 - User-facing Claude Code behavior belongs in [docs/user/claude-code.md](user/claude-code.md).

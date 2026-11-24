@@ -86,6 +86,36 @@ describe('runInit', () => {
     expect(await readFile(join(root, 'dab.yaml'), 'utf8')).toContain('docs:\n  language: auto');
   });
 
+  it('does not scaffold advanced hooks or shared memory by default', async () => {
+    const root = await tempDir();
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.created).not.toContain('.agents/hooks/protect-generated/hook.yaml');
+    expect(result.created).not.toContain('.agents/hooks/protect-generated/run.mjs');
+    expect(result.created).not.toContain('.agents/memory/INDEX.md');
+    expect(await lstatOrNull(join(root, '.agents/hooks'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/memory'))).toBeNull();
+    const agentsMd = await readFile(join(root, 'AGENTS.md'), 'utf8');
+    expect(agentsMd).toContain(
+      'Durable team knowledge lives in `.agents/notes/` and project docs',
+    );
+    expect(agentsMd).not.toContain('.agents/memory/');
+  });
+
+  it('does not plan advanced hooks or shared memory in --dry-run', async () => {
+    const root = await tempDir();
+
+    const result = await initializeProject({ cwd: root, dryRun: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.created.some(
+      (file) => file.startsWith('.agents/hooks/') || file.startsWith('.agents/memory/'),
+    )).toBe(false);
+    expect(await lstatOrNull(join(root, '.agents'))).toBeNull();
+  });
+
   it('accepts feature as a compatibility profile', async () => {
     const root = await tempDir();
     const result = await initializeProject({ cwd: root, profile: 'feature' });
@@ -96,6 +126,11 @@ describe('runInit', () => {
       'docs/AGENTS.md',
       '.agents/skills/dab-doc-writing/SKILL.md',
     ]));
+    expect(result.created.some(
+      (file) => file.startsWith('.agents/hooks/') || file.startsWith('.agents/memory/'),
+    )).toBe(false);
+    expect(await lstatOrNull(join(root, '.agents/hooks'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/memory'))).toBeNull();
   });
 
   it('creates a full skeleton and normalized Claude Code outputs', async () => {
@@ -124,6 +159,10 @@ describe('runInit', () => {
     expect(payload.root).toBe(root);
     expect(payload.scopeRoot).toBe(root);
     expect(payload.created).toEqual(expect.arrayContaining(['AGENTS.md', 'dab.yaml']));
+    expect(payload.created).not.toContain('.agents/hooks/protect-generated/hook.yaml');
+    expect(payload.created).not.toContain('.agents/memory/INDEX.md');
+    expect(await lstatOrNull(join(root, '.agents/hooks'))).toBeNull();
+    expect(await lstatOrNull(join(root, '.agents/memory'))).toBeNull();
     expect(payload.normalize.ok).toBe(true);
 
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).not.toBeNull();

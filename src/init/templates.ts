@@ -67,7 +67,7 @@ export function renderAgentsMd(
 - \`AGENTS.md\` and \`.agents/\` are the only authored agent configuration.
 - \`.claude/\` is generated. Do not edit it by hand; run \`dab normalize\`.
 - Use the \`feature-delivery\` skill for scoped feature work.
-- Shared team memory lives in \`.agents/memory/\`; personal auto memory stays machine-local.
+- Durable team knowledge lives in \`.agents/notes/\` and project docs; personal auto memory stays machine-local.
 - Read \`.agents/rules/testing.md\` and \`.agents/rules/generated-files.md\` before changing those areas.
 
 ## Working agreement
@@ -210,61 +210,6 @@ permissions:
 `;
 }
 
-export function renderHookMetadata(): string {
-  return `id: protect-generated
-event: pre_tool
-matcher: Edit|Write|MultiEdit
-entry: run.mjs
-runner: node
-timeout: 10
-order: 10
-`;
-}
-
-export function renderHookScript(): string {
-  return `#!/usr/bin/env node
-import { readFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
-
-let input = {};
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  process.exit(0);
-}
-
-const candidate = input?.tool_input?.file_path ?? input?.tool_input?.path;
-if (typeof candidate !== 'string') {
-  process.exit(0);
-}
-
-const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-const rel = relative(root, resolve(root, candidate)).split('\\\\').join('/');
-if (/^\\.claude\\/(settings\\.json|CLAUDE\\.md|agents\\/|skills\\/|rules\\/)/.test(rel)) {
-  process.stderr.write('DAB: .claude/ is generated. Edit .agents/ and run dab normalize.\\n');
-  process.exit(2);
-}
-process.exit(0);
-`;
-}
-
-export function renderMemoryIndex(): string {
-  return `# Shared memory
-
-Reviewed, durable team facts live here. Every entry needs frontmatter:
-
-\`\`\`yaml
-title: Short title
-source: https://example.com/reviewed-source
-review_by: 2027-01-01
-updated: 2026-11-16
-status: active
-\`\`\`
-
-Link every entry from this index. Personal auto memory stays machine-local.
-`;
-}
-
 export function renderDabYaml(
   scan: ScanResult,
   scope: Scope,
@@ -327,9 +272,6 @@ export function templateFiles(
     '.agents/rules/testing.md': renderTestingRule(),
     '.agents/policies/project.yaml': renderProjectPolicy(),
     '.agents/adapters/claude-code.yaml': renderClaudeCodePolicy(),
-    '.agents/hooks/protect-generated/hook.yaml': renderHookMetadata(),
-    '.agents/hooks/protect-generated/run.mjs': renderHookScript(),
-    '.agents/memory/INDEX.md': renderMemoryIndex(),
   };
 }
 

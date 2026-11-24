@@ -5,6 +5,7 @@
 ## 未发布
 
 - `dab init` 默认写入 `profile: generic` 和 `docs.language: auto`。`--profile generic|feature` 选择 manifest profile；`feature` 是行为相同的兼容别名。`docs.language` 接受 `auto`、`en` 或 `zh`；`auto` 从项目内容和 locale 解析，并在人类输出和 JSON 中报告 `{ value, source }`。
+- `dab init` 和 `dab normalize` adoption 不再生成高级 `.agents/hooks/` 或 `.agents/memory/` 文件；generic profile 聚焦漂移检测/修复，以及 docs、notes 和 skills 纪律。已有的 authored hooks 和共享记忆保持不变，并继续受校验和管理；缺失时 `dab detect` 会省略它们的 checklist 组。
 - `dab init` 和 `dab normalize` 生成单语 `docs/AGENTS.md` 和 `docs/architecture.md`，不生成 `.zh.md` 或 `.i18n.yaml` 配对，并安装 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes` authoring skills。已有 docs 和 skill 目录永不被覆盖，已安装的 `dab-*` skills 也永不自动更新。
 - `dab init` 现在会把可导入的物理 `.claude/skills/dab-*` 目录标记为 pending，跳过对应的 authoring 模板，并把 import 留给 `dab normalize`；非目录条目以 warning pending 报告为 `practice.skill-import-conflict`，不提供 import 提示。它从不写入或替换该物理条目。
 - Generic skeleton 不再生成 `.agents/rules/docs-bilingual.md`；已有的 authored 规则会保留，并以 `practice.docs-bilingual-policy` 对缺失的单语 docs 做 policy skip。已有 docs 作为 skipped 保留，悬空的 docs 路径不会阻断它们。Authoring skills 和 target 写入继续。

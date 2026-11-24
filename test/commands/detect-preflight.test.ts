@@ -232,6 +232,36 @@ describe('detect preflight', () => {
     expect(await lstatOrNull(join(project, 'dab.yaml'))).toBeNull();
   });
 
+  it('omits optional hooks and memory entries when the project has none', async () => {
+    const project = await tempDir();
+
+    const result = await preflightProject({ cwd: project, home: dirname(project) });
+
+    expect(result.entries.some((entry) => entry.group === 'Hooks')).toBe(false);
+    expect(result.entries.some((entry) => entry.group === 'Memory')).toBe(false);
+  });
+
+  it('keeps hook and memory entries when those files exist', async () => {
+    const root = await tempDir();
+    await writeProjectFile(
+      root,
+      '.agents/hooks/protect-generated/hook.yaml',
+      'id: protect-generated\nevent: pre_tool\nentry: run.mjs\nrunner: node\n',
+    );
+    await writeProjectFile(root, '.agents/memory/INDEX.md', '# Memory\n');
+
+    const result = await detectProject({ cwd: root, home: dirname(root) });
+
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', label: '.agents/hooks/', status: 'ok' }),
+      expect.objectContaining({
+        group: 'Memory',
+        label: '.agents/memory/INDEX.md',
+        status: 'ok',
+      }),
+    ]));
+  });
+
   it('reports an invalid authored manifest as an error entry without throwing', async () => {
     const project = await projectFixture();
     const manifest = 'version: 2\nscope: project\n';

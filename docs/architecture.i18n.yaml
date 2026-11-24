@@ -19,8 +19,8 @@ sections:
     translation: 11c8cefbe58fec09aafb71f13481e6c6bec13e0c98fdb0fe9d43ed0fe9b7ddf2
   - index: 3
     level: 2
-    source: 0c95a24fe1ae7ad434fe7838b2e3175814b67f92aca6a6848f2139caf809d4b5
-    translation: 77b97d4fa3c4914e617b801cde1a58ad129e8a5c36e4068fc9a34cbffabd641d
+    source: e306413fd4212ec9e944aba54341ea8cb27b8082e9457e6e266cc206b67f9b30
+    translation: 6a976858128a84a60d40a518626227ea15207b9ff5d54ab581eba3b5178aef10
   - index: 4
     level: 2
     source: 53e4fd7800bc7dde765f01b0263a478300d3dc97d9a9af505b77fa63561fd48d
@@ -31,12 +31,12 @@ sections:
     translation: c77cad115e7857846666ece4cad21ec8c7408c85fb09086db50d6501316117d1
   - index: 6
     level: 2
-    source: c037527e5216503496c0cf61ec685b29676f4ed7e538abec608791ee40866b01
-    translation: 915f6152169ef44cd2f437075c03eb5297e3097d82aef3cc6b5f408837639081
+    source: f6f26da28ba22760dbb010d62c16a9626014d28ada6a69edcae7431fbbaf820b
+    translation: ceed08e7a00a15f3ec58dd0059a0b997b8d694446e9374d31df588c88c3b85ec
   - index: 7
     level: 2
-    source: eab3b9ab73d3f4a482e22a9402efb8f922838088c65a3b329220bd4ffa886e05
-    translation: 824fe7c758b3cd0933ce3de86e58c7e32f06ec441949084691bb27e48e27e156
+    source: 3d9a0015ae3a0712a28565a338b2e917d3f9e31de3190f87e889e66ac8c31314
+    translation: 5f89babad216af0462cdb9fdfc9de7323fc1d99ef172e4c78e626d819101af33
   - index: 8
     level: 2
     source: 709e0a71c2b27c3bb891ef2add4b36987724fd55e69c7655101161daf180e075
@@ -51,8 +51,8 @@ sections:
     translation: 77803b802a1350fd427912cf9632e3a4994fdf95718884a22f9d951cbc9c2e07
   - index: 11
     level: 2
-    source: 33b29ddc9151aa0178993eee0cc32807e49adc3e422d41b78428cb6e48ca730f
-    translation: a3b64c053aab9fd2100ec045fc4b029ee805a977167c6a3c6b42c99fa60091f1
+    source: 52d107549bac69fd9a895dd1891249f3e45d2d6e59370c81094427d6d8b7ee08
+    translation: 3696258ca9ac6c12a79cdcdbc46e7b0774b6cc1cc9975ffde9b357e9e2c2cb8d
   - index: 12
     level: 2
     source: 85b6c0a0d4c4eed105270bd24d1d207003aa2c7bab7d1802158484d67c64dc2f

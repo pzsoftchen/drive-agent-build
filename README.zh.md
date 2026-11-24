@@ -59,6 +59,7 @@ DAB 是长期方向：驱动 Agent 成为构建者。当前实现路径是 DAD�
 | DAD 编写事实、投影、漂移检测和策略解释 | 已在 0.1.1 发布 |
 | DAD 独立的 project/global scope 与 v2 manifest | 已在 0.1.1 发布 |
 | DAD 实践层：generic profile、单语 docs 和 authoring skills | 已实现，尚未发布 |
+| DAD 高级 hooks 与共享记忆 | 可选；默认不生成 |
 | DAD 单开发任务证据 | 计划在 v0.2 提供，这是下一步 |
 | DAD 记忆与运行加固 | 计划在 v0.3 提供 |
 | DAD Codex 与 DSH adapter | 在单任务证据之后 |
@@ -100,10 +101,12 @@ pnpm link --global
 
 ## 命令做什么
 
-- `dab init` 写入项目编写骨架，包括 `docs/AGENTS.md`、`docs/architecture.md` 和 `dab-*` authoring skills，并在安全时运行 normalize。
+- `dab init` 写入项目编写骨架，包括 `docs/AGENTS.md`、`docs/architecture.md` 和 `dab-*` authoring skills，并在安全时运行 normalize。它不生成高级 hooks 或共享记忆。
 - `dab normalize` 编译策略、生成指令和投影产物、补齐缺失的 docs 和 authoring skills，并记录哈希。
 - `dab detect` 在不写入的情况下检查编写事实、生成输出、所有权和作用域。
 - `dab policy explain` 展示选定 target 的最终规则和 hooks。
+
+Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hooks 与共享记忆保持高级、可选：已有的编写文件继续受支持和受管理。
 
 ## DAB 为什么存在
 
@@ -114,7 +117,7 @@ pnpm link --global
 - 一位 DeepSeek 算子开发者判断，工作重心可能从设计、编写和优化算子，转向驾驶 Agent 完成这些工作。
 - 李彦宏提出的 Builder，把创造者的范围从编写代码的人扩展到更广泛的人群。
 
-我最早实践的是一个更窄的做法：DAD（Drive Agent Development，驱动 Agent 开发），即定义 Agent 应如何开展开发工作，并驾驶 Agent 按这个过程执行。DAB 保留 DAD 的编写事实、投影、漂移检测、决策和共享记忆，再增加前面描述的面向交付的收敛。开发是第一个范围，因为我自己就是第一位构建者，而不是因为开发就是终点。
+我最早实践的是一个更窄的做法：DAD（Drive Agent Development，驱动 Agent 开发），即定义 Agent 应如何开展开发工作，并驾驶 Agent 按这个过程执行。DAB 保留 DAD 的编写事实、投影、漂移检测和决策，以及可选的共享记忆，再增加前面描述的面向交付的收敛。开发是第一个范围，因为我自己就是第一位构建者，而不是因为开发就是终点。
 
 ## 设计原则
 

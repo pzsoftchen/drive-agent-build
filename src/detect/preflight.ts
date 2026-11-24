@@ -223,6 +223,23 @@ async function plannedEntries(input: {
   // An authored manifest that cannot be parsed must be fixed before normalize
   // can run, so a blocked preflight does not suggest the adoption command.
   const next = input.hasManifest && !input.manifestValid ? undefined : 'dab normalize';
+  // Hooks and shared memory are advanced, opt-in capabilities. A project that
+  // never opted in gets no missing entry; an existing or broken path is still
+  // probed and reported.
+  const optionalHooks = await existenceEntry({
+    root,
+    path: `${agents}/hooks/`,
+    group: 'Hooks',
+    diagnostics,
+    ...(next === undefined ? {} : { next }),
+  });
+  const optionalMemory = await existenceEntry({
+    root,
+    path: `${agents}/memory/INDEX.md`,
+    group: 'Memory',
+    diagnostics,
+    ...(next === undefined ? {} : { next }),
+  });
   const entries: ChecklistEntry[] = [
     await existenceEntry({
       root,
@@ -280,20 +297,8 @@ async function plannedEntries(input: {
       diagnostics,
       ...(next === undefined ? {} : { next }),
     }),
-    await existenceEntry({
-      root,
-      path: `${agents}/hooks/`,
-      group: 'Hooks',
-      diagnostics,
-      ...(next === undefined ? {} : { next }),
-    }),
-    await existenceEntry({
-      root,
-      path: `${agents}/memory/INDEX.md`,
-      group: 'Memory',
-      diagnostics,
-      ...(next === undefined ? {} : { next }),
-    }),
+    ...(optionalHooks.status === 'missing' ? [] : [optionalHooks]),
+    ...(optionalMemory.status === 'missing' ? [] : [optionalMemory]),
     await existenceEntry({
       root,
       path: `${agents}/notes/`,

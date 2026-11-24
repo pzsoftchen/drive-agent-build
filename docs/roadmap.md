@@ -26,6 +26,8 @@ DAB is the long-term direction. The product roadmap follows DAD first: prove rel
 - `init` and `normalize` scaffold single-language `docs/AGENTS.md` and `docs/architecture.md` and the `dab-*` authoring skills from one planner.
 - `detect` reports a Documentation group and authoring skill state; `normalize` fills missing practice files without overwriting authored docs or skills.
 - Projects with `.agents/rules/docs-bilingual.md` keep the rule and are policy-skipped for generated docs.
+- The generic profile focuses on configuration drift and the documentation, notes and skills discipline.
+- Hooks and shared memory are advanced, opt-in capabilities. `init` and adoption do not scaffold them; existing authored files remain supported, validated and managed.
 - Status: implemented; unreleased.
 
 ## v0.2 DAD Task Evidence

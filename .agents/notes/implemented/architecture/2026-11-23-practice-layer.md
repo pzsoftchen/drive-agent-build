@@ -17,6 +17,7 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 - An existing `.agents/rules/docs-bilingual.md` is project policy: it is preserved, missing documentation targets are policy-skipped with `practice.docs-bilingual-policy`, existing docs are skipped, and authoring skills and target writes continue.
 - `dab detect` runs the same packs read-only. It adds a `Documentation` group and authoring entries in `Skills`, checks links, line-start `TODO:` or `TODO(owner):` markers, empty architecture sections and version markers, and treats policy skips and unversioned authored skills as non-strict warnings.
 - DAB dogfoods the layer: its own `docs/AGENTS.md` guide and `dab-*` skills are authored files checked by `dab detect`, while its existing bilingual rule keeps its product docs paired.
+- Hooks and shared memory are advanced, opt-in capabilities. The generic profile does not scaffold `.agents/hooks/protect-generated/` or `.agents/memory/INDEX.md`; existing authored hooks and memory remain untouched, validated and managed by `init`, `normalize` and `detect`. The default profile focuses on drift detection/repair and the documentation, notes and skills discipline.
 
 ## Alternatives considered
 
@@ -39,10 +40,11 @@ DAB v0.1.1 governed configuration but did not scaffold the practices that keep a
 - New generic projects no longer get the bilingual rule. DAB itself keeps the rule, so its own documentation pack is policy-skipped while other projects get single-language docs; project rules win.
 - Every authored source parent a command reads is validated before discovery: a regular file, dangling link, denied access or symlink loop at `.agents/agents`, `.agents/hooks`, `.agents/memory`, `.agents/notes`, `.agents/policies` or `.agents/adapters` is a governed `path.conflict` that blocks project and global runs before writes; `.agents/rules` and `.agents/skills` stay practice-owned diagnostics. Access-denied source parents and unreadable practice skill directories are governed path errors instead of later discovery errors; the best-effort secret scan may skip unreadable subtrees but does not own those errors.
 - The detect score includes practice entries, and `--strict` fails on missing or stale practice content except the two non-strict policy and preserved warnings.
+- New projects keep durable knowledge in `.agents/notes/` and docs. A project that already has hooks or shared memory keeps its files, and `detect` omits the empty optional groups instead of reporting them missing.
 
 ## Verification
 
-- `pnpm test`: 59 test files, 698 tests pass.
+- `pnpm test`: 59 test files, 704 tests pass.
 - `pnpm typecheck`: no errors.
 - `pnpm doc-sync`: pairing, links, wrap, budgets and Agent Note checks pass.
 - `pnpm build`: TypeScript compiles.

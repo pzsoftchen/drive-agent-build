@@ -169,11 +169,12 @@ describe('scope-aware init', () => {
       '.agents/rules/testing.md',
       '.agents/policies/project.yaml',
       '.agents/adapters/claude-code.yaml',
-      '.agents/memory/INDEX.md',
     ]) {
       expect(await lstatOrNull(join(home, relative)), relative).not.toBeNull();
     }
     expect((await lstatOrNull(join(home, '.agents/notes')))?.isDirectory()).toBe(true);
+    expect(await lstatOrNull(join(home, '.agents/hooks'))).toBeNull();
+    expect(await lstatOrNull(join(home, '.agents/memory'))).toBeNull();
     expect((await lstatOrNull(join(home, '.claude/agents/implementer.md')))?.isSymbolicLink())
       .toBe(true);
     expect(await readFile(join(home, '.agents/dab.yaml'), 'utf8')).toContain('scope: global');

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { detectProject, runDetect } from '../../src/commands/detect.ts';
+import { initializeProject } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { DAB_VERSION } from '../../src/core/version.ts';
@@ -119,6 +120,42 @@ describe('detectProject', () => {
     expect(result.ok).toBe(true);
     expect(result.diagnostics.filter((item) => item.severity === 'error')).toEqual([]);
     expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
+  });
+
+  it('omits optional hooks and memory entries from a project that has none', async () => {
+    const root = await makeTempDir('dab-detect-empty-');
+    projects.push({
+      root,
+      agents: join(root, '.agents'),
+      claude: join(root, '.claude'),
+    });
+    const init = await initializeProject({ cwd: root, runner: goodRunner });
+    expect(init.ok).toBe(true);
+
+    const result = await detectProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+    });
+
+    expect(result.phase).toBe('initialized');
+    expect(result.checklist.some((entry) => entry.group === 'Hooks')).toBe(false);
+    expect(result.checklist.some((entry) => entry.group === 'Memory')).toBe(false);
+  });
+
+  it('keeps hook and memory entries for a project that has them', async () => {
+    const project = await initialized();
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group: 'Hooks', label: 'protect-generated', status: 'ok' }),
+      expect.objectContaining({
+        group: 'Memory',
+        label: '.agents/memory/INDEX.md',
+        status: 'ok',
+      }),
+    ]));
   });
 
   it('fails on warnings only when strict mode is enabled', async () => {

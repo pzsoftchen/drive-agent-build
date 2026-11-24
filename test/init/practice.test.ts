@@ -548,7 +548,6 @@ describe('planAuthoredScaffold declared directories', () => {
       '.agents/agents',
       '.agents/notes',
       '.agents/rules',
-      '.agents/hooks',
     ]);
     expect(plan.files).toHaveProperty('.agents/policies/project.yaml');
   });

@@ -17,6 +17,7 @@ DAB v0.1.1 只治理配置，却没有生成让项目的 agent 工作保持可�
 - 已有的 `.agents/rules/docs-bilingual.md` 是项目政策：规则保留，缺失的 documentation targets 以 `practice.docs-bilingual-policy` 被 policy skip，已有 docs 作为 skipped 保留，authoring skills 和 target 写入继续。
 - `dab detect` 只读运行相同的 packs。它增加 `Documentation` 组和 `Skills` 中的 authoring 条目，检查链接、行首 `TODO:` 或 `TODO(owner):` 标记、空架构章节和版本标记，并把 policy skip 和未加版本标记的 authored skills 视为 non-strict warning。
 - DAB dogfood 该层：自身的 `docs/AGENTS.md` 指南和 `dab-*` skills 是由 `dab detect` 检查的 authored 文件，同时已有的双语规则继续让产品 docs 保持配对。
+- Hooks 与共享记忆是高级、可选能力。Generic profile 不生成 `.agents/hooks/protect-generated/` 或 `.agents/memory/INDEX.md`；已有的 authored hooks 和记忆保持不变，并继续由 `init`、`normalize` 和 `detect` 校验和管理。默认 profile 聚焦漂移检测/修复，以及 docs、notes 和 skills 纪律。
 
 ## Alternatives considered
 
@@ -39,10 +40,11 @@ DAB v0.1.1 只治理配置，却没有生成让项目的 agent 工作保持可�
 - 新的 generic 项目不再获得双语规则。DAB 自身保留该规则，因此自己的 documentation pack 被 policy skip，而其他项目获得单语 docs；项目规则优先。
 - 命令读取的每个 authored source parent 都会在发现之前校验：`.agents/agents`、`.agents/hooks`、`.agents/memory`、`.agents/notes`、`.agents/policies` 或 `.agents/adapters` 处的普通文件、悬空链接、访问拒绝或符号链接循环是受治理的 `path.conflict`，会在写入前阻断 project 和 global 运行；`.agents/rules` 和 `.agents/skills` 保持 practice 自有的诊断。访问被拒绝的 source parent 和不可读的 practice skill 目录是受治理的路径错误，而不是后续的发现错误；best-effort secret scan 可能跳过不可读子树，但不负责这些错误。
 - Detect score 包含 practice 条目，`--strict` 会在 practice 内容缺失或落后时失败，但两个 non-strict 的政策与保留类 warning 除外。
+- 新项目把持久团队知识放在 `.agents/notes/` 和 docs。已经拥有 hooks 或共享记忆的项目保留其文件，`detect` 会省略为空的可选组，而不是报告为缺失。
 
 ## Verification
 
-- `pnpm test`：59 个测试文件、698 个测试通过。
+- `pnpm test`：59 个测试文件、704 个测试通过。
 - `pnpm typecheck`：无错误。
 - `pnpm doc-sync`：配对、链接、排版、预算和 Agent Note 检查通过。
 - `pnpm build`：TypeScript 编译通过。
