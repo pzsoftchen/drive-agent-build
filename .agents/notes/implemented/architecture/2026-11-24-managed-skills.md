@@ -12,10 +12,12 @@ The three `dab-*` authoring skills were Markdown strings inside `src/init/practi
 
 - Canonical templates live at `skills/<name>/SKILL.md` in the repository and installed package; `package.json` publishes `skills`. `init` and `normalize` read them from the package root. There is no `npx skills`, network or remote registry call.
 - An installed copy at `.agents/skills/<name>/SKILL.md` carries `<!-- dab-skill: <name>@<version> sha256=<hex> -->` after its frontmatter. The version is the DAB package version; the hash is SHA-256 of the marker-stripped UTF-8 body.
-- `planManagedSkills` classifies each installed skill before target planning. Missing means create. A matching hash with an equal version means skip. A matching hash with a strictly older version means an atomic update. A legacy marker without a hash and a byte-identical marker-stripped body means migrate the marker and hash. A modified body, a newer or unparseable version, a differing legacy body, a missing marker and a marker naming another skill are preserved with a diagnostic. Non-regular files, escaping symlinks and unreadable paths are blocking `practice.skill-path` errors.
+- `planManagedSkills` classifies each installed skill before target planning. Missing means create. A matching hash with an equal version means skip. A matching hash with a strictly older version means an atomic update. A legacy marker without a hash and a byte-identical marker-stripped body means migrate the marker and hash. A modified body, a newer or unparseable version, a differing legacy body, a missing marker and a marker naming another skill are preserved with a diagnostic. Non-regular files, escaping symlinks and unreadable paths are blocking `practice.skill-path` errors. A symlink at the skill file itself is such an error even when it resolves inside the root; the containing skill directory may be an in-root symlink.
+- Each `ManagedSkillWrite` carries the fingerprint observed during planning: expected absence for a create, the marker version and hash for a stale update, and the marker version plus marker-stripped body for a legacy migration. `applyManagedSkillWrites` re-reads the target immediately before writing. A target that changed, disappeared or appeared after planning is preserved with a `practice.skill-concurrent-change` warning, a missing skill is created with an exclusive create so a concurrent file is never replaced, and stale or legacy writes still use atomic replacement. The apply result reports the preserved targets separately from created, updated, migrated and skipped files.
+- Managed updates require stable numeric versions. A prerelease DAB version is uncomparable, so installed skills are preserved and never update automatically.
 - Managed updates write only `dab-*` files and create no backups. A modified file is never overwritten or backed up; the package and git history are the record. `init` only installs missing skills.
 - `detect` maps the same states to the Skills group. `practice.skill-stale` remains strict; `practice.skill-newer`, `practice.skill-modified`, `practice.skill-legacy`, `practice.skill-marker-mismatch` and `practice.skill-unversioned` are non-strict warnings because they describe preserved authored content.
-- `normalize --json` adds `practices.skills.updated`, `migrated`, `modified`, `newer`, `legacy`, `unversioned` and `markerMismatch` under `schemaVersion: 1`; human output uses `update skill`, `migrate skill` and `skip skill ... (...)`.
+- `normalize --json` adds `practices.skills.updated`, `migrated`, `modified`, `newer`, `legacy`, `unversioned`, `markerMismatch` and `concurrent` under `schemaVersion: 1`; human output uses `update skill`, `migrate skill` and `skip skill ... (...)`.
 - Release 0.1.2 ships the managed update. Existing 0.1.1 projects have legacy markers without hashes and migrate only when their bodies are byte-identical. DAB's own dogfood skills were migrated by running `dab normalize`, not by hand-editing.
 
 ## Alternatives considered
@@ -37,12 +39,14 @@ The three `dab-*` authoring skills were Markdown strings inside `src/init/practi
 - `init` and `normalize` now depend on the packaged `skills/` directory at runtime; a package that omits it fails loudly when rendering a skill. The release test covers the npm `files` entry.
 - Projects on 0.1.1 have legacy markers and migrate on the next normalize when unmodified. A project that edited an authoring skill keeps its fork, and the warning stays until the person reconciles it.
 - Managed updates create no `.dab/backups/` entry, so recovery of an unmodified old template relies on git or the previously installed package.
+- A user edit made after planning wins: the apply step preserves it with `practice.skill-concurrent-change` and reports it in `practices.skills.concurrent` rather than claiming an update.
+- A prerelease DAB build installs skills with an uncomparable marker and subsequent stable builds preserve them, so managed updates require a stable numeric release.
 - DAB dogfoods the same path: `.agents/skills/dab-*` are managed copies of `skills/`, and `dab detect --strict` is clean after migration.
 - Release 0.1.2 is the first release that can update installed authoring skills; it does not change the manifest schema or projection ownership.
 
 ## Verification
 
-- `pnpm test`: 62 test files, 785 tests pass.
+- `pnpm test`: 62 test files, 795 tests pass.
 - `pnpm typecheck`: no errors.
 - `pnpm doc-sync`: pairing, links, wrap, budgets and Agent Note checks pass.
 - `pnpm build`: TypeScript compiles.

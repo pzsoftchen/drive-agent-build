@@ -12,10 +12,12 @@ Status: implemented
 
 - Canonical 模板位于仓库和已安装包的 `skills/<name>/SKILL.md`；`package.json` 发布 `skills`。`init` 和 `normalize` 从 package root 读取它们。不调用 `npx skills`，也不访问网络或远程 registry。
 - `.agents/skills/<name>/SKILL.md` 的已安装副本在 frontmatter 之后带 `<!-- dab-skill: <name>@<version> sha256=<hex> -->`。版本是 DAB 包版本；hash 是移除 marker 后的 UTF-8 body 的 SHA-256。
-- `planManagedSkills` 在 target planning 之前分类每个已安装 skill。缺失则创建。hash 匹配且版本相同则跳过。hash 匹配且版本严格较旧则原子更新。无 hash 的 legacy marker 且去掉 marker 后 body 逐字节一致则迁移 marker 和 hash。已修改 body、较新或无法解析的版本、不同的 legacy body、缺失 marker 和指向其他 skill 的 marker 会保留并产生诊断。不是普通文件、逃逸符号链接和不可读路径是阻断性的 `practice.skill-path` 错误。
+- `planManagedSkills` 在 target planning 之前分类每个已安装 skill。缺失则创建。hash 匹配且版本相同则跳过。hash 匹配且版本严格较旧则原子更新。无 hash 的 legacy marker 且去掉 marker 后 body 逐字节一致则迁移 marker 和 hash。已修改 body、较新或无法解析的版本、不同的 legacy body、缺失 marker 和指向其他 skill 的 marker 会保留并产生诊断。不是普通文件、逃逸符号链接和不可读路径是阻断性的 `practice.skill-path` 错误。skill 文件本身即使是解析到 root 内的符号链接也是该错误；所在 skill 目录可以是指向 root 内的符号链接。
+- 每个 `ManagedSkillWrite` 携带 planning 时观察到的 fingerprint：create 期望缺失，stale 更新期望 marker 版本和 hash，legacy 迁移期望 marker 版本和去掉 marker 的 body。`applyManagedSkillWrites` 在写入前立即重新读取目标。planning 之后被修改、删除或新建的目标会以 `practice.skill-concurrent-change` warning 保留；缺失 skill 使用独占创建，因此并发文件不会被替换，stale 和 legacy 写入仍使用原子替换。apply 结果把保留的目标与 created、updated、migrated、skipped 分开报告。
+- 受管更新要求稳定的数字版本。prerelease DAB 版本无法比较，因此已安装 skills 会保留且永不自动更新。
 - 受管更新只写 `dab-*` 文件，不创建备份。已修改文件绝不会被覆盖或备份；包和 git 历史就是记录。`init` 只安装缺失 skills。
 - `detect` 把相同状态映射到 Skills 组。`practice.skill-stale` 保持 strict；`practice.skill-newer`、`practice.skill-modified`、`practice.skill-legacy`、`practice.skill-marker-mismatch` 和 `practice.skill-unversioned` 是 non-strict warning，因为它们描述被保留的 authored 内容。
-- `normalize --json` 新增 `practices.skills.updated`、`migrated`、`modified`、`newer`、`legacy`、`unversioned` 和 `markerMismatch`，位于 `schemaVersion: 1` 下；人类输出使用 `update skill`、`migrate skill` 和 `skip skill ... (...)`。
+- `normalize --json` 新增 `practices.skills.updated`、`migrated`、`modified`、`newer`、`legacy`、`unversioned`、`markerMismatch` 和 `concurrent`，位于 `schemaVersion: 1` 下；人类输出使用 `update skill`、`migrate skill` 和 `skip skill ... (...)`。
 - 0.1.2 发布包含受管更新。存量 0.1.1 项目只有无 hash 的 legacy markers，仅在 body 逐字节一致时迁移。DAB 自身的 dogfood skills 通过运行 `dab normalize` 迁移，而不是手工编辑。
 
 ## Alternatives considered
@@ -37,12 +39,14 @@ Status: implemented
 - `init` 和 `normalize` 运行时依赖包内 `skills/` 目录；省略该目录的包在渲染 skill 时会显式失败。Release 测试覆盖 npm `files` 条目。
 - 0.1.1 项目带 legacy markers，未修改时会在下次 normalize 迁移。编辑过 authoring skill 的项目保留其分叉，warning 会一直存在直到人工调和。
 - 受管更新不创建 `.dab/backups/` 条目，因此未修改旧模板的恢复依赖 git 或之前安装的包。
+- planning 之后发生的用户编辑会胜出：apply 步骤以 `practice.skill-concurrent-change` 保留它，并在 `practices.skills.concurrent` 中报告，而不是声称已更新。
+- prerelease DAB 构建安装的 skills 带无法比较的 marker，后续稳定构建会保留它们，因此受管更新要求稳定的数字版本。
 - DAB dogfood 同一路径：`.agents/skills/dab-*` 是 `skills/` 的受管副本，迁移后 `dab detect --strict` 干净。
 - 0.1.2 是第一个可以更新已安装 authoring skills 的版本；它不改变 manifest schema 或 projection 所有权。
 
 ## Verification
 
-- `pnpm test`：62 个测试文件、785 个测试通过。
+- `pnpm test`：62 个测试文件、795 个测试通过。
 - `pnpm typecheck`：无错误。
 - `pnpm doc-sync`：配对、链接、排版、预算和 Agent Note 检查通过。
 - `pnpm build`：TypeScript 编译通过。

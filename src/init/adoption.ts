@@ -1,8 +1,8 @@
-import { open, readlink, realpath, rm } from 'node:fs/promises';
+import { readlink, realpath } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { ConfigError, DabError } from '../core/errors.ts';
-import { ensureDir, lstatOrNull } from '../core/fs-atomic.ts';
+import { ensureDir, lstatOrNull, writeFileIfAbsent } from '../core/fs-atomic.ts';
 import {
   assertParentInsideRoot,
   assertRealPathInsideRoot,
@@ -22,7 +22,9 @@ import {
   applyManagedSkillWrites,
   MANAGED_SKILL_DIAGNOSTIC_CODES,
   planManagedSkills,
+  type ManagedSkillApplyResult,
   type ManagedSkillPlan,
+  type ManagedSkillState,
 } from './managed-skills.ts';
 import {
   AUTHORING_SKILL_NAMES,
@@ -136,34 +138,6 @@ export async function planSourceWrites(
   return { create, skip };
 }
 
-/**
- * Create a file only when it does not exist. `wx` makes the check and the
- * create one filesystem operation, so an authored file that appears between
- * planning and writing is never replaced.
- */
-async function writeMissingFile(filePath: string, content: string): Promise<boolean> {
-  await ensureDir(dirname(filePath));
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(filePath, 'wx', 0o644);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      return false;
-    }
-    throw error;
-  }
-  try {
-    await handle.writeFile(content);
-    await handle.sync();
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    await rm(filePath, { force: true }).catch(() => undefined);
-    throw error;
-  }
-  await handle.close();
-  return true;
-}
-
 export async function writeSourceFiles(
   root: string,
   plan: MinimalSourcePlan,
@@ -174,7 +148,7 @@ export async function writeSourceFiles(
   const created: string[] = [];
   const skipped: string[] = [];
   for (const [relativePath, content] of Object.entries(plan.files)) {
-    if (await writeMissingFile(join(root, relativePath), content)) {
+    if (await writeFileIfAbsent(join(root, relativePath), content)) {
       created.push(relativePath);
     } else {
       skipped.push(relativePath);
@@ -304,6 +278,8 @@ export interface ManagedSkillSummary {
   unversioned: string[];
   /** Marker names a different skill; preserved. */
   markerMismatch: string[];
+  /** Targets changed between planning and applying; preserved. */
+  concurrent: string[];
 }
 
 function emptyManagedSkillSummary(): ManagedSkillSummary {
@@ -318,6 +294,7 @@ function emptyManagedSkillSummary(): ManagedSkillSummary {
     legacy: [],
     unversioned: [],
     markerMismatch: [],
+    concurrent: [],
   };
 }
 
@@ -342,12 +319,15 @@ export function planManagedSkillWrites(
 }
 
 /**
- * Derive the normalize report from the writes plan. A dry run and a real run
- * therefore describe the same operations; only `applyManagedSkillWrites`
- * decides whether bytes are written.
+ * Derive the normalize report from the writes plan. When the plan was applied,
+ * `applied` carries the revalidation outcome: a target that changed after
+ * planning moves from created/updated/migrated to the preserved `concurrent`
+ * list instead of claiming a write that did not happen. A dry run passes the
+ * same apply result (with no bytes written) so both modes agree.
  */
 export function summarizeManagedSkills(
   plan: ManagedSkillPlan | undefined,
+  applied?: ManagedSkillApplyResult,
 ): ManagedSkillSummary {
   const summary = emptyManagedSkillSummary();
   if (plan === undefined) {
@@ -359,23 +339,51 @@ export function summarizeManagedSkills(
       .filter((item) => item.code === MANAGED_SKILL_DIAGNOSTIC_CODES.mismatch)
       .flatMap((item) => (item.file === undefined ? [] : [item.file])),
   );
+  const created = new Set(applied?.created ?? []);
+  const updated = new Set(applied?.updated ?? []);
+  const migrated = new Set(applied?.migrated ?? []);
+  const concurrent = new Set(applied?.concurrent ?? []);
+
+  const markApplied = (
+    state: ManagedSkillState,
+    written: ReadonlySet<string>,
+    kind: 'create' | 'update' | 'migrate',
+  ): void => {
+    if (applied === undefined || written.has(state.file)) {
+      if (kind === 'create') {
+        summary.created.push(state.file);
+      } else if (kind === 'update') {
+        summary.updated.push(state.file);
+      } else {
+        summary.migrated.push(state.file);
+      }
+      summary.actions.push(`${kind} skill ${state.file}`);
+      return;
+    }
+    if (concurrent.has(state.file)) {
+      summary.skipped.push(state.file);
+      summary.concurrent.push(state.file);
+      summary.actions.push(`skip skill ${state.file} (concurrent-change)`);
+      return;
+    }
+    throw new Error(
+      `managed skill apply result has no ${kind} outcome for ${state.name}`,
+    );
+  };
 
   for (const state of plan.states) {
     switch (state.status) {
       case 'missing': {
-        summary.created.push(state.file);
-        summary.actions.push(`create skill ${state.file}`);
+        markApplied(state, created, 'create');
         break;
       }
       case 'stale': {
-        summary.updated.push(state.file);
-        summary.actions.push(`update skill ${state.file}`);
+        markApplied(state, updated, 'update');
         break;
       }
       case 'legacy': {
         if (writes.has(state.file)) {
-          summary.migrated.push(state.file);
-          summary.actions.push(`migrate skill ${state.file}`);
+          markApplied(state, migrated, 'migrate');
         } else {
           summary.skipped.push(state.file);
           summary.legacy.push(state.file);
@@ -949,9 +957,16 @@ export async function applyNormalizeAdoption(
   // planning in this same normalization.
   let managed: ManagedSkillSummary | undefined;
   if (prep.managedSkills !== undefined) {
-    managed = summarizeManagedSkills(prep.managedSkills);
-    await applyManagedSkillWrites(root, prep.managedSkills, { dryRun: options.dryRun });
+    // Apply (or revalidate on a dry run) first so the report never claims a
+    // write that a concurrent change turned into a preserved file.
+    const appliedManaged = await applyManagedSkillWrites(
+      root,
+      prep.managedSkills,
+      { dryRun: options.dryRun },
+    );
+    managed = summarizeManagedSkills(prep.managedSkills, appliedManaged);
     actions.push(...managed.actions);
+    diagnostics.push(...appliedManaged.diagnostics);
   }
 
   // A dry run never replaces .claude entries; the import plan itself is

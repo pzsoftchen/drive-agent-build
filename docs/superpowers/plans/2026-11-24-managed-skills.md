@@ -52,11 +52,11 @@
 - Produces: `renderAuthoringSkill(name, version): Promise<string>`; reads the template, inserts the marker, and returns the body.
 - `authoringPack.files(context)` becomes async and calls `renderAuthoringSkill`.
 
-- [ ] **Step 1: Move canonical content into `skills/`**
+- [x] **Step 1: Move canonical content into `skills/`**
 
 Create the three Markdown files from the current `practice-authoring.ts` rendered output, **without** the `<!-- dab-skill: ... -->` marker line. Keep YAML frontmatter and all sections. They are the only template source.
 
-- [ ] **Step 2: Write failing loader/render tests**
+- [x] **Step 2: Write failing loader/render tests**
 
 `test/init/skill-templates.test.ts`:
 
@@ -77,13 +77,13 @@ it('renders a marker with version and a stable sha256', async () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify RED**
+- [x] **Step 3: Run tests to verify RED**
 
 Run: `pnpm vitest run test/init/skill-templates.test.ts test/init/practice-authoring.test.ts`
 
 Expected: FAIL because `skill-templates.ts`/async renderer do not exist, and current renderer has no hash.
 
-- [ ] **Step 4: Implement loader and marker/hash helper**
+- [x] **Step 4: Implement loader and marker/hash helper**
 
 `src/init/skill-templates.ts`:
 
@@ -109,15 +109,15 @@ Marker insertion: after the frontmatter closing `---` line, insert one line:
 
 Hash: remove the marker line from the rendered text, then SHA-256 the remaining UTF-8 text exactly as the template file. At render, compute hash from the template file text; at check, remove marker and hash the same text.
 
-- [ ] **Step 5: Update `practice-authoring.ts`**
+- [x] **Step 5: Update `practice-authoring.ts`**
 
 Replace `SKILL_CONTENT`/`SHARED_*` inline strings with the loader. `renderAuthoringSkill` becomes async; `authoringPack.files` awaits it. Update tests to await render.
 
-- [ ] **Step 6: Package and path tests**
+- [x] **Step 6: Package and path tests**
 
 Add `"skills"` to `package.json` `files`. Add a test that reads package.json and asserts `files` includes `skills`, and that the three canonical files exist. Keep the existing pack test/CI.
 
-- [ ] **Step 7: Run focused tests, typecheck, and commit**
+- [x] **Step 7: Run focused tests, typecheck, and commit**
 
 Run: `pnpm vitest run test/init/skill-templates.test.ts test/init/practice-authoring.test.ts && pnpm typecheck`
 
@@ -168,7 +168,7 @@ export async function applyManagedSkillWrites(
 ): Promise<{ created: string[]; updated: string[]; migrated: string[]; skipped: string[] }>;
 ```
 
-- [ ] **Step 1: Write failing state tests**
+- [x] **Step 1: Write failing state tests**
 
 Cover real temp dirs and real canonical templates:
 - missing → `missing`.
@@ -182,13 +182,13 @@ Cover real temp dirs and real canonical templates:
 
 Use small helper to write skill files; do not mock hashing.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run: `pnpm vitest run test/init/managed-skills.test.ts`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement plan/apply**
+- [x] **Step 3: Implement plan/apply**
 
 Rules:
 - Read canonical template and render current candidate with current version.
@@ -203,11 +203,11 @@ Rules:
 - Use atomic file replacement for managed writes (write temp in same dir then rename, or existing fs-atomic helper); never write on dry-run.
 - Modified/legacy diagnostics are warnings; do not throw.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 Run: `pnpm vitest run test/init/managed-skills.test.ts && pnpm typecheck`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/init/managed-skills.ts test/init/managed-skills.test.ts
@@ -228,7 +228,7 @@ git commit -m "feat: manage skill versions with marker hashes"
 - `NormalizePracticesResult.skills` gains additive `updated`, `migrated`, `modified`, `legacy`, `unversioned` arrays (or equivalent documented fields).
 - Normalize actions include `create skill`, `update skill`, `migrate skill`, `skip skill (modified|legacy|unversioned)`.
 
-- [ ] **Step 1: Write failing normalize tests**
+- [x] **Step 1: Write failing normalize tests**
 
 - Initialized project with an old unmodified skill → normalize updates file + marker/hash; dry-run shows update and writes nothing.
 - Modified skill → normalize leaves bytes unchanged, reports `skill.modified`, still completes other writes/targets.
@@ -238,11 +238,11 @@ git commit -m "feat: manage skill versions with marker hashes"
 - Global scope does not run managed skills.
 - JSON `practices.skills` fields and human actions are stable.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run: `pnpm vitest run test/commands/normalize-adoption.test.ts test/commands/normalize.test.ts`
 
-- [ ] **Step 3: Integrate before target planning**
+- [x] **Step 3: Integrate before target planning**
 
 In `prepareNormalizeAdoption` or the initialized/converge path:
 - Call `planManagedSkills` for project scope after the practice source preflight, before target planning.
@@ -251,11 +251,11 @@ In `prepareNormalizeAdoption` or the initialized/converge path:
 - Preserve all-or-nothing: path/read errors block; modified/legacy warnings do not. Dry-run uses the plan and writes nothing.
 - `init` must not update existing skills; only normalize.
 
-- [ ] **Step 4: Run focused tests, full suite, typecheck**
+- [x] **Step 4: Run focused tests, full suite, typecheck**
 
 Run: `pnpm vitest run test/commands/normalize-adoption.test.ts test/commands/normalize.test.ts && pnpm test && pnpm typecheck`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/init/adoption.ts src/commands/normalize.ts test/commands/normalize-adoption.test.ts test/commands/normalize.test.ts
@@ -279,7 +279,7 @@ git commit -m "feat: update managed skills during normalize"
 - Keep `practice.skill-stale` strict; `practice.skill-unversioned` non-strict; `practice.skill-missing` strict.
 - States: current `ok`; stale `warn` + `dab normalize`; newer `warn` no auto-next; modified `warn` no auto-next; legacy/unversioned/marker-mismatch `warn` no auto-next.
 
-- [ ] **Step 1: Write failing detect tests**
+- [x] **Step 1: Write failing detect tests**
 
 - current marker/hash → OK.
 - older version matching hash → stale warning, `--strict` exit 3, next normalize.
@@ -289,19 +289,19 @@ git commit -m "feat: update managed skills during normalize"
 - unversioned / marker naming another skill → warn non-strict.
 - duplicate rows collapse; exit codes unchanged.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run: `pnpm vitest run test/detect/practice.test.ts test/commands/detect-preflight.test.ts test/commands/detect.test.ts`
 
-- [ ] **Step 3: Implement using shared marker/hash helpers**
+- [x] **Step 3: Implement using shared marker/hash helpers**
 
 Do not duplicate the hash algorithm in detect. Reuse the helper from `managed-skills.ts`/`skill-templates.ts`. Update `PRACTICE_NON_STRICT_WARNING_CODES` for modified/legacy. Keep checklist entry dedupe.
 
-- [ ] **Step 4: Run focused tests, full suite, typecheck, doc-sync if docs changed**
+- [x] **Step 4: Run focused tests, full suite, typecheck, doc-sync if docs changed**
 
 Run: `pnpm vitest run test/detect/practice.test.ts test/commands/detect-preflight.test.ts test/commands/detect.test.ts && pnpm test && pnpm typecheck`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/detect/practice.ts src/commands/detect.ts test/detect/practice.test.ts test/commands/detect-preflight.test.ts test/commands/detect.test.ts
@@ -319,11 +319,11 @@ git commit -m "feat: report managed skill states in detect"
 - Modify: `dab.yaml` (generated skill hashes/projections)
 - Modify: `docs/AGENTS.md`, `docs/architecture.md`/zh/i18n, `docs/user/cli.md`/zh/i18n, `docs/user/claude-code.md`/zh/i18n, README/zh/i18n, roadmap/zh/i18n, CHANGELOG/zh, Practice Layer Agent Note/zh/i18n.
 
-- [ ] **Step 1: Run new normalize on DAB**
+- [x] **Step 1: Run new normalize on DAB**
 
 After Tasks 1-4, run `pnpm build && node dist/cli.js normalize`. Legacy DAB skills (marker 0.1.1 without hash) should migrate only if their body matches the new canonical template; otherwise preserve and report. Verify `detect --strict` remains 19/19 or describe any expected state changes.
 
-- [ ] **Step 2: Update docs**
+- [x] **Step 2: Update docs**
 
 Describe:
 - canonical `skills/` source and packaged templates;
@@ -334,7 +334,7 @@ Describe:
 - release 0.1.2 behavior.
 Update EN/ZH pairs/i18n; run pairing writer and doc-sync.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 Run:
 
@@ -361,15 +361,15 @@ Commit `docs: document managed skills and release 0.1.2`.
 - Refresh `.agents/skills/dab-*` markers via normalize; `dab.yaml` hashes
 - Create/modify release Agent Note if required by repo process
 
-- [ ] **Step 1: Bump version and refresh dogfood skills**
+- [x] **Step 1: Bump version and refresh dogfood skills**
 
 Set `package.json` version `0.1.2`; build; run normalize so the three dogfood skills update to `@0.1.2` with new hashes; verify `detect --strict` and normalize dry-run.
 
-- [ ] **Step 2: Update changelog and release docs**
+- [x] **Step 2: Update changelog and release docs**
 
 Move Unreleased items to `0.1.2 — 2026-11-24`; update README/roadmap release links/status; EN/ZH and i18n.
 
-- [ ] **Step 3: Run release gates**
+- [x] **Step 3: Run release gates**
 
 ```bash
 pnpm test
@@ -381,7 +381,7 @@ node dist/cli.js normalize --dry-run
 git diff --check
 ```
 
-- [ ] **Step 4: Commit release prep**
+- [x] **Step 4: Commit release prep**
 
 ```bash
 git add package.json CHANGELOG.md CHANGELOG.zh.md README.md README.zh.md README.i18n.yaml docs/roadmap.md docs/roadmap.zh.md docs/roadmap.i18n.yaml .agents/skills/dab-* dab.yaml

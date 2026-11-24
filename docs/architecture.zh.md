@@ -89,7 +89,9 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 - Canonical 模板位于 DAB 仓库和已安装包的 `skills/<name>/SKILL.md`；`package.json` 发布 `skills`。`init` 和 `normalize` 从 package root 读取它们，因此不涉及网络、`npx skills` 或外部安装器。
 - `.agents/skills/<name>/SKILL.md` 的已安装副本在 frontmatter 之后带 `<!-- dab-skill: <name>@<version> sha256=<hex> -->`。`version` 是渲染该副本的 DAB 包版本，`sha256` 是移除 marker 行后的 UTF-8 body 哈希。
-- `normalize` 在 target planning 之前规划每个 `dab-*` skill。缺失文件会创建；hash 匹配且版本相同会跳过；hash 匹配且版本严格较旧会用当前模板和 marker 原子重写；无 hash 的 legacy marker 在去掉 marker 后 body 与当前模板逐字节一致时迁移。已修改 body、较新或无法解析的版本、不同的 legacy body、缺失 marker 和指向其他 skill 的 marker 会保留并产生诊断。不是普通文件、逃逸 root 或无法读取的路径是阻断性的 `practice.skill-path` 错误。
+- `normalize` 在 target planning 之前规划每个 `dab-*` skill。缺失文件会创建；hash 匹配且版本相同会跳过；hash 匹配且版本严格较旧会用当前模板和 marker 原子重写；无 hash 的 legacy marker 在去掉 marker 后 body 与当前模板逐字节一致时迁移。已修改 body、较新或无法解析的版本、不同的 legacy body、缺失 marker 和指向其他 skill 的 marker 会保留并产生诊断。不是普通文件、逃逸 root 或无法读取的路径是阻断性的 `practice.skill-path` 错误。skill 文件本身即使是解析到 root 内的符号链接也是该错误；所在 skill 目录可以是指向 root 内的符号链接。
+- 每次受管写入前，`normalize` 会重新读取目标并校验计划的 marker、版本和 body hash。planning 之后被修改、删除或新建的目标会以 `practice.skill-concurrent-change` warning 保留而不是写入；缺失 skill 使用独占创建，因此并发创建的文件不会被替换。
+- 受管更新要求稳定的数字版本。像 `0.1.3-beta.1` 这样的 prerelease DAB 版本无法比较，因此已安装 skills 会保留且不会自动更新；prerelease 创建的 skill 带有后续稳定版本也会保留的 marker。
 - 更新只针对 `dab-*` skills。用户自定义 skills 永不被触碰。受管更新不创建 `.dab/backups/` 条目，已修改文件绝不会被覆盖或备份；已安装包和 git 历史就是记录。`init` 只安装缺失 skills。
 - CRLF 很重要：legacy 迁移和 modified 检测都比较字节，因此仅有 CRLF 换行差异的 body 会保留。
 - `detect` 把受管状态映射到 Skills 组：
@@ -105,7 +107,7 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 | unversioned 或 marker 不匹配 | `practice.skill-unversioned` 或 `practice.skill-marker-mismatch` | 通过 |
 | 路径或读取错误 | `practice.skill-path` | 失败 |
 
-- `normalize --json` 新增 `practices.skills.updated`、`migrated`、`modified`、`newer`、`legacy`、`unversioned` 和 `markerMismatch`，作为 `schemaVersion: 1` 下的追加字段；人类输出使用 `update skill`、`migrate skill` 和 `skip skill ... (...)` 动作。
+- `normalize --json` 新增 `practices.skills.updated`、`migrated`、`modified`、`newer`、`legacy`、`unversioned`、`markerMismatch` 和 `concurrent`，作为 `schemaVersion: 1` 下的追加字段；人类输出使用 `update skill`、`migrate skill` 和 `skip skill ... (...)` 动作。
 
 ## 核心循环
 

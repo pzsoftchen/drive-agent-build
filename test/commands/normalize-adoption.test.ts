@@ -17,7 +17,10 @@ import type { CommandRunner } from '../../src/core/command.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
 import { hashSkillBody, parseSkillMarker } from '../../src/core/skill-marker.ts';
 import { DAB_VERSION } from '../../src/core/version.ts';
-import { prepareNormalizeAdoption } from '../../src/init/adoption.ts';
+import {
+  applyNormalizeAdoption,
+  prepareNormalizeAdoption,
+} from '../../src/init/adoption.ts';
 import { renderAuthoringSkill, type AuthoringSkillName } from '../../src/init/skill-templates.ts';
 import { ProjectManifestSchema } from '../../src/model/schemas.ts';
 import { makeGlobalFixture } from '../helpers/global.ts';
@@ -1995,6 +1998,63 @@ describe('normalize managed skills', () => {
     expect(result.practices?.skills.legacy).toEqual([]);
     expect(result.adoption?.sourceActions).toContain(`migrate skill ${file}`);
     expectCurrentManaged(await readFile(join(root, file), 'utf8'));
+  });
+
+  it('plans a legacy migration in an adoption dry run without writing', async () => {
+    const root = await tempDir('dab-managed-legacy-dry-');
+    const legacy = await legacyBody(docWriting);
+    const file = await writeManaged(root, docWriting, legacy);
+
+    const result = await normalizeProject({
+      cwd: root,
+      home: dirname(root),
+      runner: goodRunner,
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.practices?.mode).toBe('adoption');
+    expect(result.practices?.skills.migrated).toEqual([file]);
+    expect(result.practices?.skills.legacy).toEqual([]);
+    expect(result.actions).toContain(`migrate skill ${file}`);
+    expect(await readFile(join(root, file), 'utf8')).toBe(legacy);
+    expect(await lstatOrNull(join(root, 'docs/AGENTS.md'))).toBeNull();
+  });
+
+  it('preserves a managed skill edited between planning and applying', async () => {
+    const root = await tempDir('dab-managed-concurrent-');
+    const stale = await renderAuthoringSkill(docWriting, '0.1.0');
+    const file = await writeManaged(root, docWriting, stale);
+    for (const name of [architecture, decisionNotes]) {
+      await writeManaged(root, name, await renderAuthoringSkill(name, DAB_VERSION));
+    }
+    const preparation = await prepareNormalizeAdoption({
+      cwd: root,
+      home: dirname(root),
+    });
+    const edited = `${stale}\nLocal edit after planning.\n`;
+    await writeFile(join(root, file), edited);
+
+    const applied = await applyNormalizeAdoption(
+      { ...preparation, claudePlan: undefined },
+      { dryRun: false, backupRoot: join(root, '.dab/backups/test') },
+    );
+
+    expect(await readFile(join(root, file), 'utf8')).toBe(edited);
+    expect(applied.managed?.updated).toEqual([]);
+    expect(applied.managed?.concurrent).toEqual([file]);
+    expect(applied.managed?.skipped).toContain(file);
+    expect(applied.managed?.actions).toContain(
+      `skip skill ${file} (concurrent-change)`,
+    );
+    expect(applied.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'practice.skill-concurrent-change',
+        severity: 'warning',
+        file,
+      }),
+    ]));
   });
 
   it('preserves a modified legacy skill and still completes other practice writes', async () => {

@@ -236,7 +236,9 @@ dab normalize [--dry-run] [--fix] [--json]
 - 当 `.agents/rules/docs-bilingual.md` 存在时，缺失的 documentation targets 以 `practice.docs-bilingual-policy` 被 policy skip；已有 docs 作为 skipped 保留，规则本身保留。Authoring skills 仍会安装，target 写入继续。
 - 阻断性的 source 或 practice 错误（`.agents` source parent 处的普通文件、悬空链接、访问拒绝或符号链接循环，逃逸链接或不可读路径）会阻止所有写入，包括 `.claude`。Practice 写入发生在 target planning 之前，因此新 skill 会在同一次运行中被投影；后续 target 失败会保留幂等的 practice 文件，重跑是安全的。
 - 已安装的 `dab-*` skills 是带 `<!-- dab-skill: <name>@<version> sha256=<hash> -->` 标记的 authored 副本；hash 覆盖移除 marker 行后的 UTF-8 body。Normalize 会创建缺失 skill，更新 marker 版本严格早于已安装 DAB 版本且未修改的副本，并在无 hash 的 legacy marker 去掉后 body 与当前模板逐字节一致时迁移该 marker。它会保留并警告已修改 body（`practice.skill-modified`）、较新或无法比较的版本（`practice.skill-newer`）、不同的 legacy body（`practice.skill-legacy`）、缺失 marker（`practice.skill-unversioned`）和指向其他 skill 的 marker（`practice.skill-marker-mismatch`）。仅有 CRLF 换行差异的 legacy body 会保留，因为比较是逐字节的。受管更新不创建 `.dab/backups/`；已修改文件绝不会被覆盖或备份。`dab init` 只安装缺失 skills。
-- 人类输出打印 `Language: <value> (source: <source>)`。在 convergence 模式下会列出 practice 的 `create` 和 `skip` 路径，以及受管的 `update skill`、`migrate skill` 和保留类 `skip skill ... (modified|newer|legacy|unversioned|marker-mismatch)` 动作；adoption 通过 `adoption.sourceActions` 报告 practice 和受管创建。
+- 每次受管写入都会重新读取目标并校验计划的 marker、版本和 body hash。planning 之后被修改、删除或新建的文件会以 `practice.skill-concurrent-change` 保留；缺失 skill 使用独占创建，因此并发文件不会被替换。`.agents/skills/dab-*/SKILL.md` 上的符号链接即使解析到 project 内也是 `practice.skill-path` 错误；skill 目录本身可以是指向 project 内的符号链接。
+- 受管更新要求稳定的数字版本。像 `0.1.3-beta.1` 这样的 prerelease DAB 版本无法比较，因此已安装 skills 会保留且永不自动更新；由 prerelease 安装的 skill 在后续稳定版本下也保持其无法比较的 marker。
+- 人类输出打印 `Language: <value> (source: <source>)`。在 convergence 模式下会列出 practice 的 `create` 和 `skip` 路径，以及受管的 `update skill`、`migrate skill` 和保留类 `skip skill ... (modified|newer|legacy|unversioned|marker-mismatch|concurrent-change)` 动作；adoption 通过 `adoption.sourceActions` 报告 practice 和受管创建。current skill 只打印一行目录 skip，不重复打印文件 skip；当受管写入创建、更新或迁移了目录中的子文件时，会省略该目录 skip。
 - 现有 authored 内容永不被覆盖，但上文描述的受管未修改较旧 authoring-skill 重写和逐字节一致的 legacy marker 迁移除外；在 `dab.yaml` 中，normalize 只更新 `generated` 记录，永不更新 authored 字段。现有 `dab.yaml` 若无法解析，normalize 会以配置错误（YAML 语法错误为 `config.yaml`，schema 或版本错误为 `config.invalid`）停止并零写入；修复文件后重跑。
 - Import 在每次 normalize 时运行，不只发生在 adoption 期间。物理 `.claude/agents/<name>.md` 和 `.claude/skills/<name>/SKILL.md` 条目会复制到 `.agents`，原 `.claude` 条目会备份到 `.dab/backups/<timestamp>/`，并替换为逐项符号链接。
 - 保留 basename 和 skill 目录名。frontmatter `name` 不一致会警告，但不会重命名。首次 import 会复制整个 skill 目录（包括额外文件）。当 `.agents/skills/<name>` 已存在时，额外文件不会合并；它们保留在备份中并产生警告。
@@ -352,7 +354,8 @@ Project scope 追加 `practices`；global scope 省略该字段：
       "newer": [],
       "legacy": [],
       "unversioned": [],
-      "markerMismatch": []
+      "markerMismatch": [],
+      "concurrent": []
     },
     "diagnostics": []
   }
@@ -360,7 +363,7 @@ Project scope 追加 `practices`；global scope 省略该字段：
 ```
 
 - `practices.profile` 是 manifest 的原始值（`generic` 或 `feature`）；`mode` 为 `adoption` 或 `converge`；`language` 是解析后的 `{ value, source }`。
-- `created` 和 `skipped` 只描述 documentation；`skills.created`、`skills.skipped`、`skills.updated`、`skills.migrated`、`skills.modified`、`skills.newer`、`skills.legacy`、`skills.unversioned` 和 `skills.markerMismatch` 描述 authoring skills。`skills.updated` 列出被重写为当前模板的未修改受管 skills，`skills.migrated` 列出已升级的 legacy markers，其余列表列出被保留的文件。`policySkipped` 只列出因双语规则而跳过的缺失 docs；已有 docs 报告为 `skipped`。`directories` 列出要创建的 practice-owned 目录，例如 authoring skill 目录。
+- `created` 和 `skipped` 只描述 documentation；`skills.created`、`skills.skipped`、`skills.updated`、`skills.migrated`、`skills.modified`、`skills.newer`、`skills.legacy`、`skills.unversioned`、`skills.markerMismatch` 和 `skills.concurrent` 描述 authoring skills。`skills.updated` 列出被重写为当前模板的未修改受管 skills，`skills.migrated` 列出已升级的 legacy markers，`skills.concurrent` 列出在 planning 和 apply 之间发生变化的目标，其余列表列出被保留的文件。`policySkipped` 只列出因双语规则而跳过的缺失 docs；已有 docs 报告为 `skipped`。`directories` 列出要创建的 practice-owned 目录，例如 authoring skill 目录。
 - dry run 中 `created`、`directories`、`skills.created`、`skills.updated` 和 `skills.migrated` 是计划值，尚未写入。在 practice 写入前被阻断的 project-scope 运行（例如非法 import、路径错误或没有启用的 target）仍返回带 diagnostics 以及计划但未写入条目的 `practices`。Convergence 在 target preflight 之前写入 practice 文件，因此被后续 target 或校验失败阻断的运行会报告已经写入的 `created` 条目；这些文件是幂等的，重跑是安全的。
 - Global scope 始终省略 `practices`。由 import 产生的 `.claude/skills/dab-*` 条目出现在 `adoption.imports`，不在 `practices.skills` 中。
 - 结果包含绝对 `root`；其他路径相对于该基准，包括 `gitignore.path` 和 backup 条目。

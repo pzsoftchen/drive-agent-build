@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { lstatOrNull, writeFileAtomic } from '../../src/core/fs-atomic.ts';
@@ -58,7 +58,12 @@ describe('planManagedSkills', () => {
 
     expect(plan.states).toEqual([{ name: NAME, file: FILE, status: 'missing' }]);
     expect(plan.writes).toEqual([
-      { name: NAME, file: FILE, content: await renderAuthoringSkill(NAME, VERSION) },
+      {
+        name: NAME,
+        file: FILE,
+        content: await renderAuthoringSkill(NAME, VERSION),
+        expected: { kind: 'missing' },
+      },
     ]);
     expect(plan.diagnostics).toEqual([]);
     expect(await lstatOrNull(join(root, FILE))).toBeNull();
@@ -94,7 +99,16 @@ describe('planManagedSkills', () => {
       },
     ]);
     expect(plan.writes).toEqual([
-      { name: NAME, file: FILE, content: await renderAuthoringSkill(NAME, VERSION) },
+      {
+        name: NAME,
+        file: FILE,
+        content: await renderAuthoringSkill(NAME, VERSION),
+        expected: {
+          kind: 'stale',
+          version: OLD_VERSION,
+          sha256: parseSkillMarker(older)?.sha256,
+        },
+      },
     ]);
     expect(plan.diagnostics).toEqual([]);
   });
@@ -189,7 +203,16 @@ describe('planManagedSkills', () => {
       { name: NAME, file: FILE, status: 'legacy', version: OLD_VERSION },
     ]);
     expect(plan.writes).toEqual([
-      { name: NAME, file: FILE, content: await renderAuthoringSkill(NAME, VERSION) },
+      {
+        name: NAME,
+        file: FILE,
+        content: await renderAuthoringSkill(NAME, VERSION),
+        expected: {
+          kind: 'legacy',
+          version: OLD_VERSION,
+          body: await loadAuthoringSkillTemplate(NAME),
+        },
+      },
     ]);
     expect(plan.diagnostics).toHaveLength(1);
     expect(plan.diagnostics[0]).toMatchObject({
@@ -286,6 +309,25 @@ describe('planManagedSkills', () => {
       file: FILE,
     });
   });
+
+  it('rejects an in-root SKILL.md symlink as a blocking path error', async () => {
+    await writeSkill(NAME, await loadAuthoringSkillTemplate(NAME));
+    const target = join(root, '.agents/skills', NAME, 'template.md');
+    await writeFileAtomic(target, 'content\n');
+    await rm(join(root, FILE));
+    await symlink('template.md', join(root, FILE));
+
+    const plan = await planOne();
+
+    expect(plan.states).toEqual([]);
+    expect(plan.writes).toEqual([]);
+    expect(plan.diagnostics).toHaveLength(1);
+    expect(plan.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-path',
+      severity: 'error',
+      file: FILE,
+    });
+  });
 });
 
 describe('applyManagedSkillWrites', () => {
@@ -296,6 +338,8 @@ describe('applyManagedSkillWrites', () => {
       updated: [],
       migrated: [],
       skipped: [],
+      concurrent: [],
+      diagnostics: [],
     });
     expect(await lstatOrNull(join(root, FILE))).toBeNull();
 
@@ -307,6 +351,8 @@ describe('applyManagedSkillWrites', () => {
       updated: [FILE],
       migrated: [],
       skipped: [],
+      concurrent: [],
+      diagnostics: [],
     });
     expect(await readSkill(NAME)).toBe(older);
   });
@@ -316,7 +362,14 @@ describe('applyManagedSkillWrites', () => {
 
     const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
 
-    expect(result).toEqual({ created: [FILE], updated: [], migrated: [], skipped: [] });
+    expect(result).toEqual({
+      created: [FILE],
+      updated: [],
+      migrated: [],
+      skipped: [],
+      concurrent: [],
+      diagnostics: [],
+    });
     expect(await readSkill(NAME)).toBe(await renderAuthoringSkill(NAME, VERSION));
     // Atomic replacement leaves no temp file behind in the skill directory.
     expect(await readdir(dirname(join(root, FILE)))).toEqual(['SKILL.md']);
@@ -328,7 +381,14 @@ describe('applyManagedSkillWrites', () => {
 
     const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
 
-    expect(result).toEqual({ created: [], updated: [FILE], migrated: [], skipped: [] });
+    expect(result).toEqual({
+      created: [],
+      updated: [FILE],
+      migrated: [],
+      skipped: [],
+      concurrent: [],
+      diagnostics: [],
+    });
     expect(await readSkill(NAME)).toBe(await renderAuthoringSkill(NAME, VERSION));
     expect(await readdir(dirname(join(root, FILE)))).toEqual(['SKILL.md']);
   });
@@ -339,7 +399,14 @@ describe('applyManagedSkillWrites', () => {
 
     const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
 
-    expect(result).toEqual({ created: [], updated: [], migrated: [FILE], skipped: [] });
+    expect(result).toEqual({
+      created: [],
+      updated: [],
+      migrated: [FILE],
+      skipped: [],
+      concurrent: [],
+      diagnostics: [],
+    });
     expect(await readSkill(NAME)).toBe(await renderAuthoringSkill(NAME, VERSION));
   });
 
@@ -350,8 +417,112 @@ describe('applyManagedSkillWrites', () => {
 
     const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
 
-    expect(result).toEqual({ created: [], updated: [], migrated: [], skipped: [FILE] });
+    expect(result).toEqual({
+      created: [],
+      updated: [],
+      migrated: [],
+      skipped: [FILE],
+      concurrent: [],
+      diagnostics: [],
+    });
     expect(await readSkill(NAME)).toBe(edited);
+  });
+
+  it('preserves a stale skill edited between planning and applying', async () => {
+    await writeSkill(NAME, await renderAuthoringSkill(NAME, OLD_VERSION));
+    const plan = await planOne();
+    const edited = `${await readSkill(NAME)}\nLocal note.\n`;
+    await writeSkill(NAME, edited);
+
+    const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.migrated).toEqual([]);
+    expect(result.skipped).toEqual([FILE]);
+    expect(result.concurrent).toEqual([FILE]);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-concurrent-change',
+      severity: 'warning',
+      file: FILE,
+    });
+    expect(result.diagnostics[0]?.message).toContain(NAME);
+    expect(await readSkill(NAME)).toBe(edited);
+  });
+
+  it('does not replace a missing skill created between planning and applying', async () => {
+    const plan = await planOne();
+    const concurrent = '---\nname: dab-doc-writing\n---\nUser content.\n';
+    await writeSkill(NAME, concurrent);
+
+    const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.migrated).toEqual([]);
+    expect(result.skipped).toEqual([FILE]);
+    expect(result.concurrent).toEqual([FILE]);
+    expect(result.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-concurrent-change',
+      severity: 'warning',
+      file: FILE,
+    });
+    expect(await readSkill(NAME)).toBe(concurrent);
+  });
+
+  it('preserves a legacy skill changed between planning and applying', async () => {
+    await writeSkill(NAME, await legacySkill(NAME));
+    const plan = await planOne();
+    const edited = `${await readSkill(NAME)}\nLocal note.\n`;
+    await writeSkill(NAME, edited);
+
+    const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.migrated).toEqual([]);
+    expect(result.skipped).toEqual([FILE]);
+    expect(result.concurrent).toEqual([FILE]);
+    expect(result.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-concurrent-change',
+      severity: 'warning',
+      file: FILE,
+    });
+    expect(await readSkill(NAME)).toBe(edited);
+  });
+
+  it('reports a concurrent change in a dry run without writing', async () => {
+    await writeSkill(NAME, await renderAuthoringSkill(NAME, OLD_VERSION));
+    const plan = await planOne();
+    const edited = `${await readSkill(NAME)}\nLocal note.\n`;
+    await writeSkill(NAME, edited);
+
+    const result = await applyManagedSkillWrites(root, plan, { dryRun: true });
+
+    expect(result.updated).toEqual([]);
+    expect(result.concurrent).toEqual([FILE]);
+    expect(result.skipped).toEqual([FILE]);
+    expect(await readSkill(NAME)).toBe(edited);
+  });
+
+  it('preserves a target that became a non-file after planning', async () => {
+    await writeSkill(NAME, await renderAuthoringSkill(NAME, OLD_VERSION));
+    const plan = await planOne();
+    await rm(join(root, FILE), { force: true });
+    await mkdir(join(root, FILE), { recursive: true });
+
+    const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
+
+    expect(result.updated).toEqual([]);
+    expect(result.concurrent).toEqual([FILE]);
+    expect(result.skipped).toEqual([FILE]);
+    expect(result.diagnostics[0]).toMatchObject({
+      code: 'practice.skill-concurrent-change',
+      severity: 'warning',
+      file: FILE,
+    });
+    expect((await lstatOrNull(join(root, FILE)))?.isDirectory()).toBe(true);
   });
 
   it('skips current skills', async () => {
@@ -360,7 +531,14 @@ describe('applyManagedSkillWrites', () => {
 
     const result = await applyManagedSkillWrites(root, plan, { dryRun: false });
 
-    expect(result).toEqual({ created: [], updated: [], migrated: [], skipped: [FILE] });
+    expect(result).toEqual({
+      created: [],
+      updated: [],
+      migrated: [],
+      skipped: [FILE],
+      concurrent: [],
+      diagnostics: [],
+    });
   });
 
   it('refuses to apply a plan containing blocking diagnostics', async () => {

@@ -128,6 +128,8 @@ export interface NormalizePracticesResult {
     unversioned: string[];
     /** Markers naming another skill, preserved with a warning. */
     markerMismatch: string[];
+    /** Targets changed between planning and applying; preserved with a warning. */
+    concurrent: string[];
   };
   diagnostics: Diagnostic[];
 }
@@ -251,6 +253,7 @@ function buildPractices(
       legacy: managed.legacy,
       unversioned: managed.unversioned,
       markerMismatch: managed.markerMismatch,
+      concurrent: managed.concurrent,
     },
     diagnostics: [...diagnostics],
   };
@@ -477,7 +480,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       preparation.managedSkills,
       new Set(Object.keys(practicePlan?.files ?? {})),
     );
-  const managed = summarizeManagedSkills(managedWritePlan);
+  let managed = summarizeManagedSkills(managedWritePlan);
   const practiceWarnings = scope === 'project' ? policySkipWarnings(practicePlan) : [];
   const practiceDiagnostics = [
     ...(practicePlan?.diagnostics ?? []),
@@ -537,6 +540,10 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       { ...preparation, claudePlan: undefined, managedSkills: managedWritePlan },
       { dryRun: options.dryRun === true, backupRoot },
     );
+    // Apply-time managed warnings (a concurrent change) belong to the run and
+    // the practice report, not only to the adoption step.
+    preparationDiagnostics.push(...applied.diagnostics);
+    practiceDiagnostics.push(...applied.diagnostics);
     adoption = {
       ...adoption,
       sourceActions: applied.actions,
@@ -677,7 +684,16 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     if (options.dryRun !== true) {
       const written = await writeSourceFiles(root, practiceSourcePlan);
       if (managedWritePlan !== undefined) {
-        await applyManagedSkillWrites(root, managedWritePlan, { dryRun: false });
+        const appliedManaged = await applyManagedSkillWrites(
+          root,
+          managedWritePlan,
+          { dryRun: false },
+        );
+        // Revalidation can turn a planned write into a preserved file, so the
+        // report is rebuilt from the apply outcome rather than the plan.
+        managed = summarizeManagedSkills(managedWritePlan, appliedManaged);
+        practiceDiagnostics.push(...appliedManaged.diagnostics);
+        diagnostics.push(...appliedManaged.diagnostics);
       }
       practices = buildPractices(
         practicePlan,
@@ -920,19 +936,33 @@ function formatHuman(result: NormalizeResult): string {
     // Adoption already reports these paths through its source actions. A skill
     // the managed writer created (an existing directory without SKILL.md) is
     // already in the action list as `create skill`, so do not print it twice.
+    const skills = result.practices.skills;
     const actions = new Set(result.actions);
     for (const file of result.practices.created) {
       lines.push(`  create ${file}`);
     }
-    for (const file of result.practices.skills.created) {
+    for (const file of skills.created) {
       if (!actions.has(`create skill ${file}`)) {
         lines.push(`  create ${file}`);
       }
     }
-    for (const file of [
-      ...result.practices.skipped,
-      ...result.practices.skills.skipped,
-    ]) {
+    for (const file of result.practices.skipped) {
+      lines.push(`  skip ${file}`);
+    }
+    // A managed skill file is current (the directory skip already reports it)
+    // or has its own `skip skill ... (...)` action, so a plain file skip is
+    // always redundant. A directory skip is misleading when the managed writer
+    // created, updated or migrated its child.
+    const writtenDirectories = new Set(
+      [...skills.created, ...skills.updated, ...skills.migrated].flatMap((file) => {
+        const index = file.lastIndexOf('/');
+        return index === -1 ? [] : [file.slice(0, index)];
+      }),
+    );
+    for (const file of skills.skipped) {
+      if (file.endsWith('/SKILL.md') || writtenDirectories.has(file)) {
+        continue;
+      }
       lines.push(`  skip ${file}`);
     }
   }

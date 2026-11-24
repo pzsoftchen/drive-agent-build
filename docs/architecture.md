@@ -89,7 +89,9 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 
 - Canonical templates live at `skills/<name>/SKILL.md` in the DAB repository and installed package; `package.json` publishes `skills`. `init` and `normalize` load them from the package root, so no network, `npx skills` or external installer participates.
 - An installed copy at `.agents/skills/<name>/SKILL.md` carries `<!-- dab-skill: <name>@<version> sha256=<hex> -->` after its frontmatter. `version` is the DAB package version that rendered the copy, and `sha256` is the hash of the UTF-8 body after the marker line is removed.
-- `normalize` plans every `dab-*` skill before target planning. A missing file is created; a matching hash with an equal version is skipped; a matching hash with a strictly older version is rewritten atomically with the current template and marker; a legacy marker without a hash is migrated when the marker-stripped body is byte-identical to the current template. A modified body, a newer or unparseable version, a differing legacy body, a missing marker and a marker naming another skill are preserved with diagnostics. A path that is not a regular file, escapes the root or cannot be read is a blocking `practice.skill-path` error.
+- `normalize` plans every `dab-*` skill before target planning. A missing file is created; a matching hash with an equal version is skipped; a matching hash with a strictly older version is rewritten atomically with the current template and marker; a legacy marker without a hash is migrated when the marker-stripped body is byte-identical to the current template. A modified body, a newer or unparseable version, a differing legacy body, a missing marker and a marker naming another skill are preserved with diagnostics. A path that is not a regular file, escapes the root or cannot be read is a blocking `practice.skill-path` error. A symlink at the skill file itself is such an error even when it resolves inside the root; the containing skill directory may be an in-root symlink.
+- Before each managed write, `normalize` re-reads the target and verifies the planned marker, version and body hash. A target that changed, disappeared or appeared after planning is preserved with a `practice.skill-concurrent-change` warning instead of being written; a missing skill uses an exclusive create, so a concurrently created file is never replaced.
+- Managed updates require stable numeric versions. A prerelease DAB version such as `0.1.3-beta.1` cannot be compared, so installed skills are preserved and are not updated automatically; a skill created by a prerelease carries a marker that later stable releases also preserve.
 - Updates are only for `dab-*` skills. User-defined skills are never touched. Managed updates create no `.dab/backups/` entry, and a modified file is never overwritten or backed up; the installed package and git history are the record. `init` installs missing skills only.
 - CRLF matters: legacy migration and modified detection compare bytes, so a body that differs only by CRLF line endings is preserved.
 - `detect` maps managed state to the Skills group:
@@ -105,7 +107,7 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 | unversioned or marker mismatch | `practice.skill-unversioned` or `practice.skill-marker-mismatch` | passes |
 | path or read error | `practice.skill-path` | fails |
 
-- `normalize --json` adds `practices.skills.updated`, `migrated`, `modified`, `newer`, `legacy`, `unversioned` and `markerMismatch` as additive fields under `schemaVersion: 1`; human output uses `update skill`, `migrate skill` and `skip skill ... (...)` actions.
+- `normalize --json` adds `practices.skills.updated`, `migrated`, `modified`, `newer`, `legacy`, `unversioned`, `markerMismatch` and `concurrent` as additive fields under `schemaVersion: 1`; human output uses `update skill`, `migrate skill` and `skip skill ... (...)` actions.
 
 ## Core loop
 

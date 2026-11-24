@@ -1,7 +1,12 @@
 import { join } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.ts';
 import { DabError } from '../core/errors.ts';
-import { lstatOrNull, readTextFile, writeFileAtomic } from '../core/fs-atomic.ts';
+import {
+  lstatOrNull,
+  readTextFile,
+  writeFileAtomic,
+  writeFileIfAbsent,
+} from '../core/fs-atomic.ts';
 import { assertParentInsideRoot } from '../core/paths.ts';
 import {
   authoredFileProblem,
@@ -40,10 +45,21 @@ export interface ManagedSkillState {
   hash?: string;
 }
 
+/**
+ * The on-disk shape the plan observed for a write target. Revalidating it
+ * immediately before writing keeps a user edit made after planning from being
+ * overwritten.
+ */
+export type ManagedSkillWriteExpectation =
+  | { kind: 'missing' }
+  | { kind: 'stale'; version: string; sha256: string }
+  | { kind: 'legacy'; version: string; body: string };
+
 export interface ManagedSkillWrite {
   name: AuthoringSkillName;
   file: string;
   content: string;
+  expected: ManagedSkillWriteExpectation;
 }
 
 export interface ManagedSkillPlan {
@@ -57,6 +73,10 @@ export interface ManagedSkillApplyResult {
   updated: string[];
   migrated: string[];
   skipped: string[];
+  /** Targets preserved because they changed between planning and applying. */
+  concurrent: string[];
+  /** Apply-time warnings; a concurrent change is never blocking. */
+  diagnostics: Diagnostic[];
 }
 
 export const MANAGED_SKILL_ROOT = '.agents/skills';
@@ -67,6 +87,7 @@ export const MANAGED_SKILL_DIAGNOSTIC_CODES = {
   unversioned: 'practice.skill-unversioned',
   mismatch: 'practice.skill-marker-mismatch',
   newer: 'practice.skill-newer',
+  concurrentChange: 'practice.skill-concurrent-change',
   path: 'practice.skill-path',
 } as const;
 
@@ -164,6 +185,16 @@ function legacyMigrationInfo(
   };
 }
 
+function concurrentChangeWarning(file: string, name: string): Diagnostic {
+  return {
+    code: MANAGED_SKILL_DIAGNOSTIC_CODES.concurrentChange,
+    severity: 'warning',
+    message: `authoring skill changed after planning and is preserved: ${name}`,
+    file,
+    hint: 'Re-run dab normalize after reviewing the current file; DAB never overwrites a concurrent edit.',
+  };
+}
+
 function legacyPreservedWarning(file: string, name: string): Diagnostic {
   return {
     code: MANAGED_SKILL_DIAGNOSTIC_CODES.legacy,
@@ -239,7 +270,7 @@ export async function planManagedSkills(input: {
     const absolute = join(input.root, file);
     if ((await lstatOrNull(absolute)) === null) {
       states.push({ name, file, status: 'missing' });
-      writes.push({ name, file, content: candidate });
+      writes.push({ name, file, content: candidate, expected: { kind: 'missing' } });
       continue;
     }
 
@@ -271,7 +302,12 @@ export async function planManagedSkills(input: {
       // The body comparison is intentionally byte-exact, so a legacy file
       // differing only by CRLF line endings is preserved, not migrated.
       if (removeSkillMarker(text) === template) {
-        writes.push({ name, file, content: candidate });
+        writes.push({
+          name,
+          file,
+          content: candidate,
+          expected: { kind: 'legacy', version: marker.version, body: template },
+        });
         diagnostics.push(legacyMigrationInfo(file, name, input.version));
       } else {
         diagnostics.push(legacyPreservedWarning(file, name));
@@ -313,7 +349,12 @@ export async function planManagedSkills(input: {
     }
     if (order < 0) {
       states.push({ name, file, status: 'stale', version: marker.version, hash });
-      writes.push({ name, file, content: candidate });
+      writes.push({
+        name,
+        file,
+        content: candidate,
+        expected: { kind: 'stale', version: marker.version, sha256: hash },
+      });
       continue;
     }
 
@@ -330,8 +371,59 @@ function unexpectedWrite(state: ManagedSkillState): Error {
 }
 
 /**
- * Apply the planned writes with atomic file replacement. A dry run performs no
- * filesystem writes but reports the same create/update/migrate/skip categories.
+ * Re-read a write target and confirm it still matches the fingerprint recorded
+ * at planning time. Missing targets must still be absent; stale and legacy
+ * targets must still be a regular file inside the root with the expected
+ * marker, version and body. Any read or path failure returns false because the
+ * caller cannot prove the target is unchanged, and preserving it is always safe.
+ */
+async function writeStillExpected(
+  root: string,
+  write: ManagedSkillWrite,
+): Promise<boolean> {
+  try {
+    await assertParentInsideRoot(root, write.file);
+  } catch {
+    return false;
+  }
+  const absolute = join(root, write.file);
+  let info;
+  try {
+    info = await lstatOrNull(absolute);
+  } catch {
+    return false;
+  }
+  if (write.expected.kind === 'missing') {
+    return info === null;
+  }
+  if (info === null || !info.isFile()) {
+    return false;
+  }
+  let text: string;
+  try {
+    text = await readTextFile(absolute);
+  } catch {
+    return false;
+  }
+  const marker = parseSkillMarker(text);
+  if (marker === undefined || marker.name !== write.name) {
+    return false;
+  }
+  if (write.expected.kind === 'stale') {
+    return marker.version === write.expected.version
+      && marker.sha256 === write.expected.sha256
+      && hashSkillBody(text) === write.expected.sha256;
+  }
+  return marker.version === write.expected.version
+    && marker.sha256 === undefined
+    && removeSkillMarker(text) === write.expected.body;
+}
+
+/**
+ * Apply the planned writes with atomic file replacement. Every target is
+ * re-read first: a file changed, created or removed after planning is preserved
+ * with a `practice.skill-concurrent-change` warning instead of being written.
+ * A dry run performs the same revalidation but no writes.
  */
 export async function applyManagedSkillWrites(
   root: string,
@@ -352,6 +444,8 @@ export async function applyManagedSkillWrites(
     updated: [],
     migrated: [],
     skipped: [],
+    concurrent: [],
+    diagnostics: [],
   };
   const writes = new Map<AuthoringSkillName, ManagedSkillWrite>();
   for (const write of plan.writes) {
@@ -360,6 +454,12 @@ export async function applyManagedSkillWrites(
     }
     writes.set(write.name, write);
   }
+
+  const concurrent = (state: ManagedSkillState): void => {
+    result.skipped.push(state.file);
+    result.concurrent.push(state.file);
+    result.diagnostics.push(concurrentChangeWarning(state.file, state.name));
+  };
 
   const seen = new Set<AuthoringSkillName>();
   for (const state of plan.states) {
@@ -382,8 +482,25 @@ export async function applyManagedSkillWrites(
             `managed skill plan write path does not match the state for ${state.name}`,
           );
         }
+        if (!(await writeStillExpected(root, write))) {
+          concurrent(state);
+          break;
+        }
         if (!options.dryRun) {
-          await writeFileAtomic(join(root, write.file), write.content);
+          if (state.status === 'missing') {
+            // Exclusive create: a file that appears after revalidation is never
+            // renamed over, unlike an atomic replace.
+            const created = await writeFileIfAbsent(
+              join(root, write.file),
+              write.content,
+            );
+            if (!created) {
+              concurrent(state);
+              break;
+            }
+          } else {
+            await writeFileAtomic(join(root, write.file), write.content);
+          }
         }
         if (state.status === 'missing') {
           result.created.push(state.file);
@@ -401,6 +518,10 @@ export async function applyManagedSkillWrites(
           throw new Error(
             `managed skill plan write path does not match the state for ${state.name}`,
           );
+        }
+        if (!(await writeStillExpected(root, write))) {
+          concurrent(state);
+          break;
         }
         if (!options.dryRun) {
           await writeFileAtomic(join(root, write.file), write.content);
