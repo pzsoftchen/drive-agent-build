@@ -92,6 +92,44 @@ describe('buildChecklist', () => {
     expect(checklist.nextActions).toEqual(['dab normalize', 'dab normalize --dry-run']);
   });
 
+  it('collapses identical rows and keeps distinct rows with the same label', () => {
+    const checklist = buildChecklist({
+      scope: 'project',
+      root: '/tmp/p',
+      phase: 'initialized',
+      entries: [
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'invalid skill frontmatter: broken',
+        },
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'invalid skill frontmatter: broken',
+        },
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'different detail',
+        },
+        {
+          group: 'Skills',
+          label: '.agents/skills/broken/SKILL.md',
+          status: 'error',
+          detail: 'invalid skill frontmatter: broken',
+          file: '.agents/skills/broken/SKILL.md',
+        },
+      ],
+    });
+
+    expect(checklist.entries).toHaveLength(3);
+    expect(checklist.score).toEqual({ ok: 0, total: 3, percent: 0 });
+  });
+
   it('scores an empty checklist as zero percent', () => {
     const checklist = buildChecklist({
       scope: 'project',

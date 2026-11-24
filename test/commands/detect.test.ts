@@ -538,6 +538,28 @@ Unsafe.
     expect(result.diagnostics.map((item) => item.code)).toContain('agent.invalid-frontmatter');
     expect(result.checklist.some((item) => item.status === 'importable')).toBe(false);
   });
+
+  it('reports one Skills error row for an invalid authored skill', async () => {
+    const project = await initialized();
+    await writeProjectFile(
+      project.root,
+      '.agents/skills/broken/SKILL.md',
+      'not frontmatter\n',
+    );
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(3);
+    expect(
+      result.diagnostics.filter((item) => item.code === 'skill.invalid-frontmatter'),
+    ).toHaveLength(1);
+    const rows = result.checklist.filter(
+      (entry) => entry.group === 'Skills'
+        && entry.label === '.agents/skills/broken/SKILL.md',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'error' });
+  });
 });
 
 describe('runDetect', () => {

@@ -75,13 +75,42 @@ function compareEntries(left: ChecklistEntry, right: ChecklistEntry): number {
   return 0;
 }
 
+function entryKey(entry: ChecklistEntry): string {
+  return JSON.stringify([
+    entry.group,
+    entry.label,
+    entry.status,
+    entry.detail ?? null,
+    entry.file ?? null,
+    entry.next ?? null,
+  ]);
+}
+
+/**
+ * Collapses rows that describe the same fact. Discovery and adoption planning
+ * can both report the same broken authored skill, and each diagnostic maps to
+ * a row; identical rows are duplicates while distinct rows stay. The first
+ * occurrence keeps its position, and diagnostics are not affected.
+ */
+function dedupeEntries(entries: readonly ChecklistEntry[]): ChecklistEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = entryKey(entry);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 /**
  * Builds a read-only detect checklist. The score counts only `ok` entries;
  * every other status (including `importable`) is not OK. Next actions are the
  * distinct `next` values of non-OK entries in rendered order.
  */
 export function buildChecklist(input: ChecklistInput): Checklist {
-  const entries = [...input.entries].sort(compareEntries);
+  const entries = dedupeEntries(input.entries).sort(compareEntries);
   const total = entries.length;
   const ok = entries.filter((entry) => entry.status === 'ok').length;
   const percent = total === 0 ? 0 : Math.round((ok / total) * 100);

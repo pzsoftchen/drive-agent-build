@@ -210,7 +210,7 @@ next: use dab-architecture-writing
 - `phase` 为 `initialized` 表示 `dab.yaml` 可解析且 `.agents/` 存在；只有一个 marker 或 manifest 无效时为 `partial`；两者都不存在时为 `uninitialized`。
 - `Profile` 来自有效的 manifest；未初始化 scope，或没有有效 manifest 的 partial scope，显示 `not initialized`。
 - `Documentation` 组出现在所有 project phase，global scope 不显示。Preflight（未初始化和 partial scope）只检查存在性、policy skip、语言和路径状态；内容检查在已初始化 scope 运行。没有双语规则时，缺失的 docs 为 `[MISSING]`，next 为 `dab normalize`；存在规则时，它们是 `[WARN]` policy skip，next 为删除规则。在已初始化 scope 中，内部链接损坏为 `[ERROR]`；行首 `TODO:` 或 `TODO(owner):` 标记和空架构章节为 `[WARN]`，next 为 `use dab-doc-writing` 或 `use dab-architecture-writing`。每个条目的 detail 都包含 `Language: <value> (source: <source>)`。manifest 无效的 partial scope 仍显示该组，但不提供 `dab normalize` next action。
-- `Skills` 组报告 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes`。缺失 skill 为 `[MISSING]`，next 为 `dab normalize`；`dab-skill` 标记落后为 `[WARN]`，next 为手工审阅；没有标记的 authored skill 为 `[WARN]`，没有 next。路径冲突为 `[ERROR]`；已存在但非法的 `SKILL.md` 由 source discovery 报告，不会被当作已保留。
+- `Skills` 组报告 `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes`。缺失 skill 为 `[MISSING]`，next 为 `dab normalize`；路径冲突为 `[ERROR]`，已存在但非法的 `SKILL.md` 由 source discovery 报告，不会被当作已保留。Preflight（未初始化和 partial scope）只报告存在性、policy skip、语言和路径状态。在已初始化 scope 中，内容检查将落后的 `dab-skill` 标记报告为 `[WARN]`，next 为手工审阅；将没有标记的 authored skill 报告为 `[WARN]`，没有 next。
 - `--strict` 会在 practice 文件缺失、TODO 标记、空架构章节、落后 skill 标记和其他 practice warning 时失败。`practice.docs-bilingual-policy` 和 `practice.skill-unversioned` 保持信息性，因为它们描述项目政策或保留的 authored 内容。
 - 未初始化和 partial scope 始终退出 `2`，且从不写入；`--strict` 不改变这一点。
 - 已初始化 scope 保持现有退出码：干净时为 `0`，`--strict` 警告和校验失败退出 `3`，Claude Code 版本不兼容退出 `4`。

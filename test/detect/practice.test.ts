@@ -692,6 +692,9 @@ See [nested](architecture.md/child.md).
           status: 'ok',
         }),
       ]));
+      expect(result.checklist.filter(
+        (entry) => entry.group === 'Skills' && entry.label === '.agents/skills/doc-sync',
+      )).toHaveLength(1);
       expect(result.checklist.some(
         (entry) => entry.label === '.agents/skills/doc-sync' && entry.status === 'ok',
       )).toBe(false);
