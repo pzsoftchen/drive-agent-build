@@ -52,13 +52,14 @@ Single-task closure belongs to DAD. DAB begins when multiple tasks must converge
 
 ## Current status
 
-The diagram describes the combined target model. The DAD configuration-governance foundation is released as `@saydone/dab@0.1.1`. Single-task evidence is next; DAB is not yet scheduled.
+The diagram describes the combined target model. The DAD configuration-governance foundation is released as `@saydone/dab@0.1.1`. The practice layer and managed authoring skills are unreleased and ship in `0.1.2`. Single-task evidence is next; DAB is not yet scheduled.
 
 | Capability | Status |
 |---|---|
 | DAD authored facts, projections, drift checks and policy explanation | Released in 0.1.1 |
 | DAD independent project/global scopes and v2 manifests | Released in 0.1.1 |
-| DAD practice layer: generic profile, single-language docs and authoring skills | Implemented; unreleased |
+| DAD practice layer: generic profile, single-language docs and authoring skills | Implemented; ships in 0.1.2 |
+| DAD managed authoring skills: packaged templates, marker hashes and managed updates | Implemented; ships in 0.1.2 |
 | DAD advanced hooks and shared memory | Optional; not scaffolded by default |
 | DAD evidence for one development task | Planned for v0.2; next |
 | DAD memory and operational hardening | Planned for v0.3 |
@@ -102,7 +103,7 @@ Use `dab init ~/.agents` to initialize the independent global scope.
 ## What the commands do
 
 - `dab init` writes the authored project skeleton, including `docs/AGENTS.md`, `docs/architecture.md` and the `dab-*` authoring skills, and runs normalize when it is safe. It does not scaffold advanced hooks or shared memory.
-- `dab normalize` compiles policy, materializes instruction and projection artifacts, fills missing docs and authoring skills, and records hashes.
+- `dab normalize` compiles policy, materializes instruction and projection artifacts, fills missing docs and authoring skills, updates unmodified managed authoring skills, and records hashes.
 - `dab detect` checks authored facts, generated output, ownership and scope without writing.
 - `dab policy explain` shows the effective rules and hooks for a selected target.
 
@@ -150,6 +151,7 @@ Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/
 - [Agent Note 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.md)
 - [Agent Note 0002](.agents/notes/implemented/architecture/2026-11-16-claude-md-compat-shim.md)
 - [Agent Note 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.md)
+- [Agent Note 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.md)
 
 ## License
 

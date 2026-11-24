@@ -17,7 +17,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - `docs/i18n/` — terminology and style rules, maintained directly in both languages and excluded from the pairing gate.
 - [docs/superpowers/README.md](superpowers/README.md) — Chinese-only specs and plans for the superpowers workflow; [.agents/rules/docs-bilingual.md](../.agents/rules/docs-bilingual.md) exempts them from pairing while link and wrap checks still apply.
 - `.agents/notes/` — decision records; write them with the [notes guide](../.agents/notes/AGENTS.md).
-- `.agents/skills/` — agent skills, including the `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` authoring skills.
+- `.agents/skills/` — agent skills, including the managed `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` authoring copies.
 
 ## Placement
 
@@ -25,6 +25,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - Architecture facts belong in [docs/architecture.md](architecture.md), not in this guide or in root `AGENTS.md`.
 - Durable decisions belong in `.agents/notes/` with context, alternatives, consequences and verification, following the [notes guide](../.agents/notes/AGENTS.md).
 - Durable team knowledge belongs in `.agents/notes/` and project docs; `.agents/memory/` is an optional advanced capability and is not scaffolded by default.
+- Authoring skill content lives in the canonical `skills/<name>/SKILL.md` templates shipped with the package. `.agents/skills/dab-*` are managed copies with a version/hash marker; edit the template and run `dab normalize`, not the installed copy.
 - Setup, checks, development workflow and release steps belong in [docs/development.md](development.md).
 - CLI syntax, flags, outputs and exit codes belong in [docs/user/cli.md](user/cli.md).
 - User-facing Claude Code behavior belongs in [docs/user/claude-code.md](user/claude-code.md).

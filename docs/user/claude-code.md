@@ -60,6 +60,13 @@ targets:
 - Any invalid candidate blocks every write: no source adoption, imports or backups. A run that imports new entries records their projections on the next run, so rerun `dab normalize` to make `dab detect` clean.
 - Global scope uses the same rules under `$HOME`: physical entries under `$HOME/.claude` are imported into `~/.agents` and linked back. `~/.claude/settings.json` and `$HOME/.gitignore` stay read-only.
 
+## Authoring skills
+
+- `dab-doc-writing`, `dab-architecture-writing` and `dab-decision-notes` are authored copies installed at `.agents/skills/<name>/SKILL.md` and projected to `.claude/skills/<name>` as per-entry symlinks.
+- The canonical templates live in `skills/<name>/SKILL.md` inside the installed `@saydone/dab` package and are included in its npm `files`. DAB reads them from the package root; it never calls `npx skills`, a network installer or a remote registry.
+- Each installed copy carries a `<!-- dab-skill: <name>@<version> sha256=<hash> -->` marker. `dab init` installs missing skills only. `dab normalize` updates an unmodified copy whose marker version is older, and migrates a legacy marker without a hash when the body matches the current template. Modified, newer, unversioned and marker-mismatched copies are preserved with warnings; managed updates create no backups.
+- `dab detect` reports the current, stale, newer, modified, legacy, unversioned and marker-mismatch states. `practice.skill-stale` fails `--strict`; the preserved states do not.
+
 ## Memory model
 
 - Shared memory is an advanced, opt-in capability. DAB does not scaffold `.agents/memory/` by default; existing files are still preserved and validated.

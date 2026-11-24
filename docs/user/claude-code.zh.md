@@ -60,6 +60,13 @@ targets:
 - 任何非法候选都会阻止所有写入：不采用 source、不执行 import、不备份。导入新条目的那次运行会在下一次运行时记录这些投影，因此重跑 `dab normalize` 可让 `dab detect` 干净。
 - Global scope 在 `$HOME` 下使用相同规则：`$HOME/.claude` 下的物理条目会导入 `~/.agents` 并链接回去。`~/.claude/settings.json` 和 `$HOME/.gitignore` 保持只读。
 
+## Authoring skills
+
+- `dab-doc-writing`、`dab-architecture-writing` 和 `dab-decision-notes` 是安装在 `.agents/skills/<name>/SKILL.md` 的 authored 副本，并以逐项符号链接投影到 `.claude/skills/<name>`。
+- Canonical 模板位于 `skills/<name>/SKILL.md`，它包含在已安装 `@saydone/dab` 包的 npm `files` 中。DAB 从 package root 读取它们；从不调用 `npx skills`、网络安装器或远程 registry。
+- 每个已安装副本带 `<!-- dab-skill: <name>@<version> sha256=<hash> -->` 标记。`dab init` 只安装缺失 skills。`dab normalize` 更新 marker 版本较旧且未修改的副本，并在无 hash 的 legacy marker 去掉后 body 与当前模板一致时迁移它。已修改、较新、无版本和 marker 不匹配的副本会保留并警告；受管更新不创建备份。
+- `dab detect` 报告 current、stale、newer、modified、legacy、unversioned 和 marker-mismatch 状态。`practice.skill-stale` 会让 `--strict` 失败；保留类状态不会。
+
 ## 记忆模型
 
 - 共享记忆是高级、可选能力。DAB 默认不生成 `.agents/memory/`；已有文件仍会被保留和校验。
