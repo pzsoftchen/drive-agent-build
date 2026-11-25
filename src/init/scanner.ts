@@ -1,6 +1,9 @@
 import { readdir } from 'node:fs/promises';
 import { basename, join, relative } from 'node:path';
-import type { Diagnostic } from '../core/diagnostics.ts';
+import {
+  dedupeDiagnostics,
+  type Diagnostic,
+} from '../core/diagnostics.ts';
 import { lstatOrNull, readTextFile } from '../core/fs-atomic.ts';
 import { toPosix } from '../core/paths.ts';
 import { pathProblemFrom } from '../core/practice-paths.ts';
@@ -11,8 +14,23 @@ export type ProjectLanguage =
   | 'python'
   | 'go'
   | 'rust'
+  | 'java'
+  | 'kotlin'
+  | 'swift'
+  | 'objective-c'
   | 'generic';
 export type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun' | 'none';
+
+export type ScanStackId =
+  | 'node'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'java-maven'
+  | 'java-gradle'
+  | 'android'
+  | 'ios-swiftpm'
+  | 'ios-xcode';
 
 export interface ScanCommandSet {
   test?: string;
@@ -21,12 +39,22 @@ export interface ScanCommandSet {
   typecheck?: string;
 }
 
+export interface ScanStack {
+  id: ScanStackId;
+  language: ProjectLanguage;
+  platform?: 'android' | 'ios';
+  commands: ScanCommandSet;
+  evidence: string[];
+  diagnostics: Diagnostic[];
+}
+
 export interface ScanResult {
   projectName: string;
   projectId: string;
   language: ProjectLanguage;
   packageManager: PackageManager;
   commands: ScanCommandSet;
+  stacks: ScanStack[];
   sourceDirs: string[];
   hasAgentsMd: boolean;
   hasClaudeSettings: boolean;
@@ -39,15 +67,29 @@ interface PackageJson {
   scripts?: Record<string, string>;
 }
 
+interface PackageFile {
+  value?: PackageJson;
+  exists: boolean;
+  diagnostics: Diagnostic[];
+}
+
 async function exists(path: string): Promise<boolean> {
   return (await lstatOrNull(path)) !== null;
 }
 
-async function readPackageJson(root: string): Promise<{
-  value?: PackageJson;
-  exists: boolean;
-  diagnostics: Diagnostic[];
-}> {
+async function firstExisting(
+  root: string,
+  names: readonly string[],
+): Promise<string | undefined> {
+  for (const name of names) {
+    if (await exists(join(root, name))) {
+      return name;
+    }
+  }
+  return undefined;
+}
+
+async function readPackageJson(root: string): Promise<PackageFile> {
   const path = join(root, 'package.json');
   if (!(await exists(path))) {
     return { exists: false, diagnostics: [] };
@@ -83,30 +125,349 @@ async function detectPackageManager(root: string, hasPackageJson: boolean): Prom
   return hasPackageJson ? 'npm' : 'none';
 }
 
-async function detectLanguage(
+const LOCKFILE_NAMES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'yarn.lock',
+  'bun.lockb',
+] as const;
+const PYTHON_EVIDENCE = ['pyproject.toml', 'setup.py', 'requirements.txt'] as const;
+const GRADLE_FILES = [
+  'build.gradle',
+  'build.gradle.kts',
+  'settings.gradle',
+  'settings.gradle.kts',
+] as const;
+const ANDROID_MANIFEST = 'app/src/main/AndroidManifest.xml';
+const ANDROID_PLUGIN = /com\.android\.(?:application|library)/;
+const KOTLIN_PLUGIN = /(?:org\.jetbrains\.kotlin\.android|org\.jetbrains\.kotlin\.jvm|kotlin\("android"\))/;
+const JAVA_BUILD_IDS: ReadonlySet<ScanStackId> = new Set([
+  'java-maven',
+  'java-gradle',
+  'android',
+]);
+
+function mavenCommands(hasWrapper: boolean): ScanCommandSet {
+  const runner = hasWrapper ? './mvnw' : 'mvn';
+  return {
+    test: `${runner} test`,
+    build: `${runner} -DskipTests compile`,
+  };
+}
+
+function gradleCommands(hasWrapper: boolean): ScanCommandSet {
+  const runner = hasWrapper ? './gradlew' : 'gradle';
+  return {
+    test: `${runner} test`,
+    build: `${runner} classes`,
+  };
+}
+
+function androidCommands(hasWrapper: boolean): ScanCommandSet {
+  const runner = hasWrapper ? './gradlew' : 'gradle';
+  return {
+    test: `${runner} test`,
+    lint: `${runner} lint`,
+    build: `${runner} assembleDebug`,
+  };
+}
+
+async function swiftPackageCommands(root: string): Promise<ScanCommandSet> {
+  return {
+    test: 'swift test',
+    build: 'swift build',
+    ...(await exists(join(root, '.swiftlint.yml')) ? { lint: 'swiftlint' } : {}),
+  };
+}
+
+interface GradleFacts {
+  files: string[];
+  isAndroid: boolean;
+  hasManifest: boolean;
+  content: string;
+  wrapper?: string;
+}
+
+async function gradleFacts(root: string): Promise<GradleFacts> {
+  const files: string[] = [];
+  let content = '';
+  let isAndroid = false;
+  for (const name of GRADLE_FILES) {
+    const path = join(root, name);
+    if (!(await exists(path))) {
+      continue;
+    }
+    const text = await readTextFile(path);
+    files.push(name);
+    content += text;
+    isAndroid ||= ANDROID_PLUGIN.test(text);
+  }
+  const hasManifest = await exists(join(root, ANDROID_MANIFEST));
+  return {
+    files,
+    isAndroid: isAndroid || hasManifest,
+    hasManifest,
+    content,
+    wrapper: await firstExisting(root, ['gradlew', 'gradlew.bat']),
+  };
+}
+
+async function androidLanguage(root: string, gradleContent: string): Promise<ProjectLanguage> {
+  if (KOTLIN_PLUGIN.test(gradleContent)) {
+    return 'kotlin';
+  }
+  for (const dir of ['app/src/main/kotlin', 'src/main/kotlin']) {
+    const info = await lstatOrNull(join(root, dir));
+    if (info?.isDirectory() === true) {
+      return 'kotlin';
+    }
+  }
+  return 'java';
+}
+
+async function xcodeEvidence(root: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+  const evidence = entries
+    .map((entry) => entry.name)
+    .filter((name) => name.endsWith('.xcodeproj') || name.endsWith('.xcworkspace'))
+    .sort();
+  for (const name of ['Podfile', 'Cartfile']) {
+    if (await exists(join(root, name))) {
+      evidence.push(name);
+    }
+  }
+  return evidence;
+}
+
+function isXcodeProject(name: string): boolean {
+  return name.endsWith('.xcodeproj') || name.endsWith('.xcworkspace');
+}
+
+async function nodeStack(
   root: string,
-  hasPackageJson: boolean,
-): Promise<ProjectLanguage> {
-  if (await exists(join(root, 'tsconfig.json'))) {
-    return 'typescript';
+  packageManager: PackageManager,
+  packageFile: PackageFile,
+): Promise<ScanStack | undefined> {
+  const hasTsconfig = await exists(join(root, 'tsconfig.json'));
+  if (!packageFile.exists && !hasTsconfig) {
+    return undefined;
   }
-  if (hasPackageJson) {
-    return 'javascript';
+  const evidence: string[] = [];
+  if (packageFile.exists) {
+    evidence.push('package.json');
   }
-  if (
-    await exists(join(root, 'pyproject.toml'))
-    || await exists(join(root, 'setup.py'))
-    || await exists(join(root, 'requirements.txt'))
-  ) {
-    return 'python';
+  if (hasTsconfig) {
+    evidence.push('tsconfig.json');
+  }
+  for (const lockfile of LOCKFILE_NAMES) {
+    if (await exists(join(root, lockfile))) {
+      evidence.push(lockfile);
+    }
+  }
+  return {
+    id: 'node',
+    language: hasTsconfig ? 'typescript' : 'javascript',
+    commands: await nodeCommands(packageManager, packageFile.value),
+    evidence,
+    diagnostics: [],
+  };
+}
+
+async function pythonStack(root: string): Promise<ScanStack | undefined> {
+  const evidence: string[] = [];
+  for (const name of PYTHON_EVIDENCE) {
+    if (await exists(join(root, name))) {
+      evidence.push(name);
+    }
+  }
+  if (evidence.length === 0) {
+    return undefined;
+  }
+  return {
+    id: 'python',
+    language: 'python',
+    commands: await pythonCommands(root),
+    evidence,
+    diagnostics: [],
+  };
+}
+
+async function mavenStack(root: string): Promise<ScanStack | undefined> {
+  if (!(await exists(join(root, 'pom.xml')))) {
+    return undefined;
+  }
+  const wrapper = await firstExisting(root, ['mvnw', 'mvnw.cmd']);
+  return {
+    id: 'java-maven',
+    language: 'java',
+    commands: mavenCommands(wrapper !== undefined),
+    evidence: ['pom.xml', ...(wrapper === undefined ? [] : [wrapper])],
+    diagnostics: [],
+  };
+}
+
+async function gradleStack(
+  root: string,
+  facts: GradleFacts,
+): Promise<ScanStack | undefined> {
+  if (facts.isAndroid) {
+    const evidence = [
+      ...facts.files,
+      ...(facts.hasManifest ? [ANDROID_MANIFEST] : []),
+      ...(facts.wrapper === undefined ? [] : [facts.wrapper]),
+    ];
+    return {
+      id: 'android',
+      language: await androidLanguage(root, facts.content),
+      platform: 'android',
+      commands: androidCommands(facts.wrapper !== undefined),
+      evidence,
+      diagnostics: [],
+    };
+  }
+  if (facts.files.length === 0) {
+    return undefined;
+  }
+  return {
+    id: 'java-gradle',
+    language: 'java',
+    commands: gradleCommands(facts.wrapper !== undefined),
+    evidence: [...facts.files, ...(facts.wrapper === undefined ? [] : [facts.wrapper])],
+    diagnostics: [],
+  };
+}
+
+async function swiftPackageStack(root: string): Promise<ScanStack | undefined> {
+  if (!(await exists(join(root, 'Package.swift')))) {
+    return undefined;
+  }
+  return {
+    id: 'ios-swiftpm',
+    language: 'swift',
+    platform: 'ios',
+    commands: await swiftPackageCommands(root),
+    evidence: [
+      'Package.swift',
+      ...(await exists(join(root, '.swiftlint.yml')) ? ['.swiftlint.yml'] : []),
+    ],
+    diagnostics: [],
+  };
+}
+
+async function xcodeStack(root: string): Promise<ScanStack | undefined> {
+  const evidence = await xcodeEvidence(root);
+  const project = evidence.find(isXcodeProject);
+  if (project === undefined) {
+    return undefined;
+  }
+  return {
+    id: 'ios-xcode',
+    language: 'swift',
+    platform: 'ios',
+    commands: {},
+    evidence,
+    diagnostics: [{
+      code: 'scan.ios-xcode-needs-config',
+      severity: 'warning',
+      message: 'Xcode project needs a scheme and destination before gates can run',
+      file: project,
+      hint: 'Configure xcodebuild scheme/destination in .agents/gates.yaml.',
+    }],
+  };
+}
+
+function markJavaBuildAmbiguity(stacks: readonly ScanStack[]): Diagnostic | undefined {
+  const ids = new Set(stacks.map((stack) => stack.id));
+  const hasMaven = ids.has('java-maven');
+  const hasGradle = ids.has('java-gradle') || ids.has('android');
+  if (!hasMaven || !hasGradle) {
+    return undefined;
+  }
+  const diagnostic: Diagnostic = {
+    code: 'scan.multiple-java-builds',
+    severity: 'warning',
+    message: 'Maven and Gradle build files both describe this Java project',
+    hint: 'Keep one build system or override code commands in .agents/gates.yaml.',
+  };
+  for (const stack of stacks) {
+    if (JAVA_BUILD_IDS.has(stack.id)) {
+      stack.diagnostics.push(diagnostic);
+    }
+  }
+  return diagnostic;
+}
+
+/**
+ * Detect stacks in primary-precedence order. Existing Node/Python/Go/Rust
+ * detection stays first so `ScanResult.language`/`commands` keep their
+ * historical values; Java/Android and iOS stacks follow. The first stack is
+ * the primary stack.
+ */
+async function detectStacks(
+  root: string,
+  packageFile: PackageFile,
+  packageManager: PackageManager,
+): Promise<ScanStack[]> {
+  const stacks: ScanStack[] = [];
+  const node = await nodeStack(root, packageManager, packageFile);
+  if (node !== undefined) {
+    stacks.push(node);
+  }
+  const python = await pythonStack(root);
+  if (python !== undefined) {
+    stacks.push(python);
   }
   if (await exists(join(root, 'go.mod'))) {
-    return 'go';
+    stacks.push({
+      id: 'go',
+      language: 'go',
+      commands: {
+        test: 'go test ./...',
+        build: 'go build ./...',
+        lint: 'go vet ./...',
+      },
+      evidence: ['go.mod'],
+      diagnostics: [],
+    });
   }
   if (await exists(join(root, 'Cargo.toml'))) {
-    return 'rust';
+    stacks.push({
+      id: 'rust',
+      language: 'rust',
+      commands: {
+        test: 'cargo test',
+        build: 'cargo build',
+        lint: 'cargo clippy -- -D warnings',
+      },
+      evidence: ['Cargo.toml'],
+      diagnostics: [],
+    });
   }
-  return 'generic';
+  const maven = await mavenStack(root);
+  if (maven !== undefined) {
+    stacks.push(maven);
+  }
+  const gradle = await gradleStack(root, await gradleFacts(root));
+  if (gradle !== undefined) {
+    stacks.push(gradle);
+  }
+  const swiftPackage = await swiftPackageStack(root);
+  if (swiftPackage !== undefined) {
+    stacks.push(swiftPackage);
+  }
+  const xcode = await xcodeStack(root);
+  if (xcode !== undefined) {
+    stacks.push(xcode);
+  }
+  return stacks;
 }
 
 async function detectSourceDirs(root: string): Promise<string[]> {
@@ -200,36 +561,16 @@ function slugify(value: string): string {
 export async function scanProject(root: string): Promise<ScanResult> {
   const packageFile = await readPackageJson(root);
   const packageManager = await detectPackageManager(root, packageFile.exists);
-  const language = await detectLanguage(root, packageFile.exists);
   const sourceDirs = await detectSourceDirs(root);
-
-  let commands: ScanCommandSet;
-  switch (language) {
-    case 'typescript':
-    case 'javascript':
-      commands = await nodeCommands(packageManager, packageFile.value);
-      break;
-    case 'python':
-      commands = await pythonCommands(root);
-      break;
-    case 'go':
-      commands = {
-        test: 'go test ./...',
-        build: 'go build ./...',
-        lint: 'go vet ./...',
-      };
-      break;
-    case 'rust':
-      commands = {
-        test: 'cargo test',
-        build: 'cargo build',
-        lint: 'cargo clippy -- -D warnings',
-      };
-      break;
-    case 'generic':
-      commands = {};
-      break;
-  }
+  const stacks = await detectStacks(root, packageFile, packageManager);
+  const ambiguity = markJavaBuildAmbiguity(stacks);
+  const primary = stacks[0];
+  const language: ProjectLanguage = primary?.language ?? 'generic';
+  const commands: ScanCommandSet = primary === undefined
+    ? {}
+    : ambiguity !== undefined && JAVA_BUILD_IDS.has(primary.id)
+      ? {}
+      : primary.commands;
 
   const projectName = packageFile.value?.name ?? basename(root);
   return {
@@ -238,10 +579,14 @@ export async function scanProject(root: string): Promise<ScanResult> {
     language,
     packageManager,
     commands,
+    stacks,
     sourceDirs,
     hasAgentsMd: await exists(join(root, 'AGENTS.md')),
     hasClaudeSettings: await exists(join(root, '.claude/settings.json')),
     existingAgents: await existingAgentFiles(root),
-    diagnostics: packageFile.diagnostics,
+    diagnostics: dedupeDiagnostics([
+      ...packageFile.diagnostics,
+      ...stacks.flatMap((stack) => stack.diagnostics),
+    ]),
   };
 }
