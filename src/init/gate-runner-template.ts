@@ -205,10 +205,12 @@ function shellQuote(value) {
 }
 
 function commandWorks(command) {
-  const probe = spawnSync(command, { shell: true, stdio: 'ignore' });
+  const probe = spawnSync(command, { shell: true, stdio: 'ignore', cwd: PROJECT_ROOT });
   return probe.status === 0;
 }
 
+// DAB_BIN is an executable path, not a shell snippet; it is quoted as one
+// argument and always runs with the project root as cwd.
 function resolveDab() {
   const fromEnv = process.env.DAB_BIN;
   if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
@@ -244,6 +246,14 @@ function summarize(stdout, stderr) {
   return text.slice(text.length - MAX_OUTPUT);
 }
 
+function appendTail(current, chunk) {
+  const next = current + chunk;
+  if (next.length <= MAX_OUTPUT) {
+    return next;
+  }
+  return next.slice(next.length - MAX_OUTPUT);
+}
+
 function runCommand(command) {
   return new Promise(function (resolve) {
     const started = Date.now();
@@ -272,13 +282,13 @@ function runCommand(command) {
       return;
     }
     child.stdout.on('data', function (chunk) {
-      stdout += chunk.toString();
+      stdout = appendTail(stdout, chunk.toString());
       if (!jsonMode) {
         process.stdout.write(chunk);
       }
     });
     child.stderr.on('data', function (chunk) {
-      stderr += chunk.toString();
+      stderr = appendTail(stderr, chunk.toString());
       if (!jsonMode) {
         process.stderr.write(chunk);
       }
@@ -427,23 +437,15 @@ async function runConfiguredGates(gates, results) {
       message: 'docs gate is disabled by mode: off',
     }));
   } else if (gates.docs.command === undefined) {
-    if (gates.docs.mode === 'required') {
-      results.push(result({
-        gate: 'docs',
-        mode: 'required',
-        status: 'CONFIG',
-        durationMs: 0,
-        message: 'docs gate is required but has no command',
-      }));
-    } else {
-      results.push(result({
-        gate: 'docs',
-        mode: gates.docs.mode,
-        status: 'SKIP',
-        durationMs: 0,
-        message: 'no docs command configured; generated docs are covered by the source gate',
-      }));
-    }
+    // Design 6.1: no project docs command is SKIP, never a failure; generated
+    // docs and practice content are already covered by the source gate.
+    results.push(result({
+      gate: 'docs',
+      mode: gates.docs.mode,
+      status: 'SKIP',
+      durationMs: 0,
+      message: 'no docs command configured; generated docs are covered by the source gate',
+    }));
   } else {
     results.push(await runGate('docs', undefined, gates.docs.command, gates.docs.mode, undefined));
   }
@@ -457,11 +459,9 @@ function resolveExitCode(results, strict) {
       continue;
     }
     if (item.status === 'CONFIG') {
-      if (item.mode === 'required' || item.mode === undefined) {
-        code = Math.max(code, 2);
-      } else if (strict) {
-        code = Math.max(code, 1);
-      }
+      // Any CONFIG means a required command is unresolved or the snapshot is
+      // invalid; it is a configuration failure, never a pass or a warning.
+      code = 2;
       continue;
     }
     if (item.status === 'FAIL') {
@@ -473,6 +473,17 @@ function resolveExitCode(results, strict) {
     }
   }
   return code;
+}
+
+function jsonGate(item) {
+  return {
+    id: item.name === undefined ? item.gate : item.gate + '.' + item.name,
+    status: item.status.toLowerCase(),
+    required: item.mode === 'required',
+    command: item.command === undefined ? null : item.command,
+    exitCode: item.exitCode === undefined ? null : item.exitCode,
+    durationMs: item.durationMs,
+  };
 }
 
 function printResult(item) {
@@ -506,7 +517,6 @@ async function main() {
     }
   }
 
-  const started = Date.now();
   const results = [];
 
   results.push(await runSourceGate());
@@ -528,12 +538,9 @@ async function main() {
   const exitCode = resolveExitCode(results, strict);
   if (jsonMode) {
     const payload = {
-      version: 1,
-      strict: strict,
+      schemaVersion: 1,
+      gates: results.map(jsonGate),
       ok: exitCode === 0,
-      exitCode: exitCode,
-      durationMs: Date.now() - started,
-      results: results,
     };
     process.stdout.write(JSON.stringify(payload, null, 2) + '\\n');
   } else {

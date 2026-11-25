@@ -20,6 +20,7 @@ import {
   problemMessage,
   probeLstat,
 } from '../core/practice-paths.ts';
+import { compareVersions, parseVersion } from '../core/version-compare.ts';
 import { GATE_CONFIG_PATH, loadGateConfig } from '../core/gate-config.ts';
 import { GateConfigSchema, type GateConfig } from '../model/gates.ts';
 import { renderGateStarter } from './gate-templates.ts';
@@ -38,8 +39,10 @@ export const GATE_ARTIFACT_DIAGNOSTIC_CODES = {
   concurrentChange: 'verification.artifact-concurrent-change',
   runnerModified: 'verification.runner-modified',
   runnerUnversioned: 'verification.runner-unversioned',
+  runnerNewer: 'verification.runner-newer',
   snapshotModified: 'verification.snapshot-modified',
   snapshotUnversioned: 'verification.snapshot-unversioned',
+  snapshotNewer: 'verification.snapshot-newer',
 } as const;
 
 export type GateArtifactStatus =
@@ -47,7 +50,8 @@ export type GateArtifactStatus =
   | 'current'
   | 'stale'
   | 'modified'
-  | 'unversioned';
+  | 'unversioned'
+  | 'newer';
 
 export interface GateArtifactPlan {
   files: Record<string, string>;
@@ -99,7 +103,7 @@ function snapshotModifiedWarning(reason: string): Diagnostic {
     severity: 'warning',
     message: `generated gate snapshot no longer matches its generated hash and is preserved: ${reason}`,
     file: GATE_SNAPSHOT_PATH,
-    hint: 'Review the snapshot manually or restore it with dab normalize; DAB never overwrites a modified snapshot.',
+    hint: 'Review or restore the snapshot manually; dab normalize never overwrites a modified snapshot.',
   };
 }
 
@@ -110,6 +114,30 @@ function snapshotUnversionedWarning(reason: string): Diagnostic {
     message: `generated gate snapshot has no recognizable generated metadata and is preserved: ${reason}`,
     file: GATE_SNAPSHOT_PATH,
     hint: 'Confirm the snapshot content manually; DAB preserves files without generated metadata.',
+  };
+}
+
+type GeneratedKind = 'runner' | 'snapshot';
+
+function newerWarning(
+  kind: GeneratedKind,
+  installed: string,
+  current: string,
+  comparable: boolean,
+): Diagnostic {
+  const file = kind === 'runner' ? GATE_RUNNER_PATH : GATE_SNAPSHOT_PATH;
+  const code = kind === 'runner'
+    ? GATE_ARTIFACT_DIAGNOSTIC_CODES.runnerNewer
+    : GATE_ARTIFACT_DIAGNOSTIC_CODES.snapshotNewer;
+  const message = comparable
+    ? `generated gate ${kind} version ${installed} is newer than ${current} and is preserved`
+    : `generated gate ${kind} version ${installed} cannot be compared with ${current} and is preserved`;
+  return {
+    code,
+    severity: 'warning',
+    message,
+    file,
+    hint: 'Update DAB or review the generated file manually; DAB never downgrades a newer generated artifact.',
   };
 }
 
@@ -125,6 +153,38 @@ function concurrentChangeWarning(file: string): Diagnostic {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+type VersionRelation = 'newer' | 'older' | 'same' | 'unknown';
+
+/**
+ * Only strictly older generated artifacts are replaced. A newer or
+ * unparseable version is preserved, mirroring managed skills, so an older DAB
+ * can never downgrade a newer runner or snapshot.
+ */
+function versionRelation(installed: string, current: string): VersionRelation {
+  const left = parseVersion(installed);
+  const right = parseVersion(current);
+  if (left === undefined || right === undefined) {
+    return 'unknown';
+  }
+  const order = compareVersions(left, right);
+  if (order > 0) {
+    return 'newer';
+  }
+  if (order < 0) {
+    return 'older';
+  }
+  return 'same';
+}
+
+function plannedAction(
+  path: string,
+  kind: 'create' | 'update',
+  allowed: boolean,
+  blockedReason: string,
+): GateArtifactPlan['actions'][number] {
+  return allowed ? { path, kind } : { path, kind: 'skip', reason: blockedReason };
 }
 
 /**
@@ -170,34 +230,30 @@ function starterConfig(starter: string): GateConfig {
   return GateConfigSchema.parse(parseYaml(starter));
 }
 
-/**
- * Inspect `.agents/gates.yaml`, the generated runner and the generated
- * snapshot, then plan only DAB-owned writes.
- *
- * - A missing config gets the scanner starter exactly once; an existing config
- *   is authoritative and is never rewritten or backfilled.
- * - A missing runner/snapshot is created.
- * - An unmodified older runner/snapshot is updated.
- * - A modified or unrecognized artifact is preserved with a warning.
- * - Any blocking diagnostic produces a plan with no contents to write.
- */
-export async function planGateArtifacts(input: {
-  root: string;
-  scan: ScanResult;
-  version: string;
-}): Promise<GateArtifactPlan> {
-  const { root, scan, version } = input;
-  const states: GateArtifactPlan['states'] = [];
-  const actions: GateArtifactPlan['actions'] = [];
-  const diagnostics: Diagnostic[] = [];
-  const files: Record<string, string> = {};
+interface ConfigInspection {
+  config?: GateConfig;
+  usable: boolean;
+}
 
+/**
+ * Inspect `.agents/gates.yaml` and record its state/action. An invalid or
+ * path-conflicted config is blocking, but the caller still inspects the runner
+ * and snapshot so detect can report their states.
+ */
+async function inspectConfig(
+  root: string,
+  scan: ScanResult,
+  states: GateArtifactPlan['states'],
+  actions: GateArtifactPlan['actions'],
+  diagnostics: Diagnostic[],
+  files: Record<string, string>,
+): Promise<ConfigInspection> {
   const configProblem = await authoredFileProblem(root, GATE_CONFIG_PATH);
   if (configProblem !== undefined) {
     diagnostics.push(pathError(GATE_CONFIG_PATH, configProblem));
     states.push({ path: GATE_CONFIG_PATH, status: 'unversioned' });
     actions.push({ path: GATE_CONFIG_PATH, kind: 'skip', reason: 'path conflict' });
-    return blockedPlan(states, actions, diagnostics);
+    return { usable: false };
   }
 
   const loaded = await loadGateConfig(root);
@@ -219,42 +275,197 @@ export async function planGateArtifacts(input: {
       kind: 'skip',
       reason: 'invalid authored configuration',
     });
-    return blockedPlan(states, actions, diagnostics);
+    return { usable: false };
   }
 
-  let config: GateConfig;
   if (loaded.config !== undefined) {
-    config = loaded.config;
     states.push({ path: GATE_CONFIG_PATH, status: 'current' });
     actions.push({
       path: GATE_CONFIG_PATH,
       kind: 'skip',
       reason: 'authored configuration is never overwritten',
     });
-  } else {
-    const starter = renderGateStarter(scan);
-    try {
-      config = starterConfig(starter);
-    } catch (error) {
-      diagnostics.push({
-        code: 'gate.starter-invalid',
-        severity: 'error',
-        message: `generated gate starter is invalid: ${errorText(error)}`,
-        file: GATE_CONFIG_PATH,
-        hint: 'Report this as a DAB bug; scanner defaults must always produce a valid starter.',
-      });
-      states.push({ path: GATE_CONFIG_PATH, status: 'unversioned' });
-      actions.push({
-        path: GATE_CONFIG_PATH,
-        kind: 'skip',
-        reason: 'invalid generated starter',
-      });
-      return blockedPlan(states, actions, diagnostics);
-    }
-    states.push({ path: GATE_CONFIG_PATH, status: 'missing' });
-    actions.push({ path: GATE_CONFIG_PATH, kind: 'create' });
-    files[GATE_CONFIG_PATH] = starter;
+    return { config: loaded.config, usable: true };
   }
+
+  const starter = renderGateStarter(scan);
+  let config: GateConfig;
+  try {
+    config = starterConfig(starter);
+  } catch (error) {
+    diagnostics.push({
+      code: 'gate.starter-invalid',
+      severity: 'error',
+      message: `generated gate starter is invalid: ${errorText(error)}`,
+      file: GATE_CONFIG_PATH,
+      hint: 'Report this as a DAB bug; scanner defaults must always produce a valid starter.',
+    });
+    states.push({ path: GATE_CONFIG_PATH, status: 'unversioned' });
+    actions.push({
+      path: GATE_CONFIG_PATH,
+      kind: 'skip',
+      reason: 'invalid generated starter',
+    });
+    return { usable: false };
+  }
+  states.push({ path: GATE_CONFIG_PATH, status: 'missing' });
+  actions.push({ path: GATE_CONFIG_PATH, kind: 'create' });
+  files[GATE_CONFIG_PATH] = starter;
+  return { config, usable: true };
+}
+
+function runnerStateAndAction(
+  version: string,
+  usable: boolean,
+  content: string,
+  text: string,
+  states: GateArtifactPlan['states'],
+  actions: GateArtifactPlan['actions'],
+  diagnostics: Diagnostic[],
+  files: Record<string, string>,
+): void {
+  const blockedReason = 'authored configuration is invalid';
+  const marker = parseGateRunnerMarker(text);
+  if (marker === undefined) {
+    states.push({ path: GATE_RUNNER_PATH, status: 'unversioned' });
+    actions.push({ path: GATE_RUNNER_PATH, kind: 'skip', reason: 'no managed marker' });
+    diagnostics.push(runnerUnversionedWarning('marker missing'));
+    return;
+  }
+  if (hashGateRunnerBody(text) !== marker.sha256) {
+    states.push({ path: GATE_RUNNER_PATH, status: 'modified' });
+    actions.push({
+      path: GATE_RUNNER_PATH,
+      kind: 'skip',
+      reason: 'content differs from marker hash',
+    });
+    diagnostics.push(runnerModifiedWarning('content differs from marker hash'));
+    return;
+  }
+  const relation = versionRelation(marker.version, version);
+  if (relation === 'newer' || relation === 'unknown') {
+    states.push({ path: GATE_RUNNER_PATH, status: 'newer' });
+    actions.push({
+      path: GATE_RUNNER_PATH,
+      kind: 'skip',
+      reason: 'generated by a newer or uncomparable DAB version',
+    });
+    diagnostics.push(newerWarning('runner', marker.version, version, relation === 'newer'));
+    return;
+  }
+  if (text === content) {
+    states.push({ path: GATE_RUNNER_PATH, status: 'current' });
+    actions.push({ path: GATE_RUNNER_PATH, kind: 'skip', reason: 'up to date' });
+    return;
+  }
+  states.push({ path: GATE_RUNNER_PATH, status: 'stale' });
+  actions.push(plannedAction(GATE_RUNNER_PATH, 'update', usable, blockedReason));
+  if (usable) {
+    files[GATE_RUNNER_PATH] = content;
+  }
+}
+
+function snapshotStateAndAction(
+  version: string,
+  compiled: { content: string } | undefined,
+  text: string,
+  states: GateArtifactPlan['states'],
+  actions: GateArtifactPlan['actions'],
+  diagnostics: Diagnostic[],
+  files: Record<string, string>,
+): void {
+  const parsed = parseGateSnapshot(text);
+  if (!parsed.ok) {
+    if (parsed.kind === 'modified') {
+      states.push({ path: GATE_SNAPSHOT_PATH, status: 'modified' });
+      actions.push({
+        path: GATE_SNAPSHOT_PATH,
+        kind: 'skip',
+        reason: 'content differs from generated hash',
+      });
+      diagnostics.push(snapshotModifiedWarning(parsed.reason));
+    } else {
+      states.push({ path: GATE_SNAPSHOT_PATH, status: 'unversioned' });
+      actions.push({
+        path: GATE_SNAPSHOT_PATH,
+        kind: 'skip',
+        reason: 'no generated metadata',
+      });
+      diagnostics.push(snapshotUnversionedWarning(parsed.reason));
+    }
+    return;
+  }
+
+  const installed = parsed.snapshot.generated.dabVersion;
+  const relation = versionRelation(installed, version);
+  if (relation === 'newer' || relation === 'unknown') {
+    states.push({ path: GATE_SNAPSHOT_PATH, status: 'newer' });
+    actions.push({
+      path: GATE_SNAPSHOT_PATH,
+      kind: 'skip',
+      reason: 'generated by a newer or uncomparable DAB version',
+    });
+    diagnostics.push(newerWarning('snapshot', installed, version, relation === 'newer'));
+    return;
+  }
+
+  // Without a valid config there is no expected snapshot to compare against.
+  // A structurally valid snapshot is reported as current, never stale.
+  if (compiled === undefined) {
+    states.push({ path: GATE_SNAPSHOT_PATH, status: 'current' });
+    actions.push({
+      path: GATE_SNAPSHOT_PATH,
+      kind: 'skip',
+      reason: 'authored configuration is invalid',
+    });
+    return;
+  }
+  if (text === compiled.content) {
+    states.push({ path: GATE_SNAPSHOT_PATH, status: 'current' });
+    actions.push({ path: GATE_SNAPSHOT_PATH, kind: 'skip', reason: 'up to date' });
+    return;
+  }
+  states.push({ path: GATE_SNAPSHOT_PATH, status: 'stale' });
+  actions.push({ path: GATE_SNAPSHOT_PATH, kind: 'update' });
+  files[GATE_SNAPSHOT_PATH] = compiled.content;
+}
+
+/**
+ * Inspect `.agents/gates.yaml`, the generated runner and the generated
+ * snapshot, then plan only DAB-owned writes.
+ *
+ * - A missing config gets the scanner starter exactly once; an existing config
+ *   is authoritative and is never rewritten or backfilled.
+ * - A missing runner/snapshot is created.
+ * - An unmodified artifact generated by an older DAB is updated.
+ * - A modified, unrecognized, newer or uncomparable artifact is preserved with
+ *   a warning.
+ * - Invalid config still inspects the generated artifacts so detect can report
+ *   their states, but plans no writes.
+ * - Any blocking diagnostic produces a plan with no contents to write.
+ */
+export async function planGateArtifacts(input: {
+  root: string;
+  scan: ScanResult;
+  version: string;
+}): Promise<GateArtifactPlan> {
+  const { root, scan, version } = input;
+  const states: GateArtifactPlan['states'] = [];
+  const actions: GateArtifactPlan['actions'] = [];
+  const diagnostics: Diagnostic[] = [];
+  const files: Record<string, string> = {};
+
+  const configInspection = await inspectConfig(
+    root,
+    scan,
+    states,
+    actions,
+    diagnostics,
+    files,
+  );
+  const config = configInspection.config;
+  const usable = configInspection.usable;
+  const blockedReason = 'authored configuration is invalid';
 
   const runnerContent = renderGateRunner(version);
   const runnerProblem = await generatedFileProblem(root, GATE_RUNNER_PATH);
@@ -264,8 +475,10 @@ export async function planGateArtifacts(input: {
     actions.push({ path: GATE_RUNNER_PATH, kind: 'skip', reason: 'path conflict' });
   } else if ((await lstatOrNull(join(root, GATE_RUNNER_PATH))) === null) {
     states.push({ path: GATE_RUNNER_PATH, status: 'missing' });
-    actions.push({ path: GATE_RUNNER_PATH, kind: 'create' });
-    files[GATE_RUNNER_PATH] = runnerContent;
+    actions.push(plannedAction(GATE_RUNNER_PATH, 'create', usable, blockedReason));
+    if (usable) {
+      files[GATE_RUNNER_PATH] = runnerContent;
+    }
   } else {
     let text: string | undefined;
     try {
@@ -280,35 +493,22 @@ export async function planGateArtifacts(input: {
       actions.push({ path: GATE_RUNNER_PATH, kind: 'skip', reason: 'unreadable' });
     }
     if (text !== undefined) {
-      const marker = parseGateRunnerMarker(text);
-      if (marker === undefined) {
-        states.push({ path: GATE_RUNNER_PATH, status: 'unversioned' });
-        actions.push({
-          path: GATE_RUNNER_PATH,
-          kind: 'skip',
-          reason: 'no managed marker',
-        });
-        diagnostics.push(runnerUnversionedWarning('marker missing'));
-      } else if (hashGateRunnerBody(text) !== marker.sha256) {
-        states.push({ path: GATE_RUNNER_PATH, status: 'modified' });
-        actions.push({
-          path: GATE_RUNNER_PATH,
-          kind: 'skip',
-          reason: 'content differs from marker hash',
-        });
-        diagnostics.push(runnerModifiedWarning('content differs from marker hash'));
-      } else if (text === runnerContent) {
-        states.push({ path: GATE_RUNNER_PATH, status: 'current' });
-        actions.push({ path: GATE_RUNNER_PATH, kind: 'skip', reason: 'up to date' });
-      } else {
-        states.push({ path: GATE_RUNNER_PATH, status: 'stale' });
-        actions.push({ path: GATE_RUNNER_PATH, kind: 'update' });
-        files[GATE_RUNNER_PATH] = runnerContent;
-      }
+      runnerStateAndAction(
+        version,
+        usable,
+        runnerContent,
+        text,
+        states,
+        actions,
+        diagnostics,
+        files,
+      );
     }
   }
 
-  const compiled = compileGateSnapshot(config, scan, version);
+  const compiled = config === undefined
+    ? undefined
+    : compileGateSnapshot(config, scan, version);
   const snapshotProblem = await generatedFileProblem(root, GATE_SNAPSHOT_PATH);
   if (snapshotProblem !== undefined) {
     diagnostics.push(pathError(GATE_SNAPSHOT_PATH, snapshotProblem));
@@ -316,8 +516,10 @@ export async function planGateArtifacts(input: {
     actions.push({ path: GATE_SNAPSHOT_PATH, kind: 'skip', reason: 'path conflict' });
   } else if ((await lstatOrNull(join(root, GATE_SNAPSHOT_PATH))) === null) {
     states.push({ path: GATE_SNAPSHOT_PATH, status: 'missing' });
-    actions.push({ path: GATE_SNAPSHOT_PATH, kind: 'create' });
-    files[GATE_SNAPSHOT_PATH] = compiled.content;
+    actions.push(plannedAction(GATE_SNAPSHOT_PATH, 'create', usable, blockedReason));
+    if (compiled !== undefined) {
+      files[GATE_SNAPSHOT_PATH] = compiled.content;
+    }
   } else {
     let text: string | undefined;
     try {
@@ -331,33 +533,15 @@ export async function planGateArtifacts(input: {
       actions.push({ path: GATE_SNAPSHOT_PATH, kind: 'skip', reason: 'unreadable' });
     }
     if (text !== undefined) {
-      const parsed = parseGateSnapshot(text);
-      if (!parsed.ok) {
-        if (parsed.kind === 'modified') {
-          states.push({ path: GATE_SNAPSHOT_PATH, status: 'modified' });
-          actions.push({
-            path: GATE_SNAPSHOT_PATH,
-            kind: 'skip',
-            reason: 'content differs from generated hash',
-          });
-          diagnostics.push(snapshotModifiedWarning(parsed.reason));
-        } else {
-          states.push({ path: GATE_SNAPSHOT_PATH, status: 'unversioned' });
-          actions.push({
-            path: GATE_SNAPSHOT_PATH,
-            kind: 'skip',
-            reason: 'no generated metadata',
-          });
-          diagnostics.push(snapshotUnversionedWarning(parsed.reason));
-        }
-      } else if (text === compiled.content) {
-        states.push({ path: GATE_SNAPSHOT_PATH, status: 'current' });
-        actions.push({ path: GATE_SNAPSHOT_PATH, kind: 'skip', reason: 'up to date' });
-      } else {
-        states.push({ path: GATE_SNAPSHOT_PATH, status: 'stale' });
-        actions.push({ path: GATE_SNAPSHOT_PATH, kind: 'update' });
-        files[GATE_SNAPSHOT_PATH] = compiled.content;
-      }
+      snapshotStateAndAction(
+        version,
+        compiled,
+        text,
+        states,
+        actions,
+        diagnostics,
+        files,
+      );
     }
   }
 

@@ -323,7 +323,7 @@ describe('generated gate runner', () => {
     expect(result.stdout).toContain('GATE docs SKIP');
   });
 
-  it('outputs machine-readable statuses and commands with --json', async () => {
+  it('outputs the design JSON contract with lowercase statuses', async () => {
     await install(config({
       test: { command: logCommand('test'), mode: 'required' },
       typecheck: { command: logCommand('typecheck', 1), mode: 'required' },
@@ -335,43 +335,88 @@ describe('generated gate runner', () => {
 
     expect(result.code).toBe(1);
     const payload = JSON.parse(result.stdout) as {
-      strict: boolean;
+      schemaVersion: number;
       ok: boolean;
-      exitCode: number;
-      results: Array<{
-        gate: string;
-        name?: string;
-        command?: string;
+      gates: Array<{
+        id: string;
         status: string;
-        exitCode?: number;
+        required: boolean;
+        command: string | null;
+        exitCode: number | null;
         durationMs: number;
       }>;
     };
 
-    expect(payload.strict).toBe(false);
+    expect(payload.schemaVersion).toBe(1);
     expect(payload.ok).toBe(false);
-    expect(payload.exitCode).toBe(1);
-    expect(payload.results[0]).toMatchObject({ gate: 'source', status: 'PASS' });
-    expect(payload.results.find((item) => item.name === 'test')).toMatchObject({
-      gate: 'code',
-      status: 'PASS',
-      command: logCommand('test'),
+    expect(Object.keys(payload).sort()).toEqual(['gates', 'ok', 'schemaVersion']);
+    expect(payload.gates[0]).toMatchObject({
+      id: 'source',
+      status: 'pass',
+      required: true,
       exitCode: 0,
     });
-    expect(payload.results.find((item) => item.name === 'typecheck')).toMatchObject({
-      status: 'FAIL',
+    expect(payload.gates[0]?.command).toContain('detect --strict');
+    expect(payload.gates.find((item) => item.id === 'code.test')).toEqual({
+      id: 'code.test',
+      status: 'pass',
+      required: true,
+      command: logCommand('test'),
+      exitCode: 0,
+      durationMs: expect.any(Number),
+    });
+    expect(payload.gates.find((item) => item.id === 'code.typecheck')).toMatchObject({
+      status: 'fail',
+      required: true,
       exitCode: 1,
     });
-    expect(payload.results.find((item) => item.name === 'lint')).toMatchObject({
-      status: 'WARN',
+    expect(payload.gates.find((item) => item.id === 'code.lint')).toMatchObject({
+      status: 'warn',
+      required: false,
       exitCode: 1,
     });
-    expect(payload.results.find((item) => item.gate === 'docs')).toMatchObject({
-      status: 'SKIP',
+    expect(payload.gates.find((item) => item.id === 'docs')).toEqual({
+      id: 'docs',
+      status: 'skip',
+      required: false,
+      command: null,
+      exitCode: null,
+      durationMs: expect.any(Number),
     });
-    for (const item of payload.results) {
+    for (const item of payload.gates) {
       expect(typeof item.durationMs).toBe('number');
+      expect(item.status).toBe(item.status.toLowerCase());
     }
+  });
+
+  it('exits 2 for an unresolved advisory command as well', async () => {
+    await install(config({
+      test: { command: logCommand('test'), mode: 'required' },
+      lint: { command: null, mode: 'advisory' },
+    }));
+    const dab = await fakeDab(0);
+
+    const result = await runRunner([], { DAB_BIN: dab });
+
+    expect(result.code).toBe(2);
+    expect(result.stdout).toContain('GATE code.lint CONFIG');
+    expect(await logLines()).toEqual(['source detect --strict', 'test']);
+  });
+
+  it('skips a required docs gate that has no command', async () => {
+    await install(
+      config(
+        { test: { command: logCommand('test'), mode: 'required' } },
+        { mode: 'required' },
+      ),
+    );
+    const dab = await fakeDab(0);
+
+    const result = await runRunner([], { DAB_BIN: dab });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('GATE docs SKIP');
+    expect(await logLines()).toEqual(['source detect --strict', 'test']);
   });
 
   it('rejects unknown flags with exit 2', async () => {
