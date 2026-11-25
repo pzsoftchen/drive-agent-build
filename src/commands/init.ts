@@ -13,6 +13,7 @@ import {
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
+import { loadGateConfig } from '../core/gate-config.ts';
 import { contractJson } from '../core/json.ts';
 import { DAB_VERSION } from '../core/version.ts';
 import {
@@ -699,9 +700,17 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
 
   const authoredConflicts = await findAuthoredConflicts(layout.scopeRoot);
   const authored = await validateExistingAuthored(layout.scopeRoot, paths);
+  // An existing `.agents/gates.yaml` is authored and authoritative. An invalid
+  // one blocks every init write instead of being overwritten or silently
+  // ignored, so no runner or snapshot is scaffolded from scanner defaults.
+  // Global scope has no project gate files, so it is never validated here.
+  const gateDiagnostics = scope === 'project'
+    ? (await loadGateConfig(layout.scopeRoot)).diagnostics
+    : [];
   const authoredErrors = [
     ...authoredConflicts,
     ...authored.filter((item) => item.severity === 'error'),
+    ...gateDiagnostics.filter((item) => item.severity === 'error'),
   ];
   if (authoredErrors.length > 0) {
     return blocked(
@@ -709,7 +718,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
       root,
       layout.scopeRoot,
       language,
-      [...scan.diagnostics, ...authored, ...authoredConflicts],
+      [...scan.diagnostics, ...authored, ...authoredConflicts, ...gateDiagnostics],
       authoredErrors,
       dryRun,
     );
@@ -717,6 +726,7 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   const preflightDiagnostics = [
     ...scan.diagnostics,
     ...authored.filter((item) => item.severity !== 'error'),
+    ...gateDiagnostics.filter((item) => item.severity !== 'error'),
   ];
 
   let existingProjections: Projection[] = [];
@@ -920,6 +930,9 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
     suppressImports: true,
     // Init installs missing skills only; managed updates belong to normalize.
     suppressManagedSkills: true,
+    // Init writes only missing gate files through its practice plan. An
+    // existing runner or snapshot stays untouched during the nested normalize.
+    suppressGateUpdates: true,
     ...(options.runner === undefined ? {} : { runner: options.runner }),
   });
   // The nested normalize re-plans the same practice policy skips, so merge with

@@ -83,6 +83,12 @@ export interface NormalizeOptions {
    * owns managed updates.
    */
   suppressManagedSkills?: boolean;
+  /**
+   * Internal: skip managed gate runner/snapshot updates. `dab init` sets it so
+   * its nested normalize never replaces an existing generated gate artifact;
+   * init still creates missing files through its own practice plan.
+   */
+  suppressGateUpdates?: boolean;
 }
 
 export interface NormalizeIO {
@@ -464,6 +470,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.suppressImports === true ? { suppressImports: true } : {}),
     ...(options.suppressManagedSkills === true ? { suppressManagedSkills: true } : {}),
+    ...(options.suppressGateUpdates === true ? { suppressGateUpdates: true } : {}),
   });
   const root = preparation.sourceRoot.root;
   const scope = preparation.sourceRoot.scope;

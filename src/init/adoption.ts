@@ -439,6 +439,12 @@ export interface PrepareAdoptionInput {
    * disables managed updates.
    */
   suppressManagedSkills?: boolean;
+  /**
+   * Skip managed gate runner/snapshot updates while still allowing missing
+   * artifacts to be created. `dab init` sets it so its nested normalize never
+   * replaces an existing generated gate artifact.
+   */
+  suppressGateUpdates?: boolean;
 }
 
 /**
