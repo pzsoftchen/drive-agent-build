@@ -130,9 +130,9 @@ node scripts/dab-check.mjs --json
 ```
 
 - `.agents/gates.yaml` is authored and project-only; `scripts/dab-check.mjs` and `scripts/dab-gates.json` are generated. The runner reads the snapshot and embeds no project commands.
-- The fixed `source` gate runs `dab detect --strict`. The `code` gate runs project test, typecheck, lint and build commands as configured; `docs` is optional. Modes are `required`, `check`, `advisory` and `off`.
+- The fixed `source` gate runs `dab detect --strict`. The `code` gate runs project test, typecheck, lint and build commands as configured. The `docs` gate requires a `mode`; only `docs.command` is optional. Modes are `required`, `check`, `advisory` and `off`.
 - Exit `0` means required gates passed, `1` a required failure or strict warning, and `2` a configuration, snapshot or runner error. An unresolved command is `CONFIG`, never a pass; `mode: off` is the explicit waiver.
-- The scanner detects Node, Python, Go, Rust, Java Maven, Java Gradle, Android, iOS SwiftPM and iOS Xcode without running build tools. Xcode requires a shared scheme and destination or a Fastlane command; otherwise the runner reports `CONFIG`.
+- The scanner detects Node, Python, Go, Rust, Java Maven, Java Gradle, Android, iOS SwiftPM and iOS Xcode without running build tools. Xcode requires an explicit `project` or `workspace`, a shared `scheme` and `destination`, or a Fastlane command; otherwise the runner reports `CONFIG`.
 - `dab detect` adds a project-only `Verification` group. Missing or stale artifacts fail `--strict`; modified, unversioned and newer generated files, an empty command set and missing CI wiring stay non-strict.
 - DAB does not generate CI files, but it provides snippets and detect hints. See [Project gates](docs/user/gates.md) for configuration, stack details and CI examples.
 

@@ -165,7 +165,7 @@ Instructions
 
 Documentation
   [WARN] docs/AGENTS.md (Language: en (source: docs/AGENTS.md); TODO markers at line 20, 29, 42, 48) -> use dab-doc-writing
-  [WARN] docs/architecture.md (Language: en (source: docs/AGENTS.md); TODO markers at line 13, 17, 21, 25, 29, 33, 37, 41, 42, 43, 44, 45) -> use dab-architecture-writing
+  [WARN] docs/architecture.md (Language: en (source: docs/AGENTS.md); TODO markers at line 13, 17, 21, 25, 29, 33, 37, 42, 43, 45) -> use dab-architecture-writing
 
 Agents
   [OK] implementer
@@ -177,6 +177,14 @@ Skills
   [OK] dab-decision-notes (version 0.1.2)
   [OK] doc-sync
   [OK] feature-delivery
+
+Verification
+  [OK] .agents/gates.yaml (version 1)
+  [OK] scripts/dab-check.mjs (version 0.1.2)
+  [OK] scripts/dab-gates.json (version 0.1.2)
+  [OK] code.test (npm test)
+  [OK] code.typecheck (npm run typecheck)
+  [WARN] CI (no CI call; add node scripts/dab-check.mjs --strict to a CI workflow)
 
 Rules
   [OK] generated-files
@@ -191,7 +199,7 @@ Notes
 Generated target
   [OK] .claude/settings.json
 
-score: 14/16 (88%)
+score: 19/22 (86%)
 next: use dab-doc-writing
 next: use dab-architecture-writing
 ```
@@ -361,6 +369,13 @@ Project scope 追加 `practices`；global scope 省略该字段：
       "unversioned": [],
       "markerMismatch": [],
       "concurrent": []
+    },
+    "gates": {
+      "created": [],
+      "updated": [],
+      "skipped": [],
+      "modified": [],
+      "diagnostics": []
     },
     "diagnostics": []
   }

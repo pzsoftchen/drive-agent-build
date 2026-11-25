@@ -112,11 +112,11 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 ## 项目门禁
 
-- `.agents/gates.yaml` 是 authored、project-only 的门禁定义。`source` 始终为 `required`；`code` 接受 `test`、`typecheck`、`lint` 和 `build`；`docs` 可选。Mode 为 `required`、`check`、`advisory` 和 `off`。
-- Normalize 把 authored 配置和 scanner 默认值编译为 `scripts/dab-gates.json`；hash 覆盖规范化的 `gates` 对象。`scripts/dab-check.mjs` 是带 `dab-gate-runner` marker 的稳定 runner。runner 只读快照，不内嵌项目命令。
+- `.agents/gates.yaml` 是 authored、project-only 的门禁定义。`source` 始终为 `required`；`code` 接受 `test`、`typecheck`、`lint` 和 `build`；`docs` 需要 `mode`，只有 `docs.command` 可选。Mode 为 `required`、`check`、`advisory` 和 `off`。
+- Normalize 把 authored 配置编译为 `scripts/dab-gates.json`；hash 覆盖规范化的 `gates` 对象。Scanner 输出只在配置缺失时生成 starter，永不回填已有配置。`scripts/dab-check.mjs` 是带 `dab-gate-runner` marker 的稳定 runner。runner 只读快照，不内嵌项目命令。
 - runner 先执行固定 `source` gate（`dab detect --strict`），再执行每个已配置的 code 和 docs 命令，不短路。缺少 DAB 二进制是 `ERROR`；未解析命令、无效快照或缺失快照是 `CONFIG`；两者都以 `2` 退出。required 失败退出 `1`；`--strict` 还会提升 check 和 advisory warning。
 - Init 和 normalize 创建缺失的 config、runner 和快照。Normalize 更新未修改的较旧 runner 和过期快照；被修改、无版本和较新的生成文件会保留并产生 warning。无效 authored 配置会阻止所有写入。
-- scanner 在不执行构建工具的情况下检测 Node、Python、Go、Rust、Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode。优先使用 wrapper，Android 抑制重复的 Java Gradle 命令，SwiftPM 优先于 Xcode 证据，只有 Xcode 的项目在配置 shared scheme 和 destination 或 Fastlane 命令之前保持 `needs-config`。
+- scanner 在不执行构建工具的情况下检测 Node、Python、Go、Rust、Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode。优先使用 wrapper，Android 抑制重复的 Java Gradle 命令，SwiftPM 优先于 Xcode 证据，只有 Xcode 的项目保持 `needs-config`，直到配置显式 `project` 或 `workspace`、shared `scheme` 和 `destination`，或 Fastlane 命令。
 - `dab detect` 在 project-only 的 `Verification` 组中检查同一批文件。缺失或过期产物会让 `--strict` 失败；格式错误配置、路径冲突和被删除的 scanner 必需 `test`/`typecheck` 命令是 error；被修改、无版本和较新产物、`commands-empty` 以及 `ci-missing` 保持非 strict。
 - CI 不生成。项目在自己的 provider 中调用 `node scripts/dab-check.mjs --strict`；缺少 CI 接线是非 strict 的 detect warning。
 

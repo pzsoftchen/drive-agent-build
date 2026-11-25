@@ -10,7 +10,7 @@
 |---|---|---|
 | `.agents/gates.yaml` | authored | 门禁 mode、命令和项目配置需求。 |
 | `scripts/dab-check.mjs` | generated | 稳定 runner；不包含项目命令。 |
-| `scripts/dab-gates.json` | generated | 从 authored 配置和 scanner 结果编译的快照。 |
+| `scripts/dab-gates.json` | generated | 从 `.agents/gates.yaml` 编译；scanner 只在配置缺失时生成 starter，永不回填已有配置。 |
 
 - `.agents/gates.yaml` 是 authored source。`dab init` 和 `dab normalize` 只在缺失时创建，永不覆盖。
 - `scripts/dab-check.mjs` 带 `// dab-gate-runner: <version> sha256=<hash>` 标记。`scripts/dab-gates.json` 记录 `generated.dabVersion` 和规范化 `gates` 对象的 SHA-256 hash。
@@ -74,7 +74,7 @@ node scripts/dab-check.mjs --json
 
 - runner 先执行 `source`，再执行每个已配置的 code 和 docs 命令。失败后不会短路。
 - 人类输出为每个 gate 打印一行 `GATE <id> <STATUS>`，最后打印 `GATE RESULT PASS|FAIL exit <code>`。
-- `--json` 输出 `{ schemaVersion, gates, ok }`。每个 gate 包含 `id`、`status`、`required`、`command`、`exitCode` 和 `durationMs`；输出会截断为简短摘要。
+- `--json` 输出 `{ schemaVersion, gates, ok }`。每个 gate 包含 `id`、`status`、`required`、`command`、`exitCode` 和 `durationMs`；命令输出只在人类模式下流式显示，不包含在 JSON 中。
 - `0`：所有 required gate 通过；check 和 advisory gate 可以有 warning。
 - `1`：至少一个 required gate 失败，或 `--strict` 提升了 warning。
 - `2`：快照无效或缺失、命令未解析、缺少 DAB 二进制或其他 runner 错误。
@@ -104,11 +104,11 @@ node scripts/dab-check.mjs --json
 
 | Stack | 证据 | Starter 命令 |
 |---|---|---|
-| Java Maven | `pom.xml`；`mvnw` 或 `mvnw.cmd` | `./mvnw test` 和 compile，或 `mvn test` 和 compile。 |
+| Java Maven | `pom.xml`；`mvnw` 或 `mvnw.cmd` | `./mvnw test` 和 `./mvnw -DskipTests compile`，或 `mvn` 等价命令。 |
 | Java Gradle | 没有 Android plugin 的 `build.gradle[.kts]` 或 `settings.gradle[.kts]` | `./gradlew test` 和 `classes`，或对应的 `gradle` 命令。 |
 | Android | Android Gradle plugin 或 `app/src/main/AndroidManifest.xml` | `./gradlew test`、`lint`、`assembleDebug`；unit test，不是 connected test。 |
 | iOS SwiftPM | `Package.swift` | `swift test`、`swift build`；`swiftlint` 在存在 `.swiftlint.yml` 时加入。 |
-| iOS Xcode | `*.xcodeproj`、`*.xcworkspace`、`Podfile` 或 `Cartfile` | test 为 `needs-config`；不猜 scheme 或 destination。 |
+| iOS Xcode | `*.xcodeproj` 或 `*.xcworkspace`；`Podfile` 和 `Cartfile` 是附加证据 | test 为 `needs-config`；不猜 scheme 或 destination。 |
 | Node、Python、Go、Rust | 现有 lockfile 和构建文件 | 保持现有 scanner 行为。 |
 
 - 优先使用 wrapper。在 Windows 上，runner 把 `./mvnw` 映射为 `mvnw.cmd`，把 `./gradlew` 映射为 `gradlew.bat`。
@@ -138,7 +138,7 @@ Xcode test 和 build 命令必须显式配置。不要依赖猜测的 scheme、c
 ```
 
 - 把 scheme 作为 shared scheme 提交。
-- 没有 `scheme`/`destination` 或 Fastlane 命令时，`.agents/gates.yaml` 保留 `command: null` 和 `needs` 说明。`dab detect` 报告 `verification.command-needs-config`，runner 报告 `CONFIG`；永不报告假通过。
+- 没有 `project`/`workspace` 二选一加 `scheme` 和 `destination`，或 Fastlane 命令时，`.agents/gates.yaml` 保留 `command: null` 和 `needs` 说明。`dab detect` 报告 `verification.command-needs-config`，runner 报告 `CONFIG`；永不报告假通过。
 - DAB 不运行 `xcodebuild -list` 或 `xcrun simctl list`；请自行选择 destination。
 
 ## CI

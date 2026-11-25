@@ -130,9 +130,9 @@ node scripts/dab-check.mjs --json
 ```
 
 - `.agents/gates.yaml` 是 authored、project-only；`scripts/dab-check.mjs` 和 `scripts/dab-gates.json` 是生成文件。runner 读取快照，不内嵌项目命令。
-- 固定 `source` gate 运行 `dab detect --strict`。`code` gate 按配置运行项目 test、typecheck、lint 和 build 命令；`docs` 可选。Mode 为 `required`、`check`、`advisory` 和 `off`。
+- 固定 `source` gate 运行 `dab detect --strict`。`code` gate 按配置运行项目 test、typecheck、lint 和 build 命令。`docs` gate 需要 `mode`；只有 `docs.command` 可选。Mode 为 `required`、`check`、`advisory` 和 `off`。
 - 退出码 `0` 表示 required gate 通过，`1` 表示 required 失败或 strict warning，`2` 表示配置、快照或 runner 错误。未解析命令是 `CONFIG`，永不视为通过；`mode: off` 是显式豁免。
-- scanner 在不执行构建工具的情况下检测 Node、Python、Go、Rust、Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode。Xcode 需要 shared scheme 和 destination 或 Fastlane 命令；否则 runner 报告 `CONFIG`。
+- scanner 在不执行构建工具的情况下检测 Node、Python、Go、Rust、Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode。Xcode 需要显式的 `project` 或 `workspace`、shared `scheme` 和 `destination`，或 Fastlane 命令；否则 runner 报告 `CONFIG`。
 - `dab detect` 增加 project-only 的 `Verification` 组。缺失或过期产物会让 `--strict` 失败；被修改、无版本和较新的生成文件、空命令集以及缺少 CI 接线保持非 strict。
 - DAB 不生成 CI 文件，但提供片段和 detect 提示。配置、技术栈细节和 CI 示例见[项目门禁](docs/user/gates.zh.md)。
 

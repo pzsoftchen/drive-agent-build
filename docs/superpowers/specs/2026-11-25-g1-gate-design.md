@@ -181,7 +181,7 @@ gates:
 ### 6.2 配置来源优先级
 
 1. `.agents/gates.yaml` 中显式的 `command` 或 `xcodebuild`；
-2. scanner 的检测结果（仅用于生成 starter 和 normalize 的默认快照）；
+2. scanner 的检测结果（仅在 `.agents/gates.yaml` 缺失时用于生成 starter，不回填已有配置）；
 3. 无命令：明确 `SKIP`/`CONFIG`，不猜测。
 
 项目可以在配置里覆盖 scanner 的检测，例如 iOS 项目必须提供 scheme/destination，或 Java 项目使用自定义 Maven profile。
@@ -209,7 +209,7 @@ runner 不直接解析 YAML，而是读取 normalize 生成的无依赖 JSON 快
 }
 ```
 
-- 快照是生成物，不是 authored source；source of truth 始终是 `.agents/gates.yaml` 加 scanner 默认值。
+- 快照是生成物，不是 authored source；source of truth 始终是 `.agents/gates.yaml`，scanner 只用于配置缺失时的 starter。
 - `sha256` 覆盖规范化后的 `gates` 对象，不覆盖 `generated` 元数据。
 - `normalize` 从 authored 配置编译快照；runner 只读快照。
 - 手工修改快照会被 detect 报告为 modified；normalize 不静默覆盖用户修改，除非快照仍是 DAB 管理的未修改版本。
@@ -220,7 +220,7 @@ runner 不直接解析 YAML，而是读取 normalize 生成的无依赖 JSON 快
 ### 7.1 文件职责
 
 - `scripts/dab-check.mjs`：稳定 runner，负责执行和聚合，不嵌入项目命令。
-- `scripts/dab-gates.json`：由 `.agents/gates.yaml` 和 scanner 默认值编译出的配置快照，runner 只读它。
+- `scripts/dab-gates.json`：由 `.agents/gates.yaml` 编译出的配置快照，runner 只读它。
 
 这是主流工具常见的“稳定 runner + 声明式配置”形态（`pre-commit`、`lefthook`、Nx、Turborepo 都是 runner 稳定、配置留在仓库）。把命令嵌进生成 runner 虽然也能工作，但每次改命令都要重写代码，难 review，也违背配置与执行分离。
 
@@ -403,7 +403,7 @@ project scope：
 - 配置存在时只校验，不覆盖；
 - runner 未修改且版本较旧时更新；
 - runner 被修改时保留并报告 `verification.runner-modified`；runner 无 marker 时保留并报告 `verification.runner-unversioned`；版本较新或无法比较时保留并报告 `verification.runner-newer`；
-- 从 authored 配置和 scanner 默认值重编译快照；快照被修改时保留并报告 `verification.snapshot-modified`；快照无生成元数据时保留并报告 `verification.snapshot-unversioned`；版本较新或无法比较时保留并报告 `verification.snapshot-newer`；
+- 从 authored 配置重编译快照；快照被修改时保留并报告 `verification.snapshot-modified`；快照无生成元数据时保留并报告 `verification.snapshot-unversioned`；版本较新或无法比较时保留并报告 `verification.snapshot-newer`；
 - 配置与快照不一致时报告 `verification.snapshot-stale`，等待 normalize 重渲染；
 - 配置无效时阻止写入（all-or-nothing），不写部分 runner 或快照。
 
