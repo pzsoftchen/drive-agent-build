@@ -2,7 +2,6 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Diagnostic, DiagnosticSeverity } from '../core/diagnostics.ts';
 import { readTextFile } from '../core/fs-atomic.ts';
-import { loadGateConfig } from '../core/gate-config.ts';
 import { resolveGateCommand } from '../core/gate-artifacts.ts';
 import {
   GATE_CONFIG_PATH,
@@ -12,7 +11,11 @@ import {
   type GateArtifactStatus,
 } from '../init/gate-artifacts.ts';
 import { selectGateStack } from '../init/gate-templates.ts';
-import { GATE_COMMAND_NAMES, type GateConfig } from '../model/gates.ts';
+import {
+  GATE_COMMAND_NAMES,
+  type GateCommandName,
+  type GateConfig,
+} from '../model/gates.ts';
 import type { ScanResult } from '../init/scanner.ts';
 import type { ChecklistEntry, ChecklistStatus } from './checklist.ts';
 
@@ -52,6 +55,14 @@ export const VERIFICATION_NON_STRICT_WARNING_CODES: ReadonlySet<string> = new Se
   'verification.snapshot-unversioned',
   'verification.snapshot-newer',
   'verification.ci-missing',
+  // No commands were detected and none were authored: the runner reports the
+  // same state as a warning, so detect must not turn it into a strict failure.
+  'verification.commands-empty',
+]);
+
+const REQUIRED_SCANNED_COMMANDS: ReadonlySet<GateCommandName> = new Set([
+  'test',
+  'typecheck',
 ]);
 
 /**
@@ -288,6 +299,37 @@ async function findCiWiring(root: string): Promise<string | undefined> {
   return undefined;
 }
 
+function commandNeedsConfig(
+  entries: ChecklistEntry[],
+  diagnostics: Diagnostic[],
+  name: GateCommandName,
+  needs: string | undefined,
+): void {
+  const detail = needs ?? 'command requires project configuration';
+  diagnostics.push({
+    code: 'verification.command-needs-config',
+    severity: 'warning',
+    message: `gate command ${name} requires project configuration: ${detail}`,
+    file: GATE_CONFIG_PATH,
+    hint: 'Edit .agents/gates.yaml with a command, Xcode scheme/destination, or Fastlane command, then run dab normalize.',
+  });
+  entries.push({
+    group: 'Verification',
+    label: `code.${name}`,
+    status: 'warn',
+    detail,
+    next: NEXT_EDIT_CONFIG,
+  });
+}
+
+/**
+ * Check authored commands against the scanner.
+ *
+ * `mode: off` is an explicit waiver and matches the runner's SKIP before the
+ * unresolved-command check. The scanner-selected required dimensions are
+ * `test` and `typecheck`; dropping one while keeping advisory commands is a
+ * wiring error, because the runner would silently stop checking it.
+ */
 function commandEntries(
   config: GateConfig,
   scan: ScanResult,
@@ -295,17 +337,31 @@ function commandEntries(
 ): ChecklistEntry[] {
   const entries: ChecklistEntry[] = [];
   const commands = config.gates.code.commands;
+  const selection = selectGateStack(scan);
+  const detected = selection.kind === 'commands' ? selection.commands : {};
   const configured = GATE_COMMAND_NAMES.filter((name) => commands[name] !== undefined);
 
   if (configured.length === 0) {
-    const selection = selectGateStack(scan);
-    const detected = selection.kind === 'commands' ? selection.commands : {};
+    if (selection.kind === 'needs-config') {
+      // The scanner cannot infer a test command (Xcode, Maven/Gradle
+      // ambiguity). An empty config must not turn that into a silent pass.
+      commandNeedsConfig(entries, diagnostics, 'test', selection.needs);
+      return entries;
+    }
     const detectedNames = GATE_COMMAND_NAMES.filter(
       (name) => (detected[name] ?? '').trim().length > 0,
     );
     if (detectedNames.length === 0) {
       // An empty command set is allowed only when the scanner found nothing to
-      // run, and it is still reported instead of passing silently.
+      // run. Report it with the runner's WARN parity instead of passing
+      // silently, and keep it non-strict like the runner's warning.
+      diagnostics.push({
+        code: 'verification.commands-empty',
+        severity: 'warning',
+        message: 'no code commands are configured and none were detected',
+        file: GATE_CONFIG_PATH,
+        hint: 'Add test/build commands to .agents/gates.yaml.',
+      });
       entries.push({
         group: 'Verification',
         label: 'code',
@@ -337,34 +393,55 @@ function commandEntries(
 
   for (const name of GATE_COMMAND_NAMES) {
     const command = commands[name];
-    if (command === undefined) {
+    if (command !== undefined) {
+      if (command.mode === 'off') {
+        // The runner returns SKIP before checking whether the command is null,
+        // so an off entry is a waiver for any command state.
+        entries.push({
+          group: 'Verification',
+          label: `code.${name}`,
+          status: 'ok',
+          detail: 'SKIP: gate is disabled by mode: off',
+        });
+        continue;
+      }
+      if (command.command === null) {
+        commandNeedsConfig(entries, diagnostics, name, command.needs);
+        continue;
+      }
+      const resolved = resolveGateCommand(command).command ?? 'configured';
+      entries.push({
+        group: 'Verification',
+        label: `code.${name}`,
+        status: 'ok',
+        detail: resolved,
+      });
       continue;
     }
-    if (command.command === null) {
-      const detail = command.needs ?? 'command requires project configuration';
+
+    const scanned = (detected[name] ?? '').trim();
+    if (REQUIRED_SCANNED_COMMANDS.has(name) && scanned.length > 0) {
+      const message =
+        `required gate command ${name} is not configured; scanner detected: ${scanned}`;
       diagnostics.push({
-        code: 'verification.command-needs-config',
-        severity: 'warning',
-        message: `gate command ${name} requires project configuration: ${detail}`,
+        code: 'verification.command-missing',
+        severity: 'error',
+        message,
         file: GATE_CONFIG_PATH,
-        hint: 'Edit .agents/gates.yaml with a command, Xcode scheme/destination, or Fastlane command, then run dab normalize.',
+        hint: 'Add the detected command to .agents/gates.yaml, or set its mode to off as an explicit waiver; detect never treats a missing required command as a pass.',
       });
       entries.push({
         group: 'Verification',
         label: `code.${name}`,
-        status: 'warn',
-        detail,
+        status: 'error',
+        detail: message,
         next: NEXT_EDIT_CONFIG,
       });
       continue;
     }
-    const resolved = resolveGateCommand(command).command ?? 'configured';
-    entries.push({
-      group: 'Verification',
-      label: `code.${name}`,
-      status: 'ok',
-      detail: resolved,
-    });
+    if (name === 'test' && selection.kind === 'needs-config') {
+      commandNeedsConfig(entries, diagnostics, name, selection.needs);
+    }
   }
   return entries;
 }
@@ -464,10 +541,12 @@ export async function inspectVerification(input: {
     );
   }
 
-  const loaded = await loadGateConfig(input.root);
-  const commandRows = loaded.config === undefined
+  // The shared plan already loaded and validated the authored config; reuse
+  // that exact object instead of a second read whose diagnostics could
+  // diverge from the artifact states above.
+  const commandRows = plan.config === undefined
     ? []
-    : commandEntries(loaded.config, input.scan, diagnostics);
+    : commandEntries(plan.config, input.scan, diagnostics);
 
   const ciFile = await findCiWiring(input.root);
   let ciEntry: ChecklistEntry;
@@ -482,7 +561,9 @@ export async function inspectVerification(input: {
       group: 'Verification',
       label: CI_LABEL,
       status: 'warn',
-      detail: 'no CI call to scripts/dab-check.mjs',
+      // The human checklist shows the detail, so the repair command belongs
+      // here rather than only in the JSON diagnostics hint.
+      detail: 'no CI call; add node scripts/dab-check.mjs --strict to a CI workflow',
     };
   } else {
     ciEntry = {

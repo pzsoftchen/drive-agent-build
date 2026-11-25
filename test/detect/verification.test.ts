@@ -17,7 +17,10 @@ import {
   planGateArtifacts,
 } from '../../src/init/gate-artifacts.ts';
 import { renderGateRunner } from '../../src/init/gate-runner-template.ts';
-import { XCODE_NEEDS } from '../../src/init/gate-templates.ts';
+import {
+  MAVEN_GRADLE_NEEDS,
+  XCODE_NEEDS,
+} from '../../src/init/gate-templates.ts';
 import type { ScanResult } from '../../src/init/scanner.ts';
 import type { Diagnostic } from '../../src/core/diagnostics.ts';
 import { makeTempDir, removeTempDir } from '../helpers/tmp.ts';
@@ -97,6 +100,38 @@ function xcodeScan(): ScanResult {
       diagnostics: [],
     }],
     sourceDirs: ['App'],
+    hasAgentsMd: false,
+    hasClaudeSettings: false,
+    existingAgents: [],
+    diagnostics: [],
+  };
+}
+
+function ambiguousJavaScan(): ScanResult {
+  const commands = { test: './mvnw test' };
+  return {
+    projectName: 'demo',
+    projectId: 'demo',
+    language: 'java',
+    packageManager: 'none',
+    commands: {},
+    stacks: [
+      {
+        id: 'java-maven',
+        language: 'java',
+        commands,
+        evidence: ['pom.xml'],
+        diagnostics: [],
+      },
+      {
+        id: 'java-gradle',
+        language: 'java',
+        commands: { test: './gradlew test' },
+        evidence: ['build.gradle'],
+        diagnostics: [],
+      },
+    ],
+    sourceDirs: ['src/main/java'],
     hasAgentsMd: false,
     hasClaudeSettings: false,
     existingAgents: [],
@@ -438,6 +473,110 @@ describe('inspectVerification', () => {
       }),
     ]);
     expect(strictWouldFail(result)).toBe(true);
+  });
+
+  it('warns needs-config for an empty config when the scanner needs configuration', async () => {
+    await scaffold(xcodeScan(), EMPTY_COMMANDS_CONFIG);
+    await wireCi();
+
+    const xcode = await inspect(xcodeScan());
+    const xcodeNeeds = xcode.diagnostics.find(
+      (item) => item.code === 'verification.command-needs-config',
+    );
+
+    expect(xcodeNeeds).toMatchObject({
+      severity: 'warning',
+      file: GATE_CONFIG_PATH,
+    });
+    expect(xcodeNeeds?.message).toContain(XCODE_NEEDS);
+    expect(rows(xcode, 'code.test')).toEqual([
+      expect.objectContaining({
+        status: 'warn',
+        detail: XCODE_NEEDS,
+        next: 'edit .agents/gates.yaml',
+      }),
+    ]);
+    expect(VERIFICATION_NON_STRICT_WARNING_CODES.has('verification.command-needs-config'))
+      .toBe(false);
+    expect(strictWouldFail(xcode)).toBe(true);
+
+    const ambiguous = await inspect(ambiguousJavaScan());
+    const ambiguousNeeds = ambiguous.diagnostics.find(
+      (item) => item.code === 'verification.command-needs-config',
+    );
+
+    expect(ambiguousNeeds?.message).toContain(MAVEN_GRADLE_NEEDS);
+    expect(rows(ambiguous, 'code.test')).toEqual([
+      expect.objectContaining({
+        status: 'warn',
+        detail: MAVEN_GRADLE_NEEDS,
+        next: 'edit .agents/gates.yaml',
+      }),
+    ]);
+    expect(strictWouldFail(ambiguous)).toBe(true);
+  });
+
+  it('errors for dropped scanner-required commands but honors mode off waivers', async () => {
+    await scaffold(nodeScan(), bareConfig(`      lint:
+        command: pnpm lint
+        mode: advisory
+      build:
+        command: pnpm build
+        mode: advisory`));
+    await wireCi();
+
+    const dropped = await inspect(nodeScan());
+    const missing = dropped.diagnostics.filter(
+      (item) => item.code === 'verification.command-missing',
+    );
+
+    expect(missing).toHaveLength(2);
+    expect(missing[0]).toMatchObject({ severity: 'error', file: GATE_CONFIG_PATH });
+    expect(missing[0]?.message).toContain('test');
+    expect(missing[1]?.message).toContain('typecheck');
+    expect(rows(dropped, 'code.test')).toEqual([
+      expect.objectContaining({ status: 'error', next: 'edit .agents/gates.yaml' }),
+    ]);
+    expect(rows(dropped, 'code.typecheck')).toEqual([
+      expect.objectContaining({ status: 'error', next: 'edit .agents/gates.yaml' }),
+    ]);
+    expect(strictWouldFail(dropped)).toBe(true);
+
+    await write(GATE_CONFIG_PATH, bareConfig(`      test:
+        command: null
+        mode: off
+      typecheck:
+        command: pnpm typecheck
+        mode: off`));
+    await scaffold(nodeScan());
+    const waived = await inspect(nodeScan());
+
+    expect(codes(waived)).not.toContain('verification.command-missing');
+    expect(codes(waived)).not.toContain('verification.command-needs-config');
+    expect(rows(waived, 'code.test')).toEqual([
+      expect.objectContaining({ status: 'ok' }),
+    ]);
+    expect(rows(waived, 'code.test')[0]?.detail).toContain('SKIP');
+    expect(rows(waived, 'code.typecheck')[0]?.detail).toContain('SKIP');
+    expect(strictWouldFail(waived)).toBe(false);
+  });
+
+  it('warns non-strict when no code commands exist or are detected', async () => {
+    await scaffold(emptyScan(), EMPTY_COMMANDS_CONFIG);
+    await wireCi();
+
+    const result = await inspect(emptyScan());
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'verification.commands-empty',
+      severity: 'warning',
+      file: GATE_CONFIG_PATH,
+    }));
+    expect(rows(result, 'code')).toEqual([
+      expect.objectContaining({ status: 'warn' }),
+    ]);
+    expect(VERIFICATION_NON_STRICT_WARNING_CODES.has('verification.commands-empty')).toBe(true);
+    expect(strictWouldFail(result)).toBe(false);
   });
 
   it('warns for missing CI without failing strict and accepts non-GitHub CI', async () => {

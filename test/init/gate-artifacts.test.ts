@@ -176,6 +176,19 @@ describe('planGateArtifacts', () => {
     expect(parseGateRunnerMarker(runner)?.sha256).toBe(hashGateRunnerBody(runner));
   });
 
+  it('exposes only the authored config, never the generated starter', async () => {
+    const missing = await plan();
+    expect(missing.config).toBeUndefined();
+
+    await write(CONFIG_PATH, VALID_CONFIG);
+    const existing = await plan();
+    expect(existing.config).toEqual(VALID_GATE_CONFIG);
+
+    await write(CONFIG_PATH, 'version: [2\n');
+    const invalid = await plan();
+    expect(invalid.config).toBeUndefined();
+  });
+
   it('reports current artifacts and plans no writes for an up-to-date project', async () => {
     await applyPlan();
 

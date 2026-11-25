@@ -58,6 +58,12 @@ export interface GateArtifactPlan {
   actions: Array<{ path: string; kind: 'create' | 'update' | 'skip'; reason?: string }>;
   diagnostics: Diagnostic[];
   states: Array<{ path: string; status: GateArtifactStatus }>;
+  /**
+   * The authored `.agents/gates.yaml` parsed during planning. Absent when the
+   * file is missing, invalid or path-conflicted; never the generated starter.
+   * Callers such as detect reuse this instead of reading the config twice.
+   */
+  config?: GateConfig;
 }
 
 export interface GateArtifactApplyResult {
@@ -237,6 +243,8 @@ function starterConfig(starter: string): GateConfig {
 
 interface ConfigInspection {
   config?: GateConfig;
+  /** Present only when the authored file exists, parses and validates. */
+  authoredConfig?: GateConfig;
   usable: boolean;
 }
 
@@ -290,7 +298,7 @@ async function inspectConfig(
       kind: 'skip',
       reason: 'authored configuration is never overwritten',
     });
-    return { config: loaded.config, usable: true };
+    return { config: loaded.config, authoredConfig: loaded.config, usable: true };
   }
 
   const starter = renderGateStarter(scan);
@@ -550,6 +558,9 @@ export async function planGateArtifacts(input: {
     }
   }
 
+  const authored = configInspection.authoredConfig === undefined
+    ? {}
+    : { config: configInspection.authoredConfig };
   if (diagnostics.some((item) => item.severity === 'error')) {
     for (const action of actions) {
       if (action.kind !== 'skip') {
@@ -557,9 +568,9 @@ export async function planGateArtifacts(input: {
         action.reason = 'blocked by an error diagnostic';
       }
     }
-    return { files: {}, actions, diagnostics, states };
+    return { files: {}, actions, diagnostics, states, ...authored };
   }
-  return { files, actions, diagnostics, states };
+  return { files, actions, diagnostics, states, ...authored };
 }
 
 /**

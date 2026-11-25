@@ -6,6 +6,7 @@ import { initializeProject } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { DAB_VERSION } from '../../src/core/version.ts';
+import { renderGateRunner } from '../../src/init/gate-runner-template.ts';
 import {
   AUTHORING_SKILL_NAMES,
   renderAuthoringSkill,
@@ -645,7 +646,8 @@ gates:
     );
     expect(jsonCode).toBe(0);
     const payload = JSON.parse(json.join('')) as {
-      checklist: Array<{ group: string; label: string; status: string }>;
+      checklist: Array<{ group: string; label: string; status: string; detail?: string }>;
+      diagnostics: Array<{ code: string; severity: string }>;
     };
     const jsonGroups = [...new Set(payload.checklist.map((entry) => entry.group))];
     expect(jsonGroups.indexOf('Verification')).toBe(jsonGroups.indexOf('Skills') + 1);
@@ -654,6 +656,17 @@ gates:
         group: 'Verification',
         label: 'scripts/dab-gates.json',
         status: 'ok',
+      }),
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'CI',
+        status: 'warn',
+      }),
+    ]));
+    expect(payload.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.ci-missing',
+        severity: 'warning',
       }),
     ]));
 
@@ -666,6 +679,211 @@ gates:
     const text = human.join('');
     expect(text).toContain('\nVerification\n');
     expect(text).toContain('[OK] scripts/dab-check.mjs');
+    expect(text).toContain('[WARN] CI');
+    expect(text).toContain('dab-check.mjs --strict');
+  });
+
+  it('reports wired CI without a non-strict warning', async () => {
+    const project = await initialized();
+    await completePractice(project);
+    await writeProjectFile(
+      project.root,
+      '.github/workflows/ci.yml',
+      'steps:\n  - run: node scripts/dab-check.mjs --strict\n',
+    );
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.diagnostics.map((item) => item.code))
+      .not.toContain('verification.ci-missing');
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'CI',
+        status: 'ok',
+        detail: '.github/workflows/ci.yml',
+      }),
+    ]));
+  });
+
+  it('fails strict for a missing gate runner or snapshot', async () => {
+    const project = await initialized();
+    await completePractice(project);
+    await rm(join(project.root, 'scripts/dab-check.mjs'));
+
+    const runnerMissing = await detectProject(detectOptions(project));
+    expect(runnerMissing.exitCode).toBe(0);
+    expect(runnerMissing.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.runner-missing',
+        severity: 'warning',
+      }),
+    ]));
+    expect(runnerMissing.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-check.mjs',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode)
+      .toBe(3);
+
+    await rm(join(project.root, 'scripts/dab-gates.json'));
+    const bothMissing = await detectProject(detectOptions(project));
+    expect(bothMissing.exitCode).toBe(0);
+    expect(bothMissing.diagnostics.map((item) => item.code)).toEqual(
+      expect.arrayContaining([
+        'verification.runner-missing',
+        'verification.snapshot-missing',
+      ]),
+    );
+    expect(bothMissing.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-gates.json',
+        status: 'missing',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode)
+      .toBe(3);
+  });
+
+  it('fails strict for a stale runner or snapshot', async () => {
+    const staleRunner = await initialized();
+    await completePractice(staleRunner);
+    await writeProjectFile(
+      staleRunner.root,
+      'scripts/dab-check.mjs',
+      renderGateRunner('0.0.1'),
+    );
+
+    const runnerResult = await detectProject(detectOptions(staleRunner));
+    expect(runnerResult.exitCode).toBe(0);
+    expect(runnerResult.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.runner-stale',
+        severity: 'warning',
+      }),
+    ]));
+    expect(runnerResult.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-check.mjs',
+        status: 'warn',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(staleRunner), strict: true })).exitCode)
+      .toBe(3);
+
+    const staleSnapshot = await initialized();
+    await completePractice(staleSnapshot);
+    const config = await readFile(join(staleSnapshot.root, '.agents/gates.yaml'), 'utf8');
+    await writeProjectFile(
+      staleSnapshot.root,
+      '.agents/gates.yaml',
+      config.replace('mode: check', 'mode: advisory'),
+    );
+
+    const snapshotResult = await detectProject(detectOptions(staleSnapshot));
+    expect(snapshotResult.exitCode).toBe(0);
+    expect(snapshotResult.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.snapshot-stale',
+        severity: 'warning',
+      }),
+    ]));
+    expect(snapshotResult.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-gates.json',
+        status: 'warn',
+        next: 'dab normalize',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(staleSnapshot), strict: true })).exitCode)
+      .toBe(3);
+  });
+
+  it('keeps unversioned and newer artifacts non-strict', async () => {
+    const project = await initialized();
+    await completePractice(project);
+    const originalSnapshot = await readFile(
+      join(project.root, 'scripts/dab-gates.json'),
+      'utf8',
+    );
+
+    await writeProjectFile(project.root, 'scripts/dab-check.mjs', '// user runner\n');
+    const unversionedRunner = await detectProject(detectOptions(project));
+    expect(unversionedRunner.exitCode).toBe(0);
+    expect(unversionedRunner.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.runner-unversioned',
+        severity: 'warning',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode)
+      .toBe(0);
+
+    await writeProjectFile(
+      project.root,
+      'scripts/dab-check.mjs',
+      renderGateRunner('9.9.9'),
+    );
+    const newerRunner = await detectProject(detectOptions(project));
+    expect(newerRunner.exitCode).toBe(0);
+    expect(newerRunner.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.runner-newer',
+        severity: 'warning',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode)
+      .toBe(0);
+
+    await writeProjectFile(project.root, 'scripts/dab-gates.json', '{}\n');
+    const unversionedSnapshot = await detectProject(detectOptions(project));
+    expect(unversionedSnapshot.exitCode).toBe(0);
+    expect(unversionedSnapshot.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.snapshot-unversioned',
+        severity: 'warning',
+      }),
+    ]));
+    expect(unversionedSnapshot.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-gates.json',
+        status: 'warn',
+      }),
+    ]));
+    expect(unversionedSnapshot.checklist.find(
+      (entry) => entry.group === 'Verification'
+        && entry.label === 'scripts/dab-gates.json',
+    )?.next).toBeUndefined();
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode)
+      .toBe(0);
+
+    const newerSnapshot = originalSnapshot.replace(
+      /"dabVersion": "[^"]+"/,
+      '"dabVersion": "9.9.9"',
+    );
+    expect(newerSnapshot).not.toBe(originalSnapshot);
+    await writeProjectFile(project.root, 'scripts/dab-gates.json', newerSnapshot);
+    const snapshotNewer = await detectProject(detectOptions(project));
+    expect(snapshotNewer.exitCode).toBe(0);
+    expect(snapshotNewer.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.snapshot-newer',
+        severity: 'warning',
+      }),
+    ]));
+    expect((await detectProject({ ...detectOptions(project), strict: true })).exitCode)
+      .toBe(0);
   });
 
   it('fails strict for missing artifacts but not for preserved artifacts', async () => {
