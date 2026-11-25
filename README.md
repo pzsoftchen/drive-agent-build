@@ -112,12 +112,29 @@ Use `dab init ~/.agents` to initialize the independent global scope.
 
 ## What the commands do
 
-- `dab init` writes the authored project skeleton, including `docs/AGENTS.md`, `docs/architecture.md` and the `dab-*` authoring skills, and runs normalize when it is safe. It does not scaffold advanced hooks or shared memory.
-- `dab normalize` compiles policy, materializes instruction and projection artifacts, fills missing docs and authoring skills, updates unmodified older managed authoring skills, and records hashes.
-- `dab detect` checks authored facts, generated output, ownership and scope without writing.
+- `dab init` writes the authored project skeleton, including `docs/AGENTS.md`, `docs/architecture.md`, `.agents/gates.yaml` and the `dab-*` authoring skills, and runs normalize when it is safe. It does not scaffold advanced hooks or shared memory.
+- `dab normalize` compiles policy, materializes instruction and projection artifacts, fills missing docs and authoring skills, manages project gate artifacts, updates unmodified older managed authoring skills, and records hashes.
+- `dab detect` checks authored facts, generated output, ownership, scope and gate wiring without writing.
 - `dab policy explain` shows the effective rules and hooks for a selected target.
 
 The generic profile focuses on configuration drift and the documentation, notes and skills discipline. Hooks and shared memory stay advanced and opt-in: existing hooks are still validated and compiled where applicable, and existing memory is still preserved and validated.
+
+## Project gates
+
+`dab init` and `dab normalize` generate a project-local gate entry point. Run the same command locally and in CI:
+
+```bash
+node scripts/dab-check.mjs
+node scripts/dab-check.mjs --strict
+node scripts/dab-check.mjs --json
+```
+
+- `.agents/gates.yaml` is authored and project-only; `scripts/dab-check.mjs` and `scripts/dab-gates.json` are generated. The runner reads the snapshot and embeds no project commands.
+- The fixed `source` gate runs `dab detect --strict`. The `code` gate runs project test, typecheck, lint and build commands as configured; `docs` is optional. Modes are `required`, `check`, `advisory` and `off`.
+- Exit `0` means required gates passed, `1` a required failure or strict warning, and `2` a configuration, snapshot or runner error. An unresolved command is `CONFIG`, never a pass; `mode: off` is the explicit waiver.
+- The scanner detects Node, Python, Go, Rust, Java Maven, Java Gradle, Android, iOS SwiftPM and iOS Xcode without running build tools. Xcode requires a shared scheme and destination or a Fastlane command; otherwise the runner reports `CONFIG`.
+- `dab detect` adds a project-only `Verification` group. Missing or stale artifacts fail `--strict`; modified, unversioned and newer generated files, an empty command set and missing CI wiring stay non-strict.
+- DAB does not generate CI files, but it provides snippets and detect hints. See [Project gates](docs/user/gates.md) for configuration, stack details and CI examples.
 
 ## Design principles
 
@@ -147,6 +164,7 @@ Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
 - [CLI](docs/user/cli.md)
+- [Project gates](docs/user/gates.md)
 - [Claude Code integration](docs/user/claude-code.md)
 - [Superpowers docs](docs/superpowers/README.md)
 - [Agent Note 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.md)
@@ -155,6 +173,7 @@ Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/
 - [Agent Note 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.md)
 - [Agent Note 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md)
 - [Agent Note 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.md)
+- [Agent Note 0007](.agents/notes/implemented/architecture/2026-11-25-g1-gates.md)
 
 ## License
 

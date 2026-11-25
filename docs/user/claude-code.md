@@ -67,6 +67,14 @@ targets:
 - Each installed copy carries a `<!-- dab-skill: <name>@<version> sha256=<hash> -->` marker. `dab init` installs missing skills only. `dab normalize` updates an unmodified copy whose marker version is older, and migrates a legacy marker without a hash when the body matches the current template. Modified copies, newer or uncomparable versions, missing markers, mismatched markers and legacy markers whose body differs are preserved with warnings; managed updates create no backups.
 - `dab detect` reports the current, stale, newer, modified, legacy, unversioned and marker-mismatch states. `practice.skill-stale` fails `--strict`; the preserved states do not.
 
+## Project gates
+
+- `dab init` and `dab normalize` generate project-only `.agents/gates.yaml`, `scripts/dab-check.mjs` and `scripts/dab-gates.json`. Claude Code does not read these files; they are the project's local and CI gate entry point.
+- The runner calls `dab detect --strict` for the fixed `source` gate, then the project's code and docs commands. `dab detect` reports the same files in a project-only `Verification` group.
+- Xcode projects keep `command: null` with a `needs` explanation until a shared scheme and destination or a Fastlane command is configured. The runner reports `CONFIG`; it never reports a fake pass.
+- CI wiring is manual, for example `node scripts/dab-check.mjs --strict`. DAB does not write `.github/workflows/` or any other CI file.
+- The full model is in [Project gates](gates.md).
+
 ## Memory model
 
 - Shared memory is an advanced, opt-in capability. DAB does not scaffold `.agents/memory/` by default; existing files are still preserved and validated.

@@ -20,6 +20,8 @@ pnpm test
 - `pnpm doc-sync` 运行翻译配对、链接、排版、预算和 Agent 决策记录格式检查。
 - `node dist/cli.js detect --strict` 检查本仓库的生成配置，并在存在 strict warning 时失败；non-strict warning 仍只是 warning。
 - `node dist/cli.js normalize --dry-run` 展示待执行的投影变更。
+- `node scripts/dab-check.mjs` 运行本仓库自己的项目门禁：先 `source`，再 code 和 docs 命令。加 `--strict` 会在 check 和 advisory warning 时失败，加 `--json` 输出机器可读结果。
+- `pnpm build && node dist/cli.js normalize` 会在 `package.json` 或 `gates.yaml` 变化后刷新 dogfood 门禁 runner 和快照。
 
 ## 开发循环
 
@@ -34,6 +36,8 @@ pnpm test
 ## 生成配置
 
 `.claude/` 是生成目录并已加入 gitignore。修改 `.agents/` 后运行 `node dist/cli.js normalize`。先用 `--dry-run` 检查计划，只对已审阅的冲突使用 `--fix`。
+
+`.agents/gates.yaml` 是 authored 并提交。`scripts/dab-check.mjs` 和 `scripts/dab-gates.json` 是生成文件并提交，使 CI 和其他 checkout 无需 normalize 就获得同一个 runner。Normalize 更新未修改的较旧 runner 或过期快照，并保留被修改、无版本和较新的文件且产生 warning。DAB 不生成 CI 文件；请手动把 `node scripts/dab-check.mjs --strict` 接入 provider。
 
 ## 测试
 

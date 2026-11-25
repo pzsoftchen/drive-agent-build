@@ -20,6 +20,8 @@ pnpm test
 - `pnpm doc-sync` runs translation pairing, links, wrap, budgets and Agent Note format.
 - `node dist/cli.js detect --strict` checks this repository's generated configuration and fails on strict warnings; non-strict warnings remain warnings.
 - `node dist/cli.js normalize --dry-run` shows pending projection changes.
+- `node scripts/dab-check.mjs` runs the repository's own project gates: `source`, then code and docs commands. Add `--strict` to fail on check and advisory warnings, or `--json` for machine-readable results.
+- `pnpm build && node dist/cli.js normalize` refreshes the dogfood gate runner and snapshot after `package.json` or `gates.yaml` changes.
 
 ## Development loop
 
@@ -34,6 +36,8 @@ pnpm test
 ## Generated configuration
 
 `.claude/` is generated and gitignored. After changing `.agents/`, run `node dist/cli.js normalize`. Use `--dry-run` first to inspect the plan and `--fix` only for reviewed conflicts.
+
+`.agents/gates.yaml` is authored and committed. `scripts/dab-check.mjs` and `scripts/dab-gates.json` are generated and committed so CI and other checkouts get the same runner without a normalize step. Normalize updates an unmodified older runner or stale snapshot and preserves modified, unversioned and newer files with warnings. DAB does not generate CI files; wire `node scripts/dab-check.mjs --strict` into the provider manually.
 
 ## Tests
 

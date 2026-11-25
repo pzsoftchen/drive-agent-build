@@ -112,12 +112,29 @@ pnpm link --global
 
 ## 命令做什么
 
-- `dab init` 写入项目编写骨架，包括 `docs/AGENTS.md`、`docs/architecture.md` 和 `dab-*` authoring skills，并在安全时运行 normalize。它不生成高级 hooks 或共享记忆。
-- `dab normalize` 编译策略、生成指令和投影产物、补齐缺失的 docs 和 authoring skills、更新未修改的较旧受管 authoring skills，并记录哈希。
-- `dab detect` 在不写入的情况下检查编写事实、生成输出、所有权和作用域。
+- `dab init` 写入项目编写骨架，包括 `docs/AGENTS.md`、`docs/architecture.md`、`.agents/gates.yaml` 和 `dab-*` authoring skills，并在安全时运行 normalize。它不生成高级 hooks 或共享记忆。
+- `dab normalize` 编译策略、生成指令和投影产物、补齐缺失的 docs 和 authoring skills、管理 project 门禁产物、更新未修改的较旧受管 authoring skills，并记录哈希。
+- `dab detect` 在不写入的情况下检查编写事实、生成输出、所有权、作用域和门禁接线。
 - `dab policy explain` 展示选定 target 的最终规则和 hooks。
 
 Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hooks 与共享记忆保持高级、可选：已有 hooks 仍会被校验并在适用时编译，已有记忆仍会被保留和校验。
+
+## 项目门禁
+
+`dab init` 和 `dab normalize` 生成项目本地的门禁入口。在本地和 CI 运行同一个命令：
+
+```bash
+node scripts/dab-check.mjs
+node scripts/dab-check.mjs --strict
+node scripts/dab-check.mjs --json
+```
+
+- `.agents/gates.yaml` 是 authored、project-only；`scripts/dab-check.mjs` 和 `scripts/dab-gates.json` 是生成文件。runner 读取快照，不内嵌项目命令。
+- 固定 `source` gate 运行 `dab detect --strict`。`code` gate 按配置运行项目 test、typecheck、lint 和 build 命令；`docs` 可选。Mode 为 `required`、`check`、`advisory` 和 `off`。
+- 退出码 `0` 表示 required gate 通过，`1` 表示 required 失败或 strict warning，`2` 表示配置、快照或 runner 错误。未解析命令是 `CONFIG`，永不视为通过；`mode: off` 是显式豁免。
+- scanner 在不执行构建工具的情况下检测 Node、Python、Go、Rust、Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode。Xcode 需要 shared scheme 和 destination 或 Fastlane 命令；否则 runner 报告 `CONFIG`。
+- `dab detect` 增加 project-only 的 `Verification` 组。缺失或过期产物会让 `--strict` 失败；被修改、无版本和较新的生成文件、空命令集以及缺少 CI 接线保持非 strict。
+- DAB 不生成 CI 文件，但提供片段和 detect 提示。配置、技术栈细节和 CI 示例见[项目门禁](docs/user/gates.zh.md)。
 
 ## 设计原则
 
@@ -147,6 +164,7 @@ Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hoo
 - [架构](docs/architecture.zh.md)
 - [开发](docs/development.zh.md)
 - [CLI](docs/user/cli.zh.md)
+- [项目门禁](docs/user/gates.zh.md)
 - [Claude Code 集成](docs/user/claude-code.zh.md)
 - [Superpowers 文档](docs/superpowers/README.md)
 - [Agent 决策记录 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.zh.md)
@@ -155,6 +173,7 @@ Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hoo
 - [Agent 决策记录 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.zh.md)
 - [Agent 决策记录 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.zh.md)
 - [Agent 决策记录 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.zh.md)
+- [Agent 决策记录 0007](.agents/notes/implemented/architecture/2026-11-25-g1-gates.zh.md)
 
 ## 许可证
 

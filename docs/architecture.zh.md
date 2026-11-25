@@ -25,6 +25,7 @@ DAB 在产品概念上是驾驶系统，用来驾驶由构建者主导的 Agent 
 | 共享记忆（可选，高级） | `.agents/memory/` | 按需读取 |
 | 个人记忆 | Claude Code 自动记忆 | 机器本地 |
 | 决策 | `.agents/notes/` | 按需读取 |
+| 项目门禁 | `.agents/gates.yaml` | `scripts/dab-gates.json` 快照，由 `scripts/dab-check.mjs` 读取 |
 | 元数据 | `dab.yaml` | 逐 target 的生成记录 |
 
 Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 是 `$HOME`。Project 和 global scope 相互独立：DAB 从不合并两者，也不提供 `dab global` 命令。
@@ -61,7 +62,7 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 ## Detect Checklist
 
-- `dab detect` 按 Instructions、Documentation、Agents、Skills、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组。
+- `dab detect` 按 Instructions、Documentation、Agents、Skills、Verification、Rules、Policy、Hooks、Memory、Notes、Generated target 和 Safety 分组。
 - Hooks 和 Memory 组从不报告缺失的可选文件；从未选择启用的项目不会被报告为缺失。
 - 状态包括 `[OK]`、`[MISSING]`、`[WARN]`、`[ERROR]` 和 `[IMPORTABLE]`。`[IMPORTABLE]` 表示物理 `.claude/agents` 或 `.claude/skills` 条目可导入 `.agents`。
 - Detect 在每个 phase（包括 `initialized`）运行只读 import 计划；可导入条目不会同时报告为 unmanaged 或 physical-copy 投影漂移。
@@ -109,10 +110,20 @@ Global scope 使用同样的结构，编写位置是 `~/.agents/`，target root 
 
 - `normalize --json` 新增 `practices.skills.updated`、`migrated`、`modified`、`newer`、`legacy`、`unversioned`、`markerMismatch` 和 `concurrent`，作为 `schemaVersion: 1` 下的追加字段；人类输出使用 `update skill`、`migrate skill` 和 `skip skill ... (...)` 动作。
 
+## 项目门禁
+
+- `.agents/gates.yaml` 是 authored、project-only 的门禁定义。`source` 始终为 `required`；`code` 接受 `test`、`typecheck`、`lint` 和 `build`；`docs` 可选。Mode 为 `required`、`check`、`advisory` 和 `off`。
+- Normalize 把 authored 配置和 scanner 默认值编译为 `scripts/dab-gates.json`；hash 覆盖规范化的 `gates` 对象。`scripts/dab-check.mjs` 是带 `dab-gate-runner` marker 的稳定 runner。runner 只读快照，不内嵌项目命令。
+- runner 先执行固定 `source` gate（`dab detect --strict`），再执行每个已配置的 code 和 docs 命令，不短路。缺少 DAB 二进制是 `ERROR`；未解析命令、无效快照或缺失快照是 `CONFIG`；两者都以 `2` 退出。required 失败退出 `1`；`--strict` 还会提升 check 和 advisory warning。
+- Init 和 normalize 创建缺失的 config、runner 和快照。Normalize 更新未修改的较旧 runner 和过期快照；被修改、无版本和较新的生成文件会保留并产生 warning。无效 authored 配置会阻止所有写入。
+- scanner 在不执行构建工具的情况下检测 Node、Python、Go、Rust、Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode。优先使用 wrapper，Android 抑制重复的 Java Gradle 命令，SwiftPM 优先于 Xcode 证据，只有 Xcode 的项目在配置 shared scheme 和 destination 或 Fastlane 命令之前保持 `needs-config`。
+- `dab detect` 在 project-only 的 `Verification` 组中检查同一批文件。缺失或过期产物会让 `--strict` 失败；格式错误配置、路径冲突和被删除的 scanner 必需 `test`/`typecheck` 命令是 error；被修改、无版本和较新产物、`commands-empty` 以及 `ci-missing` 保持非 strict。
+- CI 不生成。项目在自己的 provider 中调用 `node scripts/dab-check.mjs --strict`；缺少 CI 接线是非 strict 的 detect warning。
+
 ## 核心循环
 
 1. `dab init` 扫描仓库并为一个 scope 写入完整的编写骨架。
-2. `dab normalize` 先采用缺失的最小 source、导入物理 Claude agents 和 skills、补齐缺失的 practice 文件并更新未修改的较旧受管 authoring skills，再预检每个启用的 target，并在全部预检通过后才写入 target 输出。
+2. `dab normalize` 先采用缺失的最小 source、导入物理 Claude agents 和 skills、补齐缺失的 practice 文件、管理 project 门禁产物并更新未修改的较旧受管 authoring skills，再预检每个启用的 target，并在全部预检通过后才写入 target 输出。
 3. `dab detect` 在不写入的前提下检查漂移、所有权、phase 和 scope。
 4. `dab policy explain --target <provider>` 展示单个 target 的最终结果。
 
@@ -212,6 +223,8 @@ generated:
 - `src/init/practice.ts` 拥有 authored scaffold planner 和 pack registry；`practice-docs.ts` 和 `practice-authoring.ts` 渲染 documentation 和 authoring packs，`docs-language.ts` 解析 `docs.language`。
 - `src/core/skill-marker.ts` 解析、插入和移除受管 skill marker，并对移除 marker 后的 body 做哈希。
 - `src/init/skill-templates.ts` 从包内 `skills/` 目录加载 canonical 模板；`src/init/managed-skills.ts` 分类已安装 authoring skills，并应用受管创建、更新和迁移。
+- `src/model/gates.ts` 校验 authored 门禁 schema；`src/core/gate-config.ts` 加载 `.agents/gates.yaml`；`src/core/gate-artifacts.ts` 规范化并哈希快照。
+- `src/init/gate-templates.ts` 渲染 scanner starter；`src/init/gate-artifacts.ts` 规划和应用生成文件；`src/init/gate-runner-template.ts` 渲染稳定 runner；`src/detect/verification.ts` 检查 Verification 组。
 - `skills/` 保存随包发布的 canonical authoring-skill 模板。
 - `src/docs/` 运行双语文档门禁。
 
@@ -222,6 +235,7 @@ generated:
 - `.claude/agents/`、`.claude/skills/` 和 `.claude/rules/` 包含逐项符号链接。
 - `docs/AGENTS.md` 和 `docs/architecture.md` 是 authored 项目文档；DAB 只创建一次缺失的骨架，永不覆盖。
 - `.agents/skills/dab-*` 是带版本/hash marker 的受管 authoring 副本，投影为 `.claude/skills/` 符号链接。
+- `scripts/dab-check.mjs` 和 `scripts/dab-gates.json` 是 project scope 的生成门禁产物，带 runner marker 和规范化快照 hash；`.agents/gates.yaml` 始终是 authored source。
 - `dab.yaml` 保存 `scope`、`targets` 以及逐 target 的生成记录，包含 source 哈希、target 哈希和投影清单。
 - `.dab/backups/` 在 `--fix` 采用 unmanaged path 前、以及 import 替换 `.claude` 条目之前保存原始文件。
 
@@ -274,6 +288,7 @@ execute:
 - 本阶段 DAB 只导入 `.claude/agents` 和 `.claude/skills`；rules、settings、hooks 和 instructions 不被采用。
 - DAB 从不覆盖 authored docs 或已修改的受管 skills；`normalize` 更新未修改的较旧 `dab-*` skill，同时保留 modified、newer 和 legacy 分叉。
 - DAB 不运行 agent 或 LLM 来填写文档内容；`normalize` 只生成骨架，`detect` 只检查结构。
+- DAB 不生成 CI 文件，不为 `dab` CLI 增加门禁命令，也绝不把未解析或缺失的项目命令当成通过。门禁是 project-only；global scope 没有 config、runner 或快照。
 - Global import 写入 `$HOME` 下，但从不管理 `~/.claude/settings.json` 或 `$HOME/.gitignore`。
 - 路径 deny 规则是工具级护栏，不是沙箱；`Bash`、`Grep`、`Glob`、`NotebookEdit` 和包装命令可以绕过。
 - Hooks 是可信的可执行代码；DAB 只检查元数据和静态安全，不检查运行时行为。

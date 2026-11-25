@@ -1,0 +1,17 @@
+version: 1
+gates:
+  source:
+    mode: required
+  code:
+    commands:
+      test:
+        command: pnpm test
+        mode: required
+      typecheck:
+        command: pnpm typecheck
+        mode: required
+      build:
+        command: pnpm build
+        mode: advisory
+  docs:
+    mode: check
