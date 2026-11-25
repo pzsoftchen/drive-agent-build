@@ -6,6 +6,7 @@ import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
 import { DAB_VERSION } from '../../src/core/version.ts';
 import { PRACTICE_NON_STRICT_WARNING_CODES } from '../../src/detect/practice.ts';
+import { VERIFICATION_NON_STRICT_WARNING_CODES } from '../../src/detect/verification.ts';
 import {
   AUTHORING_SKILL_NAMES,
   renderAuthoringSkill,
@@ -131,7 +132,8 @@ function strictWarningCodes(result: {
   return result.diagnostics
     .filter(
       (item) => item.severity === 'warning'
-        && !PRACTICE_NON_STRICT_WARNING_CODES.has(item.code),
+        && !PRACTICE_NON_STRICT_WARNING_CODES.has(item.code)
+        && !VERIFICATION_NON_STRICT_WARNING_CODES.has(item.code),
     )
     .map((item) => item.code);
 }

@@ -587,6 +587,201 @@ Unsafe.
   });
 });
 
+describe('detect verification group', () => {
+  const EMPTY_COMMANDS_CONFIG = `version: 1
+gates:
+  source:
+    mode: required
+  code:
+    commands: {}
+  docs:
+    mode: check
+`;
+
+  const NEEDS_CONFIG_CONFIG = `version: 1
+gates:
+  source:
+    mode: required
+  code:
+    commands:
+      test:
+        command: null
+        mode: required
+        needs: Configure the Xcode scheme and destination in .agents/gates.yaml.
+  docs:
+    mode: check
+`;
+
+  it('reports the Verification group after Skills in JSON and human output', async () => {
+    const project = await initialized();
+    await completePractice(project);
+
+    const result = await detectProject(detectOptions(project));
+    const groups = [...new Set(result.checklist.map((entry) => entry.group))];
+
+    expect(groups.indexOf('Verification')).toBe(groups.indexOf('Skills') + 1);
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: '.agents/gates.yaml',
+        status: 'ok',
+      }),
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-check.mjs',
+        status: 'ok',
+      }),
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-gates.json',
+        status: 'ok',
+      }),
+    ]));
+
+    const json: string[] = [];
+    const jsonCode = await runDetect(
+      { ...detectOptions(project), json: true },
+      { stdout: (value) => json.push(value), stderr: () => undefined },
+    );
+    expect(jsonCode).toBe(0);
+    const payload = JSON.parse(json.join('')) as {
+      checklist: Array<{ group: string; label: string; status: string }>;
+    };
+    const jsonGroups = [...new Set(payload.checklist.map((entry) => entry.group))];
+    expect(jsonGroups.indexOf('Verification')).toBe(jsonGroups.indexOf('Skills') + 1);
+    expect(payload.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'scripts/dab-gates.json',
+        status: 'ok',
+      }),
+    ]));
+
+    const human: string[] = [];
+    const humanCode = await runDetect(
+      detectOptions(project),
+      { stdout: (value) => human.push(value), stderr: () => undefined },
+    );
+    expect(humanCode).toBe(0);
+    const text = human.join('');
+    expect(text).toContain('\nVerification\n');
+    expect(text).toContain('[OK] scripts/dab-check.mjs');
+  });
+
+  it('fails strict for missing artifacts but not for preserved artifacts', async () => {
+    const missing = await initialized();
+    await completePractice(missing);
+    await rm(join(missing.root, '.agents/gates.yaml'));
+
+    const missingNormal = await detectProject(detectOptions(missing));
+    expect(missingNormal.exitCode).toBe(0);
+    expect(missingNormal.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.config-missing',
+        severity: 'warning',
+      }),
+    ]));
+    const missingStrict = await detectProject({
+      ...detectOptions(missing),
+      strict: true,
+    });
+    expect(missingStrict.exitCode).toBe(3);
+
+    const modified = await initialized();
+    await completePractice(modified);
+    const runner = await readFile(join(modified.root, 'scripts/dab-check.mjs'), 'utf8');
+    await writeFile(join(modified.root, 'scripts/dab-check.mjs'), `${runner}// local edit\n`);
+
+    const modifiedNormal = await detectProject(detectOptions(modified));
+    expect(modifiedNormal.exitCode).toBe(0);
+    expect(modifiedNormal.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.runner-modified',
+        severity: 'warning',
+      }),
+    ]));
+    const modifiedStrict = await detectProject({
+      ...detectOptions(modified),
+      strict: true,
+    });
+    expect(modifiedStrict.exitCode).toBe(0);
+  });
+
+  it('fails normal detect when detected commands are not wired', async () => {
+    const project = await initialized();
+    await completePractice(project);
+    await writeProjectFile(
+      project.root,
+      'package.json',
+      '{"name":"demo","scripts":{"test":"node -e \\"process.exit(0)\\""}}\n',
+    );
+    await writeProjectFile(project.root, '.agents/gates.yaml', EMPTY_COMMANDS_CONFIG);
+    await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    const result = await detectProject(detectOptions(project));
+
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.command-missing',
+        severity: 'error',
+      }),
+    ]));
+    expect(result.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'code',
+        status: 'error',
+      }),
+    ]));
+  });
+
+  it('fails strict for needs-config commands but not normal detect', async () => {
+    const project = await initialized();
+    await completePractice(project);
+    await writeProjectFile(project.root, '.agents/gates.yaml', NEEDS_CONFIG_CONFIG);
+    await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    const normal = await detectProject(detectOptions(project));
+
+    expect(normal.exitCode).toBe(0);
+    expect(normal.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.command-needs-config',
+        severity: 'warning',
+      }),
+    ]));
+    expect(normal.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        group: 'Verification',
+        label: 'code.test',
+        status: 'warn',
+        next: 'edit .agents/gates.yaml',
+      }),
+    ]));
+
+    const strict = await detectProject({ ...detectOptions(project), strict: true });
+    expect(strict.exitCode).toBe(3);
+  });
+
+  it('omits the Verification group from global scope', async () => {
+    const home = await makeGlobalFixture();
+    homes.push(home.home);
+    await normalizeProject({ cwd: home.agents, home: home.home, runner: goodRunner });
+
+    const result = await detectProject({
+      cwd: home.agents,
+      home: home.home,
+      runner: goodRunner,
+    });
+
+    expect(result.scope).toBe('global');
+    expect(result.checklist.some((entry) => entry.group === 'Verification')).toBe(false);
+    expect(result.diagnostics.some((item) => item.code.startsWith('verification.')))
+      .toBe(false);
+  });
+});
+
 describe('runDetect', () => {
   it('emits stable JSON and uses the configured exit codes', async () => {
     const project = await initialized();

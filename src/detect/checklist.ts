@@ -41,6 +41,7 @@ const GROUP_ORDER: readonly string[] = [
   'Documentation',
   'Agents',
   'Skills',
+  'Verification',
   'Rules',
   'Policy',
   'Hooks',
