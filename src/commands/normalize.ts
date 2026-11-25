@@ -519,9 +519,11 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       new Set(Object.keys(practicePlan?.files ?? {})),
     );
   let managed = summarizeManagedSkills(managedWritePlan);
-  // Plan-only gate report for blocked and pre-apply results; applying the plan
-  // replaces it with revalidated outcomes.
-  const plannedGates = summarizeGates(preparation.gates);
+  // Blocked returns never claim a gate write: the practice/source phase has not
+  // run, so only diagnostics, modified and skipped states stay in the report.
+  const blockedGates = preparation.gates === undefined
+    ? undefined
+    : summarizeGates(preparation.gates, { mode: 'blocked' });
   const practiceWarnings = scope === 'project' ? policySkipWarnings(practicePlan) : [];
   const practiceDiagnostics = [
     ...(practicePlan?.diagnostics ?? []),
@@ -557,7 +559,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       created: readonly string[],
       skipped: readonly string[],
       managedSummary: ManagedSkillSummary = managed,
-      gateSummary: NormalizeGateSummary = plannedGates,
+      gateSummary: NormalizeGateSummary | undefined = blockedGates,
     ): NormalizePracticesResult | undefined => practicePlan === undefined
       ? undefined
       : buildPractices(
@@ -593,7 +595,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       sourceActions: applied.actions,
       diagnostics: [...adoption.diagnostics, ...applied.diagnostics],
     };
-    const appliedGates = applied.gates ?? plannedGates;
+    const appliedGates = applied.gates ?? blockedGates;
     practices = practicesFor(
       applied.created,
       applied.skipped,
@@ -660,7 +662,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         [],
         practiceDiagnostics,
         managed,
-        plannedGates,
+        blockedGates,
       );
       return blockedResult(root, scope, options, preparationDiagnostics, {
         ...adoptionExtras(adoption),
@@ -679,7 +681,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       planned.skip,
       practiceDiagnostics,
       managed,
-      plannedGates,
+      blockedGates,
     );
   }
 
@@ -696,7 +698,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         [],
         practiceDiagnostics,
         managed,
-        plannedGates,
+        blockedGates,
       );
     return blockedResult(root, scope, options, preparationDiagnostics, {
       ...adoptionExtras(adoption),
@@ -755,7 +757,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   // without touching bytes.
   if (practiceSourcePlan !== undefined && practicePlan !== undefined
     && !blockedBeforePlanning) {
-    let gateSummary = plannedGates;
+    let gateSummary = blockedGates;
     if (options.dryRun !== true) {
       const written = await writeSourceFiles(root, practiceSourcePlan);
       if (managedWritePlan !== undefined) {
@@ -777,11 +779,15 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
           { dryRun: false },
         );
         gateSummary = summarizeGates(preparation.gates, {
+          mode: 'apply',
           practiceCreated: new Set(written.created),
+          practiceSkipped: new Set(written.skipped),
           applied: appliedGates,
         });
-        practiceDiagnostics.push(...appliedGates.diagnostics);
-        diagnostics.push(...appliedGates.diagnostics);
+        // The summary carries plan, apply-time and practice-phase concurrent
+        // diagnostics in one deduped list.
+        practiceDiagnostics.push(...gateSummary.diagnostics);
+        diagnostics.push(...gateSummary.diagnostics);
       }
       practices = buildPractices(
         practicePlan,
@@ -799,13 +805,15 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         preparation.gates.plan,
         { dryRun: true },
       );
+      const planned = await planSourceWrites(root, practiceSourcePlan);
       gateSummary = summarizeGates(preparation.gates, {
+        mode: 'dry-run',
         practiceCreated: new Set(Object.keys(practicePlan.files)),
+        practiceSkipped: new Set(planned.skip),
         applied: appliedGates,
       });
-      practiceDiagnostics.push(...appliedGates.diagnostics);
-      diagnostics.push(...appliedGates.diagnostics);
-      const planned = await planSourceWrites(root, practiceSourcePlan);
+      practiceDiagnostics.push(...gateSummary.diagnostics);
+      diagnostics.push(...gateSummary.diagnostics);
       practices = buildPractices(
         practicePlan,
         planned.create,
@@ -815,13 +823,14 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         gateSummary,
       );
     }
-    if (managed.actions.length > 0 || gateSummary.actions.length > 0) {
+    const gateActions = gateSummary?.actions ?? [];
+    if (managed.actions.length > 0 || gateActions.length > 0) {
       adoption = {
         ...adoption,
         sourceActions: [
           ...adoption.sourceActions,
           ...managed.actions,
-          ...gateSummary.actions,
+          ...gateActions,
         ],
       };
     }

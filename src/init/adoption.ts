@@ -25,6 +25,7 @@ import { resolveDocsLanguage } from './docs-language.ts';
 import {
   applyGateArtifacts,
   GATE_ARTIFACT_DIAGNOSTIC_CODES,
+  gateConcurrentChangeWarning,
   planGateArtifacts,
   type GateArtifactApplyResult,
   type GateArtifactPlan,
@@ -507,17 +508,27 @@ export function planGateWrites(
 }
 
 /**
- * Derive the normalize gate report from the Task 3 states and the apply (or
- * dry-run) outcome. A `missing` state the practice pack wrote is still created
- * by this run; a stale update that was suppressed, blocked or lost a concurrent
+ * How a gate summary was produced. `blocked` never claims a write: a run that
+ * stops before its source phase creates and updates nothing. `apply` claims
+ * only the writer's outcomes. `dry-run` may report the planned create/update
+ * states because it describes what a real run would do.
+ */
+export type GateSummaryMode = 'apply' | 'dry-run' | 'blocked';
+
+/**
+ * Derive the normalize gate report from the Task 3 states and the explicit
+ * outcome mode. A `missing` state the practice pack wrote is still created by
+ * this run; a stale update that was suppressed, blocked or lost a concurrent
  * race is reported as skipped instead of claiming a write that did not happen.
  */
 export function summarizeGates(
   prepared: NormalizeGatePreparation | undefined,
   options: {
+    mode: GateSummaryMode;
     practiceCreated?: ReadonlySet<string>;
+    practiceSkipped?: ReadonlySet<string>;
     applied?: GateArtifactApplyResult;
-  } = {},
+  },
 ): NormalizeGateSummary {
   const summary: NormalizeGateSummary = {
     actions: [],
@@ -530,17 +541,27 @@ export function summarizeGates(
   if (prepared === undefined) {
     return summary;
   }
-  summary.diagnostics = dedupeDiagnostics([
-    ...prepared.diagnostics,
-    ...(options.applied?.diagnostics ?? []),
-  ]);
-  const blocked = hasErrors(prepared.diagnostics);
+  if (options.mode === 'apply' && options.applied === undefined) {
+    throw new Error('gate apply summary requires an apply result');
+  }
+  const blocked = options.mode === 'blocked' || hasErrors(prepared.diagnostics);
+  const allowedPlanned = options.mode === 'dry-run';
   const practiceCreated = options.practiceCreated ?? new Set<string>();
+  const practiceSkipped = options.practiceSkipped ?? new Set<string>();
   const created = new Set(options.applied?.created ?? []);
   const updated = new Set(options.applied?.updated ?? []);
+  const applyDiagnostics = options.applied?.diagnostics ?? [];
   const concurrent = new Set(
-    (options.applied?.diagnostics ?? [])
+    applyDiagnostics
       .filter((item) => item.code === GATE_ARTIFACT_DIAGNOSTIC_CODES.concurrentChange)
+      .flatMap((item) => (item.file === undefined ? [] : [item.file])),
+  );
+  const pathErrors = new Set(
+    applyDiagnostics
+      .filter(
+        (item) => item.severity === 'error'
+          && item.code === GATE_ARTIFACT_DIAGNOSTIC_CODES.path,
+      )
       .flatMap((item) => (item.file === undefined ? [] : [item.file])),
   );
   const suppressed = new Set(
@@ -552,20 +573,37 @@ export function summarizeGates(
       .map((action) => action.path),
   );
 
+  const actionForSkipped = (path: string): void => {
+    if (concurrent.has(path)) {
+      summary.actions.push(`skip gate ${path} (concurrent-change)`);
+    } else if (pathErrors.has(path)) {
+      summary.actions.push(`skip gate ${path} (path-conflict)`);
+    }
+  };
+
   for (const state of prepared.states) {
     switch (state.status) {
       case 'missing': {
-        // A dry run or a plan-only (blocked) report passes no apply result.
-        const claimed = !blocked && (
-          options.applied === undefined
-          || created.has(state.path)
+        // A practice-owned missing file is created by the source writer; when
+        // that write is skipped the file appeared between planning and writing.
+        const appearedConcurrently = options.mode !== 'blocked'
+          && practiceSkipped.has(state.path)
+          && !practiceCreated.has(state.path);
+        if (appearedConcurrently) {
+          concurrent.add(state.path);
+          summary.diagnostics.push(gateConcurrentChangeWarning(state.path));
+        }
+        const claimed = !blocked && !appearedConcurrently && (
+          created.has(state.path)
           || practiceCreated.has(state.path)
+          || (allowedPlanned && options.applied === undefined)
         );
         if (claimed) {
           summary.created.push(state.path);
           summary.actions.push(`create gate ${state.path}`);
         } else {
           summary.skipped.push(state.path);
+          actionForSkipped(state.path);
         }
         break;
       }
@@ -575,15 +613,13 @@ export function summarizeGates(
           summary.actions.push(`skip gate ${state.path} (updates-suppressed)`);
         } else if (
           !blocked
-          && (options.applied === undefined || updated.has(state.path))
+          && (updated.has(state.path) || (allowedPlanned && options.applied === undefined))
         ) {
           summary.updated.push(state.path);
           summary.actions.push(`update gate ${state.path}`);
         } else {
           summary.skipped.push(state.path);
-          if (concurrent.has(state.path)) {
-            summary.actions.push(`skip gate ${state.path} (concurrent-change)`);
-          }
+          actionForSkipped(state.path);
         }
         break;
       }
@@ -609,6 +645,11 @@ export function summarizeGates(
       }
     }
   }
+  summary.diagnostics = dedupeDiagnostics([
+    ...prepared.diagnostics,
+    ...applyDiagnostics,
+    ...summary.diagnostics,
+  ]);
   return summary;
 }
 
@@ -1230,11 +1271,15 @@ export async function applyNormalizeAdoption(
       dryRun: options.dryRun,
     });
     gates = summarizeGates(prep.gates, {
+      mode: options.dryRun ? 'dry-run' : 'apply',
       practiceCreated: new Set(created),
+      practiceSkipped: new Set(skipped),
       applied: appliedGates,
     });
     actions.push(...gates.actions);
-    diagnostics.push(...appliedGates.diagnostics);
+    // The summary carries plan, apply-time and practice-phase concurrent
+    // diagnostics in one deduped list.
+    diagnostics.push(...gates.diagnostics);
   }
 
   // A dry run never replaces .claude entries; the import plan itself is

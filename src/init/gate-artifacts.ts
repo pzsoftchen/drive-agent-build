@@ -141,7 +141,12 @@ function newerWarning(
   };
 }
 
-function concurrentChangeWarning(file: string): Diagnostic {
+/**
+ * Shared warning for an artifact that changed between planning and applying.
+ * Callers outside the gate writer (normalize's practice source phase) use the
+ * same diagnostic when a missing gate file appears concurrently.
+ */
+export function gateConcurrentChangeWarning(file: string): Diagnostic {
   return {
     code: GATE_ARTIFACT_DIAGNOSTIC_CODES.concurrentChange,
     severity: 'warning',
@@ -602,7 +607,7 @@ export async function applyGateArtifacts(
 
   const concurrent = (file: string): void => {
     result.skipped.push(file);
-    diagnostics.push(concurrentChangeWarning(file));
+    diagnostics.push(gateConcurrentChangeWarning(file));
   };
 
   for (const action of plan.actions) {

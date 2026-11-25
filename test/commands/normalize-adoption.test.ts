@@ -789,6 +789,9 @@ describe('normalize source tree safety', () => {
     expect(result.practices?.diagnostics.map((item) => item.code))
       .toContain('path.symlink-escape');
     expect(result.practices?.created).toEqual([]);
+    // A blocked adoption writes nothing, so it must not claim gate creation.
+    expect(result.practices?.gates?.created).toEqual([]);
+    expect(result.practices?.gates?.updated).toEqual([]);
     expect(result.adoption?.sourceActions).toEqual([]);
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
@@ -2577,6 +2580,66 @@ describe('normalize managed gates', () => {
         file: GATE_RUNNER,
       }),
     ]));
+  });
+
+  it('warns when a practice-owned gate file appears after planning', async () => {
+    const root = await tempDir('dab-gate-practice-concurrent-');
+    await writeProjectFile(root, GATE_CONFIG, VALID_GATE_CONFIG);
+    const preparation = await prepareNormalizeAdoption({
+      cwd: root,
+      home: dirname(root),
+    });
+    const appeared = renderGateRunner('0.0.9');
+    await writeProjectFile(root, GATE_RUNNER, appeared);
+
+    const applied = await applyNormalizeAdoption(
+      { ...preparation, claudePlan: undefined },
+      { dryRun: false, backupRoot: join(root, '.dab/backups/test') },
+    );
+
+    expect(await readFile(join(root, GATE_RUNNER), 'utf8')).toBe(appeared);
+    expect(applied.gates?.created).not.toContain(GATE_RUNNER);
+    expect(applied.gates?.skipped).toContain(GATE_RUNNER);
+    expect(applied.actions).toContain(`skip gate ${GATE_RUNNER} (concurrent-change)`);
+    expect(applied.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.artifact-concurrent-change',
+        severity: 'warning',
+        file: GATE_RUNNER,
+      }),
+    ]));
+    // The concurrently created file never blocks creating the other artifacts.
+    expect(applied.gates?.created).toContain(GATE_SNAPSHOT);
+  });
+
+  it('reports a path-conflict skip when a planned update becomes unsafe', async () => {
+    const root = await tempDir('dab-gate-path-conflict-');
+    const outside = await tempDir('dab-gate-path-outside-');
+    await writeProjectFile(root, GATE_CONFIG, VALID_GATE_CONFIG);
+    await writeProjectFile(root, GATE_RUNNER, renderGateRunner('0.0.1'));
+    const preparation = await prepareNormalizeAdoption({
+      cwd: root,
+      home: dirname(root),
+    });
+    await rm(join(root, 'scripts'), { recursive: true });
+    await symlink(outside, join(root, 'scripts'), 'dir');
+
+    const applied = await applyNormalizeAdoption(
+      { ...preparation, sourcePlan: undefined, claudePlan: undefined },
+      { dryRun: false, backupRoot: join(root, '.dab/backups/test') },
+    );
+
+    expect(applied.gates?.updated).toEqual([]);
+    expect(applied.gates?.skipped).toContain(GATE_RUNNER);
+    expect(applied.actions).toContain(`skip gate ${GATE_RUNNER} (path-conflict)`);
+    expect(applied.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'verification.artifact-path',
+        severity: 'error',
+        file: GATE_RUNNER,
+      }),
+    ]));
+    expect(await readdir(outside)).toEqual([]);
   });
 
   it('returns no gate plan for global scope', async () => {

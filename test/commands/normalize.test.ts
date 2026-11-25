@@ -1232,6 +1232,58 @@ describe('normalize managed gates', () => {
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
   });
 
+  it('reports no gate writes when a practice conflict blocks the run', async () => {
+    const project = await makeInitializedProject();
+    projects.push(project);
+    await rm(join(project.root, GATE_CONFIG));
+    await rm(join(project.root, GATE_SNAPSHOT));
+    const staleRunner = renderGateRunner('0.0.1');
+    await writeFile(join(project.root, GATE_RUNNER), staleRunner);
+    // A regular file at `docs` blocks the practice planner before any write.
+    await writeProjectFile(project.root, 'docs', 'not a directory');
+
+    const result = await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.practices?.diagnostics.map((item) => item.code))
+      .toContain('path.conflict');
+    expect(result.practices?.gates?.created).toEqual([]);
+    expect(result.practices?.gates?.updated).toEqual([]);
+    expect(result.practices?.gates?.skipped).toEqual(
+      expect.arrayContaining([GATE_CONFIG, GATE_RUNNER, GATE_SNAPSHOT]),
+    );
+    expect(await readFile(join(project.root, GATE_RUNNER), 'utf8')).toBe(staleRunner);
+    expect(await lstatOrNull(join(project.root, GATE_CONFIG))).toBeNull();
+    expect(await lstatOrNull(join(project.root, GATE_SNAPSHOT))).toBeNull();
+  });
+
+  it('reports no gate writes when no target is enabled', async () => {
+    const project = await makeInitializedProject();
+    projects.push(project);
+    const manifestPath = join(project.root, 'dab.yaml');
+    const manifest = await readFile(manifestPath, 'utf8');
+    await writeFile(manifestPath, manifest.replace('enabled: true', 'enabled: false'));
+    await rm(join(project.root, GATE_CONFIG));
+    await rm(join(project.root, GATE_SNAPSHOT));
+    const staleRunner = renderGateRunner('0.0.1');
+    await writeFile(join(project.root, GATE_RUNNER), staleRunner);
+
+    const result = await normalizeProject({ cwd: project.root, runner: goodRunner });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.map((item) => item.code)).toContain('target.none');
+    expect(result.practices?.gates?.created).toEqual([]);
+    expect(result.practices?.gates?.updated).toEqual([]);
+    expect(result.practices?.gates?.skipped).toEqual(
+      expect.arrayContaining([GATE_CONFIG, GATE_RUNNER, GATE_SNAPSHOT]),
+    );
+    expect(await readFile(join(project.root, GATE_RUNNER), 'utf8')).toBe(staleRunner);
+    expect(await lstatOrNull(join(project.root, GATE_CONFIG))).toBeNull();
+    expect(await lstatOrNull(join(project.root, GATE_SNAPSHOT))).toBeNull();
+  });
+
   it('exposes additive gate fields in machine-readable JSON', async () => {
     const project = await projectFixture();
     await normalizeProject({ cwd: project.root, runner: goodRunner });
