@@ -212,23 +212,16 @@ describe('cross-agent contract', () => {
       options: {},
     };
 
-    const plan = await claudeCodeAdapter.normalize({
+    await expect(claudeCodeAdapter.normalize({
       paths,
       manifest: manifestFor(target),
       target,
       facts,
       fix: false,
       dryRun: true,
+    })).rejects.toMatchObject({
+      code: 'policy.missing',
+      exitCode: 2,
     });
-
-    expect(plan.diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        code: 'policy.missing',
-        severity: 'error',
-        file: '.agents/adapters/claude-code.yaml',
-      }),
-    ]));
-    expect(plan.actions).toEqual([]);
-    expect(plan.generated.settings).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { join, relative } from 'node:path';
-import { ConfigError, ValidationError } from '../core/errors.ts';
+import { ConfigError, DabError, ValidationError } from '../core/errors.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
 import { assertRealPathInsideRoot, toPosix } from '../core/paths.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
@@ -41,9 +41,28 @@ async function loadPolicyValue(
   relativePath: string,
 ): Promise<unknown> {
   await requireFile(absolutePath, relativePath);
-  await assertRealPathInsideRoot(root, relativePath);
-  const document = await loadYamlDocument(absolutePath);
-  return document.toJS();
+  try {
+    await assertRealPathInsideRoot(root, relativePath);
+    const document = await loadYamlDocument(absolutePath);
+    return document.toJS();
+  } catch (error) {
+    if (error instanceof DabError) {
+      throw error;
+    }
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      throw new ConfigError(
+        `policy file not found: ${relativePath}`,
+        'policy.missing',
+        { hint: 'Run "dab init" or restore the authored policy file.' },
+      );
+    }
+    throw new ValidationError(
+      `policy file cannot be read: ${relativePath}`,
+      'policy.invalid',
+      { details: { cause: error instanceof Error ? error.message : String(error) } },
+    );
+  }
 }
 
 export async function loadCommonPolicy(paths: ProjectPaths): Promise<LoadedCommonPolicy> {

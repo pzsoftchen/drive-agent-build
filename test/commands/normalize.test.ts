@@ -138,6 +138,17 @@ afterEach(async () => {
 });
 
 describe('normalizeProject', () => {
+  it('keeps a missing Claude overlay a configuration error', async () => {
+    const project = await projectFixture();
+    await rm(join(project.root, '.agents/adapters/claude-code.yaml'));
+
+    await expect(normalizeProject({ cwd: project.root, runner: goodRunner })).rejects
+      .toMatchObject({
+        code: 'policy.missing',
+        exitCode: 2,
+      });
+  });
+
   it('creates settings, the shim, projections, manifest and ignore block', async () => {
     const project = await projectFixture();
     const result = await normalizeProject({ cwd: project.root });

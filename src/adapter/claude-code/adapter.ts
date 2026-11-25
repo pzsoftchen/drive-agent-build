@@ -1,6 +1,5 @@
 import type { Diagnostic } from '../../core/diagnostics.ts';
 import { withFixWarning } from '../../core/diagnostics.ts';
-import { DabError } from '../../core/errors.ts';
 import { sha256 } from '../../core/hash.ts';
 import {
   checkInstructions,
@@ -10,9 +9,7 @@ import {
 import { getGeneratedTarget } from '../../model/project-manifest.ts';
 import { loadClaudeCodePolicy } from '../../model/policy.ts';
 import type {
-  ClaudeCodePolicy,
   GeneratedTarget,
-  ProjectPaths,
   Projection,
   TargetProvider,
 } from '../../model/types.ts';
@@ -73,30 +70,6 @@ function hasBackendVersionError(diagnostics: readonly Diagnostic[]): boolean {
   );
 }
 
-function policyDiagnostic(error: DabError): Diagnostic {
-  return {
-    code: error.code,
-    severity: 'error',
-    message: error.message,
-    file: '.agents/adapters/claude-code.yaml',
-    ...(error.hint === undefined ? {} : { hint: error.hint }),
-  };
-}
-
-async function loadTargetPolicy(
-  paths: ProjectPaths,
-): Promise<{ policy: ClaudeCodePolicy } | { diagnostic: Diagnostic }> {
-  try {
-    const loaded = await loadClaudeCodePolicy(paths);
-    return { policy: loaded.policy };
-  } catch (error) {
-    if (error instanceof DabError) {
-      return { diagnostic: policyDiagnostic(error) };
-    }
-    throw error;
-  }
-}
-
 function emptyPlan(diagnostics: Diagnostic[]): TargetNormalizePlan {
   return {
     provider: 'claude-code',
@@ -135,10 +108,7 @@ function projectedStatus(
 async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePlan> {
   const options = parseClaudeTargetOptions(input.target);
   const generatedRecord = getGeneratedTarget(input.manifest, 'claude-code');
-  const targetPolicy = await loadTargetPolicy(input.paths);
-  if ('diagnostic' in targetPolicy) {
-    return emptyPlan([targetPolicy.diagnostic]);
-  }
+  const targetPolicy = await loadClaudeCodePolicy(input.paths);
   const backend = await checkClaudeCode(options.minVersion, input.runner);
   const diagnostics: Diagnostic[] = [...backend.diagnostics];
 
@@ -305,15 +275,7 @@ async function detect(input: TargetContext): Promise<TargetDetectOutcome> {
   const generated = getGeneratedTarget(input.manifest, 'claude-code');
   const diagnostics: Diagnostic[] = [];
 
-  const targetPolicy = await loadTargetPolicy(input.paths);
-  if ('diagnostic' in targetPolicy) {
-    return {
-      provider: 'claude-code',
-      diagnostics: [targetPolicy.diagnostic],
-      statuses: [],
-    };
-  }
-
+  const targetPolicy = await loadClaudeCodePolicy(input.paths);
   const backend = await checkClaudeCode(options.minVersion, input.runner);
   diagnostics.push(...backend.diagnostics);
 

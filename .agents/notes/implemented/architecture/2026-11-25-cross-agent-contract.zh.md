@@ -11,7 +11,7 @@ Status: implemented
 ## Decision
 
 - 把 source 模型拆成 `CommonFacts`：agents、skills、rules、hooks、公共策略及其路径。`loadCommonPolicy` 只读取 `.agents/policies/project.yaml`。
-- 每个 target adapter 加载自己的 overlay。Claude adapter 调用 `loadClaudeCodePolicy`，并把公共策略和 Claude 策略一起编译。缺失或无效的 Claude overlay 是 target 诊断，不是公共事实失败。
+- 每个 target adapter 加载自己的 overlay。Claude adapter 调用 `loadClaudeCodePolicy`，并把公共策略和 Claude 策略一起编译。缺失或无效的 Claude overlay 是 target 专属配置错误，不是公共事实失败。
 - 增加 test-only neutral consumer，读取 `CommonFacts` 并只投影显式公共字段：instructions 文本、agent 的 name/description/body、skill 的 name/description/body、rule 的 name/paths/body、neutral hooks 和公共策略。它从不包含 provider 字段、target options、adapter policy 或 `.claude` 产物。
 - 合同测试覆盖：没有 provider overlay 时仍能发现公共事实；provider 字段不改变 neutral view；adapter policy 只属于 target；Claude overlay 缺失时公共事实仍可用。
 - L1 的证据门禁使用这个合同；跨 Agent 合同测试已通过。
@@ -29,13 +29,13 @@ Status: implemented
 ## Consequences
 
 - 公共事实发现不再需要 `.agents/adapters/claude-code.yaml`。
-- 缺失或无效的 Claude overlay 由 Claude adapter 报告，并仍通过 target plan 阻断写入。
+- 缺失或无效的 Claude overlay 由 Claude adapter 作为受治理的配置错误报告，并仍阻断写入。
 - Provider 专属的 agent 和 skill frontmatter 字段暂时仍留在公共 source 中。neutral 合同把它们当作 provider 专属并排除；把它们移入 adapter overlay 是后续工作。
 - 合同证明的是配置面，不是其他 Agent 的运行时行为。完整 Codex 和 DSH adapter 仍在 v0.4。
 
 ## Verification
 
-- `pnpm test`：63 个测试文件、800 个测试通过。
+- `pnpm test`：63 个测试文件、803 个测试通过。
 - `pnpm typecheck`：无错误。
 - `pnpm doc-sync`：无问题。
 - `node dist/cli.js detect --strict`：`19/19 (100%)`，退出码 `0`。
