@@ -1,6 +1,10 @@
 import { readlink, realpath } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
-import type { Diagnostic } from '../core/diagnostics.ts';
+import {
+  dedupeDiagnostics,
+  hasErrors,
+  type Diagnostic,
+} from '../core/diagnostics.ts';
 import { ConfigError, DabError } from '../core/errors.ts';
 import { ensureDir, lstatOrNull, writeFileIfAbsent } from '../core/fs-atomic.ts';
 import {
@@ -18,6 +22,13 @@ import {
   type ClaudeAdoptionPlan,
 } from '../adapter/claude-code/adoption.ts';
 import { resolveDocsLanguage } from './docs-language.ts';
+import {
+  applyGateArtifacts,
+  GATE_ARTIFACT_DIAGNOSTIC_CODES,
+  planGateArtifacts,
+  type GateArtifactApplyResult,
+  type GateArtifactPlan,
+} from './gate-artifacts.ts';
 import {
   applyManagedSkillWrites,
   MANAGED_SKILL_DIAGNOSTIC_CODES,
@@ -171,6 +182,11 @@ export interface NormalizeAdoptionPreparation {
    * the practice preflight and before target planning.
    */
   managedSkills?: ManagedSkillPlan;
+  /**
+   * Managed gate artifacts. Computed for project scope after the practice plan
+   * so missing files the pack owns are never planned by a second writer.
+   */
+  gates?: NormalizeGatePreparation;
   /**
    * Governed conflicts at non-practice `.agents` source parents. They block
    * every write, so import planning is skipped and discovery never runs.
@@ -423,6 +439,179 @@ export function summarizeManagedSkills(
   return summary;
 }
 
+export const GATE_UPDATES_SUPPRESSED_REASON = 'gate updates are suppressed by init';
+
+/**
+ * Gate preparation for one normalize run. `states` and `diagnostics` are the
+ * unfiltered Task 3 inspection used for reporting; `plan` is the write plan
+ * after the one-writer filter and the init suppression switch.
+ */
+export interface NormalizeGatePreparation {
+  states: GateArtifactPlan['states'];
+  diagnostics: Diagnostic[];
+  /** Write plan after the one-writer filter and the init suppression switch. */
+  plan: GateArtifactPlan;
+}
+
+/**
+ * Managed gate operations as reported to normalize. `actions` is the stable
+ * human/JSON action text; the remaining lists describe the applied (or dry-run
+ * planned) result, and `diagnostics` carries every Task 3 diagnostic.
+ */
+export interface NormalizeGateSummary {
+  actions: string[];
+  created: string[];
+  updated: string[];
+  skipped: string[];
+  modified: string[];
+  diagnostics: Diagnostic[];
+}
+
+/**
+ * Exactly one writer per path. The verification practice pack owns every
+ * missing gate file it planned, so the gate writer drops those creates. With
+ * `suppressUpdates` (init's nested normalize) an existing stale artifact is
+ * preserved as a skip while missing artifacts are still created.
+ */
+export function planGateWrites(
+  plan: GateArtifactPlan,
+  practiceFiles: ReadonlySet<string>,
+  options: { suppressUpdates?: boolean } = {},
+): GateArtifactPlan {
+  const actions: GateArtifactPlan['actions'] = [];
+  const files: Record<string, string> = {};
+  for (const action of plan.actions) {
+    if (action.kind === 'create' && practiceFiles.has(action.path)) {
+      continue;
+    }
+    if (action.kind === 'update' && options.suppressUpdates === true) {
+      actions.push({
+        path: action.path,
+        kind: 'skip',
+        reason: GATE_UPDATES_SUPPRESSED_REASON,
+      });
+      continue;
+    }
+    actions.push({ ...action });
+    const content = plan.files[action.path];
+    if (content !== undefined) {
+      files[action.path] = content;
+    }
+  }
+  return {
+    files,
+    actions,
+    diagnostics: [...plan.diagnostics],
+    states: plan.states.map((state) => ({ ...state })),
+  };
+}
+
+/**
+ * Derive the normalize gate report from the Task 3 states and the apply (or
+ * dry-run) outcome. A `missing` state the practice pack wrote is still created
+ * by this run; a stale update that was suppressed, blocked or lost a concurrent
+ * race is reported as skipped instead of claiming a write that did not happen.
+ */
+export function summarizeGates(
+  prepared: NormalizeGatePreparation | undefined,
+  options: {
+    practiceCreated?: ReadonlySet<string>;
+    applied?: GateArtifactApplyResult;
+  } = {},
+): NormalizeGateSummary {
+  const summary: NormalizeGateSummary = {
+    actions: [],
+    created: [],
+    updated: [],
+    skipped: [],
+    modified: [],
+    diagnostics: [],
+  };
+  if (prepared === undefined) {
+    return summary;
+  }
+  summary.diagnostics = dedupeDiagnostics([
+    ...prepared.diagnostics,
+    ...(options.applied?.diagnostics ?? []),
+  ]);
+  const blocked = hasErrors(prepared.diagnostics);
+  const practiceCreated = options.practiceCreated ?? new Set<string>();
+  const created = new Set(options.applied?.created ?? []);
+  const updated = new Set(options.applied?.updated ?? []);
+  const concurrent = new Set(
+    (options.applied?.diagnostics ?? [])
+      .filter((item) => item.code === GATE_ARTIFACT_DIAGNOSTIC_CODES.concurrentChange)
+      .flatMap((item) => (item.file === undefined ? [] : [item.file])),
+  );
+  const suppressed = new Set(
+    prepared.plan.actions
+      .filter(
+        (action) => action.kind === 'skip'
+          && action.reason === GATE_UPDATES_SUPPRESSED_REASON,
+      )
+      .map((action) => action.path),
+  );
+
+  for (const state of prepared.states) {
+    switch (state.status) {
+      case 'missing': {
+        // A dry run or a plan-only (blocked) report passes no apply result.
+        const claimed = !blocked && (
+          options.applied === undefined
+          || created.has(state.path)
+          || practiceCreated.has(state.path)
+        );
+        if (claimed) {
+          summary.created.push(state.path);
+          summary.actions.push(`create gate ${state.path}`);
+        } else {
+          summary.skipped.push(state.path);
+        }
+        break;
+      }
+      case 'stale': {
+        if (suppressed.has(state.path)) {
+          summary.skipped.push(state.path);
+          summary.actions.push(`skip gate ${state.path} (updates-suppressed)`);
+        } else if (
+          !blocked
+          && (options.applied === undefined || updated.has(state.path))
+        ) {
+          summary.updated.push(state.path);
+          summary.actions.push(`update gate ${state.path}`);
+        } else {
+          summary.skipped.push(state.path);
+          if (concurrent.has(state.path)) {
+            summary.actions.push(`skip gate ${state.path} (concurrent-change)`);
+          }
+        }
+        break;
+      }
+      case 'current': {
+        summary.skipped.push(state.path);
+        break;
+      }
+      case 'modified': {
+        summary.skipped.push(state.path);
+        summary.modified.push(state.path);
+        summary.actions.push(`skip gate ${state.path} (modified)`);
+        break;
+      }
+      case 'unversioned': {
+        summary.skipped.push(state.path);
+        summary.actions.push(`skip gate ${state.path} (unversioned)`);
+        break;
+      }
+      case 'newer': {
+        summary.skipped.push(state.path);
+        summary.actions.push(`skip gate ${state.path} (newer)`);
+        break;
+      }
+    }
+  }
+  return summary;
+}
+
 export interface PrepareAdoptionInput {
   cwd: string;
   home: string;
@@ -617,6 +806,31 @@ async function planManagedSkillsFor(
   return planManagedSkills({ root, version: DAB_VERSION, names });
 }
 
+/**
+ * Plan managed gate artifacts for project scope only. The verification pack
+ * already owns every missing gate file, so its planned paths are filtered out
+ * of the gate write plan; only existing-artifact updates reach the writer.
+ */
+async function planGatesFor(
+  root: string,
+  scope: Scope,
+  scan: ScanResult,
+  practiceFiles: ReadonlySet<string>,
+  options: { suppressUpdates?: boolean },
+): Promise<NormalizeGatePreparation | undefined> {
+  if (scope !== 'project') {
+    return undefined;
+  }
+  const plan = await planGateArtifacts({ root, scan, version: DAB_VERSION });
+  return {
+    states: plan.states,
+    diagnostics: plan.diagnostics,
+    plan: planGateWrites(plan, practiceFiles, {
+      ...(options.suppressUpdates === true ? { suppressUpdates: true } : {}),
+    }),
+  };
+}
+
 export async function prepareNormalizeAdoption(
   input: PrepareAdoptionInput,
 ): Promise<NormalizeAdoptionPreparation> {
@@ -685,6 +899,13 @@ export async function prepareNormalizeAdoption(
         suppress: input.suppressManagedSkills,
         imported,
       });
+      const gates = await planGatesFor(
+        adoption.root,
+        adoption.scope,
+        scan,
+        new Set(Object.keys(practicePlan.files)),
+        { suppressUpdates: input.suppressGateUpdates === true },
+      );
       return {
         sourceRoot,
         phase: adoption.phase,
@@ -693,11 +914,13 @@ export async function prepareNormalizeAdoption(
         practicePlan,
         claudePlan,
         ...(managedSkills === undefined ? {} : { managedSkills }),
+        ...(gates === undefined ? {} : { gates }),
         ...sourceExtras,
         diagnostics: [
           ...scan.diagnostics,
           ...practicePlan.diagnostics,
           ...(managedSkills?.diagnostics ?? []),
+          ...(gates?.diagnostics ?? []),
           ...sourceProblems,
         ],
       };
@@ -735,6 +958,13 @@ export async function prepareNormalizeAdoption(
       suppress: input.suppressManagedSkills,
       imported,
     });
+    const gates = await planGatesFor(
+      adoption.root,
+      adoption.scope,
+      scan,
+      new Set(Object.keys(practicePlan.files)),
+      { suppressUpdates: input.suppressGateUpdates === true },
+    );
     // The authored manifest is authoritative: it is never part of the write
     // plan and `practicePlan.manifest` stays equal to what normalize loads.
     const { [manifestKey]: _authored, ...files } = practicePlan.files;
@@ -751,11 +981,13 @@ export async function prepareNormalizeAdoption(
       practicePlan,
       claudePlan,
       ...(managedSkills === undefined ? {} : { managedSkills }),
+      ...(gates === undefined ? {} : { gates }),
       ...sourceExtras,
       diagnostics: [
         ...scan.diagnostics,
         ...practicePlan.diagnostics,
         ...(managedSkills?.diagnostics ?? []),
+        ...(gates?.diagnostics ?? []),
         ...sourceProblems,
       ],
     };
@@ -793,6 +1025,13 @@ export async function prepareNormalizeAdoption(
     suppress: input.suppressManagedSkills,
     imported,
   });
+  const gates = await planGatesFor(
+    adoption.root,
+    adoption.scope,
+    scan,
+    new Set(Object.keys(practicePlan.files)),
+    { suppressUpdates: input.suppressGateUpdates === true },
+  );
   return {
     sourceRoot,
     phase: adoption.phase,
@@ -806,11 +1045,13 @@ export async function prepareNormalizeAdoption(
     practicePlan,
     claudePlan,
     ...(managedSkills === undefined ? {} : { managedSkills }),
+    ...(gates === undefined ? {} : { gates }),
     ...sourceExtras,
     diagnostics: [
       ...scan.diagnostics,
       ...practicePlan.diagnostics,
       ...(managedSkills?.diagnostics ?? []),
+      ...(gates?.diagnostics ?? []),
       ...sourceProblems,
     ],
   };
@@ -923,6 +1164,8 @@ export async function applyNormalizeAdoption(
   skipped: string[];
   /** Absent when managed skills were not planned (global or init nested run). */
   managed?: ManagedSkillSummary;
+  /** Absent for global scope, where no project gate artifacts exist. */
+  gates?: NormalizeGateSummary;
 }> {
   const root = prep.sourceRoot.root;
   const actions: string[] = [];
@@ -930,6 +1173,7 @@ export async function applyNormalizeAdoption(
   const diagnostics: Diagnostic[] = [];
   const created: string[] = [];
   const skipped: string[] = [];
+  const gatePaths = new Set(prep.gates?.states.map((state) => state.path) ?? []);
 
   if (prep.sourcePlan !== undefined) {
     const agents = toPosix(relative(root, prep.paths.agents));
@@ -952,9 +1196,11 @@ export async function applyNormalizeAdoption(
       created.push(...written.created);
       skipped.push(...written.skipped);
     }
+    // Gate files written by the practice/source plan are reported by the gate
+    // actions below, so their plain create/skip lines are not duplicated.
     actions.push(
-      ...created.map((file) => `create ${file}`),
-      ...skipped.map((file) => `skip ${file}`),
+      ...created.filter((file) => !gatePaths.has(file)).map((file) => `create ${file}`),
+      ...skipped.filter((file) => !gatePaths.has(file)).map((file) => `skip ${file}`),
     );
   }
 
@@ -973,6 +1219,22 @@ export async function applyNormalizeAdoption(
     managed = summarizeManagedSkills(prep.managedSkills, appliedManaged);
     actions.push(...managed.actions);
     diagnostics.push(...appliedManaged.diagnostics);
+  }
+
+  // Gate updates share the same source phase. Missing artifacts were already
+  // created by the practice plan, so this writer only revalidates and applies
+  // existing-artifact updates.
+  let gates: NormalizeGateSummary | undefined;
+  if (prep.gates !== undefined) {
+    const appliedGates = await applyGateArtifacts(root, prep.gates.plan, {
+      dryRun: options.dryRun,
+    });
+    gates = summarizeGates(prep.gates, {
+      practiceCreated: new Set(created),
+      applied: appliedGates,
+    });
+    actions.push(...gates.actions);
+    diagnostics.push(...appliedGates.diagnostics);
   }
 
   // A dry run never replaces .claude entries; the import plan itself is
@@ -995,5 +1257,6 @@ export async function applyNormalizeAdoption(
     created,
     skipped,
     ...(managed === undefined ? {} : { managed }),
+    ...(gates === undefined ? {} : { gates }),
   };
 }
