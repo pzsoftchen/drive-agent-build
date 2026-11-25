@@ -6,11 +6,14 @@ import { loadYamlDocument } from '../core/yaml.ts';
 import { ClaudeCodePolicySchema, PolicySpecSchema } from './schemas.ts';
 import type { ClaudeCodePolicy, PolicySpec, ProjectPaths } from './types.ts';
 
-export interface LoadedPolicySources {
-  project: PolicySpec;
-  adapter: ClaudeCodePolicy;
-  projectPath: string;
-  adapterPath: string;
+export interface LoadedCommonPolicy {
+  policy: PolicySpec;
+  path: string;
+}
+
+export interface LoadedClaudeCodePolicy {
+  policy: ClaudeCodePolicy;
+  path: string;
 }
 
 function zodMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
@@ -32,41 +35,43 @@ async function requireFile(path: string, relativePath: string): Promise<void> {
   }
 }
 
-export async function loadPolicySources(paths: ProjectPaths): Promise<LoadedPolicySources> {
-  const projectAbsolute = join(paths.agents, 'policies', 'project.yaml');
-  const adapterAbsolute = join(paths.agents, 'adapters', 'claude-code.yaml');
-  const projectPath = toPosix(relative(paths.root, projectAbsolute));
-  const adapterPath = toPosix(relative(paths.root, adapterAbsolute));
+async function loadPolicyValue(
+  root: string,
+  absolutePath: string,
+  relativePath: string,
+): Promise<unknown> {
+  await requireFile(absolutePath, relativePath);
+  await assertRealPathInsideRoot(root, relativePath);
+  const document = await loadYamlDocument(absolutePath);
+  return document.toJS();
+}
 
-  await requireFile(projectAbsolute, projectPath);
-  await requireFile(adapterAbsolute, adapterPath);
-  await assertRealPathInsideRoot(paths.root, projectPath);
-  await assertRealPathInsideRoot(paths.root, adapterPath);
-
-  const projectDocument = await loadYamlDocument(projectAbsolute);
-  const project = PolicySpecSchema.safeParse(projectDocument.toJS());
-  if (!project.success) {
+export async function loadCommonPolicy(paths: ProjectPaths): Promise<LoadedCommonPolicy> {
+  const absolute = join(paths.agents, 'policies', 'project.yaml');
+  const relativePath = toPosix(relative(paths.root, absolute));
+  const value = await loadPolicyValue(paths.root, absolute, relativePath);
+  const parsed = PolicySpecSchema.safeParse(value);
+  if (!parsed.success) {
     throw new ValidationError(
-      `invalid ${projectPath}: ${zodMessage(project.error)}`,
+      `invalid ${relativePath}: ${zodMessage(parsed.error)}`,
       'policy.invalid',
-      { details: project.error.issues },
+      { details: parsed.error.issues },
     );
   }
+  return { policy: parsed.data, path: relativePath };
+}
 
-  const adapterDocument = await loadYamlDocument(adapterAbsolute);
-  const adapter = ClaudeCodePolicySchema.safeParse(adapterDocument.toJS());
-  if (!adapter.success) {
+export async function loadClaudeCodePolicy(paths: ProjectPaths): Promise<LoadedClaudeCodePolicy> {
+  const absolute = join(paths.agents, 'adapters', 'claude-code.yaml');
+  const relativePath = toPosix(relative(paths.root, absolute));
+  const value = await loadPolicyValue(paths.root, absolute, relativePath);
+  const parsed = ClaudeCodePolicySchema.safeParse(value);
+  if (!parsed.success) {
     throw new ValidationError(
-      `invalid ${adapterPath}: ${zodMessage(adapter.error)}`,
+      `invalid ${relativePath}: ${zodMessage(parsed.error)}`,
       'policy.invalid',
-      { details: adapter.error.issues },
+      { details: parsed.error.issues },
     );
   }
-
-  return {
-    project: project.data,
-    adapter: adapter.data,
-    projectPath,
-    adapterPath,
-  };
+  return { policy: parsed.data, path: relativePath };
 }

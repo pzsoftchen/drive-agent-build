@@ -54,7 +54,7 @@ import {
 } from '../detect/practice.ts';
 import { preflightProject, type PreflightResult } from '../detect/preflight.ts';
 import { resolveAdoptionRoot, type AdoptionPhase } from '../init/adoption.ts';
-import { discoverSourceFacts } from '../model/facts.ts';
+import { discoverCommonFacts } from '../model/facts.ts';
 import {
   getEnabledTargets,
   getGeneratedTarget,
@@ -586,7 +586,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   diagnostics.push(...importPlan.diagnostics);
   const importedTargets = importPlan.entries.map((entry) => entry.source);
 
-  const facts = await discoverSourceFacts(root, paths);
+  const facts = await discoverCommonFacts(root, paths);
   diagnostics.push(
     ...facts.agents.diagnostics,
     ...facts.skills.diagnostics,

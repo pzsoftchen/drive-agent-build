@@ -23,7 +23,7 @@ import { compilePolicy, type EffectivePolicy } from '../adapter/claude-code/poli
 import { checkAgentHooks } from '../detect/checks.ts';
 import { discoverAgents } from '../model/agents.ts';
 import { discoverHooks } from '../model/hooks.ts';
-import { loadPolicySources } from '../model/policy.ts';
+import { loadClaudeCodePolicy, loadCommonPolicy } from '../model/policy.ts';
 import {
   getEnabledTargets,
   getTarget,
@@ -220,7 +220,8 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
       hint: 'Resolve the path conflict manually; DAB never writes through it.',
     });
   }
-  const policies = await loadPolicySources(paths);
+  const commonPolicy = await loadCommonPolicy(paths);
+  const claudePolicy = await loadClaudeCodePolicy(paths);
   const hooks = await discoverHooks(root, paths.agents);
   const diagnostics: Diagnostic[] = [...hooks.diagnostics];
 
@@ -240,8 +241,8 @@ export async function explainPolicy(options: PolicyExplainOptions): Promise<Poli
   }
 
   const compiled = compilePolicy(
-    policies.project,
-    policies.adapter,
+    commonPolicy.policy,
+    claudePolicy.policy,
     hooks.items,
     agent,
   );

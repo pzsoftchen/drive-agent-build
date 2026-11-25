@@ -9,7 +9,8 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - `src/commands/`: `init`, `detect`, `normalize`, `policy explain`.
 - `src/model/`: authored source schemas and discovery.
 - `src/model/scope.ts`: scope and source-root resolution.
-- `src/model/facts.ts`: common source-fact discovery.
+- `src/model/facts.ts`: common fact discovery without provider overlays.
+- `src/model/policy.ts`: common policy and Claude adapter policy loaders.
 - `src/core/skill-marker.ts`: managed skill marker parsing, insertion and body hashing.
 - `src/adapter/types.ts`: target adapter contract.
 - `src/adapter/claude-code/adapter.ts`: Claude target adapter.
@@ -62,3 +63,4 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - [Agent Note 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.md)
 - [Agent Note 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.md)
 - [Agent Note 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md)
+- [Agent Note 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.md)

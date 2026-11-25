@@ -67,7 +67,7 @@ DAB 存在，是因为 Agent 能力和项目配置本身不会自动产生可靠
 
 | 层 | 问题 | 证据门禁 |
 |---|---|---|
-| L1 配置治理与目标隔离 | 编写事实能否投影到每个 target，而不漂移、不跨 Agent 泄漏？ | `detect --strict`、幂等 `normalize`、外部手改检测、目标中立的共享指令、跨 Agent 合同测试。 |
+| L1 配置治理与目标隔离 | 编写事实能否投影到每个 target，而不漂移、不跨 Agent 泄漏？ | `detect --strict`、幂等 `normalize`、外部手改检测、共享指令原样透传不注入 target 专属内容、跨 Agent 合同测试。 |
 | L2 工程纪律 | 项目规则是否显式、尽可能可强制，并能跨 target 移植？ | 每条规则都有强制级别；gate 规则有检查；target 专属规则放在 adapter overlay。 |
 | L3 单任务交付 | 单个开发任务能否用可复现证据完成并通过验收？ | 固定任务集、基线对比、稳定的 harness 事件、记录耗时/成本/干预/范围越界。 |
 | L4 目标级交付 | 多个任务能否集成为一个被接受的目标？ | L3 使用中反复出现目标级失败，然后最小目标循环原型。 |
@@ -154,6 +154,7 @@ Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。Hoo
 - [Agent 决策记录 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.zh.md)
 - [Agent 决策记录 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.zh.md)
 - [Agent 决策记录 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.zh.md)
+- [Agent 决策记录 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.zh.md)
 
 ## 许可证
 

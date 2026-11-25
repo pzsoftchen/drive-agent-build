@@ -2,7 +2,7 @@ import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { discoverProjections } from '../../src/adapter/claude-code/projection.ts';
-import { discoverSourceFacts } from '../../src/model/facts.ts';
+import { discoverCommonFacts } from '../../src/model/facts.ts';
 import { makeInitializedProject } from '../helpers/initialized.ts';
 import type { ProjectFixture } from '../helpers/project.ts';
 
@@ -26,19 +26,19 @@ afterEach(async () => {
   await Promise.all(projects.splice(0).map((item) => rm(item.root, { recursive: true, force: true })));
 });
 
-describe('discoverSourceFacts', () => {
-  it('discovers agents, skills, rules, hooks and policies once', async () => {
+describe('discoverCommonFacts', () => {
+  it('discovers agents, skills, rules, hooks and the common policy once', async () => {
     const project = await makeInitializedProject();
     projects.push(project);
 
-    const facts = await discoverSourceFacts(project.root, pathsOf(project));
+    const facts = await discoverCommonFacts(project.root, pathsOf(project));
 
     expect(facts.agents.items.map((item) => item.name)).toContain('reviewer');
     expect(facts.skills.items.map((item) => item.name)).toContain('doc-sync');
     expect(facts.rules.items.map((item) => item.name)).toContain('testing');
     expect(facts.hooks.items.map((item) => item.spec.id)).toContain('protect-generated');
-    expect(facts.policies.project.version).toBe(1);
-    expect(facts.policies.adapter.provider).toBe('claude-code');
+    expect(facts.policy.version).toBe(1);
+    expect(facts.policyPath).toBe('.agents/policies/project.yaml');
   });
 
   it('keeps sibling skills and reports one unreadable skill directory', async () => {
@@ -56,7 +56,7 @@ describe('discoverSourceFacts', () => {
     const broken = join(project.agents, 'skills', 'doc-sync');
     await chmod(broken, 0o000);
     try {
-      const facts = await discoverSourceFacts(project.root, pathsOf(project));
+      const facts = await discoverCommonFacts(project.root, pathsOf(project));
 
       expect(facts.skills.items.map((item) => item.name)).toContain('good');
       expect(facts.skills.items.map((item) => item.name)).not.toContain('doc-sync');
@@ -87,7 +87,7 @@ describe('discoverSourceFacts', () => {
     await rm(join(project.root, '.agents/skills'), { recursive: true, force: true });
     await writeFile(join(project.root, '.agents/skills'), 'not a directory\n');
 
-    const facts = await discoverSourceFacts(project.root, pathsOf(project));
+    const facts = await discoverCommonFacts(project.root, pathsOf(project));
 
     expect(facts.skills.items).toEqual([]);
     expect(facts.skills.diagnostics).toEqual([]);
