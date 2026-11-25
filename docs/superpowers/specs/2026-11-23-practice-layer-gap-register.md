@@ -19,7 +19,7 @@ v1 设计覆盖：`generic` profile、`feature` 别名、core baseline + documen
 
 | ID | 差距 | deepseek-harness 参照 | 为什么重要 | 建议迭代 | 验收要点 |
 |---|---|---|---|---|---|
-| G1 | 项目本地执行入口和 CI 门禁 | `check:all`、docs gates、CI run-gates | 没有强制，文档和 skills 会腐烂；`detect` 只是检查器，项目需要稳定入口 | A | 生成或文档化项目本地 check 脚本与最小 CI workflow，串起 `dab detect --strict`、docs 检查和项目 test/typecheck；不新增 `dab` 命令 |
+| G1 | 项目本地执行入口和 CI 门禁 | `check:all`、docs gates、CI run-gates | 没有强制，文档和 skills 会腐烂；`detect` 只是检查器，项目需要稳定入口 | A，[设计草案](2026-11-25-g1-gate-design.md) | 生成或文档化项目本地 check 脚本与最小 CI workflow，串起 `dab detect --strict`、docs 检查和项目 test/typecheck；不新增 `dab` 命令 |
 | G2 | Agent Notes 完整生命周期与归档 | proposed/implemented/rejected/archived、统一格式、归档 skill、supersession | v1 只有写作 skill，没有格式检查、归档和替代检查；决策记忆会退化 | B | notes 目录/README/格式 gate、归档与 supersession 检查、归档 skill、模板和测试 |
 | G3 | Delivery skills pack | code review、pre-push、PR description、simplification、doc writing | v1 只有 authoring skills；交付过程和审查仍靠个人习惯 | C | curated skills 安装、项目命令引用、detect 存在性/版本检查、使用结果可审查 |
 | G4 | Skill 更新与版本治理 | skill 随仓库演进，由维护者更新 | v1 只写缺失；skill 内容更新后，项目里的副本会过期 | 已完成 0.1.2 | 版本标记、未修改自动更新、modified/legacy 分叉保留、apply 前并发重校验；不创建备份。实现见 [设计](2026-11-24-managed-skills-design.md) 和 [计划](../plans/2026-11-24-managed-skills.md)。 |
