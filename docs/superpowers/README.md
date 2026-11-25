@@ -15,3 +15,4 @@
 - [Practice Layer](specs/2026-11-23-practice-layer-design.md)（已批准，0.1.2 已实现）
 - [Practice Layer 差距登记](specs/2026-11-23-practice-layer-gap-register.md)（记录，迭代 A 进行中）
 - [Managed Skills](specs/2026-11-24-managed-skills-design.md)（已批准，0.1.2 已实现）
+- [G1 Gate](specs/2026-11-25-g1-gate-design.md)（已批准，计划已编写）
