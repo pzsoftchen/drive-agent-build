@@ -47,7 +47,7 @@ import type { DocsLanguageResolution } from '../init/docs-language.ts';
 import { applyManagedSkillWrites } from '../init/managed-skills.ts';
 import type { AuthoredScaffoldPlan } from '../init/practice.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
-import { discoverSourceFacts } from '../model/facts.ts';
+import { discoverCommonFacts } from '../model/facts.ts';
 import {
   getEnabledTargets,
   getGeneratedTarget,
@@ -711,7 +711,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     }
   }
 
-  const facts = await discoverSourceFacts(root, paths);
+  const facts = await discoverCommonFacts(root, paths);
   diagnostics.push(
     ...facts.agents.diagnostics,
     ...facts.skills.diagnostics,

@@ -1,16 +1,19 @@
 import { join, relative } from 'node:path';
-import { ConfigError, ValidationError } from '../core/errors.ts';
+import { ConfigError, DabError, ValidationError } from '../core/errors.ts';
 import { lstatOrNull } from '../core/fs-atomic.ts';
 import { assertRealPathInsideRoot, toPosix } from '../core/paths.ts';
 import { loadYamlDocument } from '../core/yaml.ts';
 import { ClaudeCodePolicySchema, PolicySpecSchema } from './schemas.ts';
 import type { ClaudeCodePolicy, PolicySpec, ProjectPaths } from './types.ts';
 
-export interface LoadedPolicySources {
-  project: PolicySpec;
-  adapter: ClaudeCodePolicy;
-  projectPath: string;
-  adapterPath: string;
+export interface LoadedCommonPolicy {
+  policy: PolicySpec;
+  path: string;
+}
+
+export interface LoadedClaudeCodePolicy {
+  policy: ClaudeCodePolicy;
+  path: string;
 }
 
 function zodMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
@@ -32,41 +35,62 @@ async function requireFile(path: string, relativePath: string): Promise<void> {
   }
 }
 
-export async function loadPolicySources(paths: ProjectPaths): Promise<LoadedPolicySources> {
-  const projectAbsolute = join(paths.agents, 'policies', 'project.yaml');
-  const adapterAbsolute = join(paths.agents, 'adapters', 'claude-code.yaml');
-  const projectPath = toPosix(relative(paths.root, projectAbsolute));
-  const adapterPath = toPosix(relative(paths.root, adapterAbsolute));
-
-  await requireFile(projectAbsolute, projectPath);
-  await requireFile(adapterAbsolute, adapterPath);
-  await assertRealPathInsideRoot(paths.root, projectPath);
-  await assertRealPathInsideRoot(paths.root, adapterPath);
-
-  const projectDocument = await loadYamlDocument(projectAbsolute);
-  const project = PolicySpecSchema.safeParse(projectDocument.toJS());
-  if (!project.success) {
+async function loadPolicyValue(
+  root: string,
+  absolutePath: string,
+  relativePath: string,
+): Promise<unknown> {
+  await requireFile(absolutePath, relativePath);
+  try {
+    await assertRealPathInsideRoot(root, relativePath);
+    const document = await loadYamlDocument(absolutePath);
+    return document.toJS();
+  } catch (error) {
+    if (error instanceof DabError) {
+      throw error;
+    }
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      throw new ConfigError(
+        `policy file not found: ${relativePath}`,
+        'policy.missing',
+        { hint: 'Run "dab init" or restore the authored policy file.' },
+      );
+    }
     throw new ValidationError(
-      `invalid ${projectPath}: ${zodMessage(project.error)}`,
+      `policy file cannot be read: ${relativePath}`,
       'policy.invalid',
-      { details: project.error.issues },
+      { details: { cause: error instanceof Error ? error.message : String(error) } },
     );
   }
+}
 
-  const adapterDocument = await loadYamlDocument(adapterAbsolute);
-  const adapter = ClaudeCodePolicySchema.safeParse(adapterDocument.toJS());
-  if (!adapter.success) {
+export async function loadCommonPolicy(paths: ProjectPaths): Promise<LoadedCommonPolicy> {
+  const absolute = join(paths.agents, 'policies', 'project.yaml');
+  const relativePath = toPosix(relative(paths.root, absolute));
+  const value = await loadPolicyValue(paths.root, absolute, relativePath);
+  const parsed = PolicySpecSchema.safeParse(value);
+  if (!parsed.success) {
     throw new ValidationError(
-      `invalid ${adapterPath}: ${zodMessage(adapter.error)}`,
+      `invalid ${relativePath}: ${zodMessage(parsed.error)}`,
       'policy.invalid',
-      { details: adapter.error.issues },
+      { details: parsed.error.issues },
     );
   }
+  return { policy: parsed.data, path: relativePath };
+}
 
-  return {
-    project: project.data,
-    adapter: adapter.data,
-    projectPath,
-    adapterPath,
-  };
+export async function loadClaudeCodePolicy(paths: ProjectPaths): Promise<LoadedClaudeCodePolicy> {
+  const absolute = join(paths.agents, 'adapters', 'claude-code.yaml');
+  const relativePath = toPosix(relative(paths.root, absolute));
+  const value = await loadPolicyValue(paths.root, absolute, relativePath);
+  const parsed = ClaudeCodePolicySchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ValidationError(
+      `invalid ${relativePath}: ${zodMessage(parsed.error)}`,
+      'policy.invalid',
+      { details: parsed.error.issues },
+    );
+  }
+  return { policy: parsed.data, path: relativePath };
 }

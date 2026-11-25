@@ -1,6 +1,6 @@
 import type { CommandRunner } from '../core/command.ts';
 import type { Diagnostic } from '../core/diagnostics.ts';
-import type { SourceFacts } from '../model/facts.ts';
+import type { CommonFacts } from '../model/facts.ts';
 import type {
   GeneratedTarget,
   ProjectManifest,
@@ -13,7 +13,7 @@ export interface TargetContext {
   paths: ProjectPaths;
   manifest: ProjectManifest;
   target: TargetConfig;
-  facts: SourceFacts;
+  facts: CommonFacts;
   runner?: CommandRunner;
   /**
    * Root-relative `.claude` targets that the adoption import step owns. Detect

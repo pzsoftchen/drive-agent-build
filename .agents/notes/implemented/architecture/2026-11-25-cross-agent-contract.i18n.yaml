@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.md
+translation: .agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: 7b364a7c992da5c151bc04555e5ffd89be224031e1555cd294b3cfcb985fa52e
+    translation: aed721f2b1d8a537e058911006f83cd10a403e087a3d52301d8d32a405f15ab7
+  - index: 2
+    level: 2
+    source: 4849a2cd47740ccfff862b3c9e01831113cb586d0fb287274614b66ba8ff0464
+    translation: 39384a3ae06e809a2be438b0b525dee68af5b9d877bb96c292a4e452260e7422
+  - index: 3
+    level: 2
+    source: 98eac9fec17744644f8fb9d6c92ce9fab12f15997de31d009c8cc0d2313a69a9
+    translation: 3991b17af53f513242d7a8bea23d9309c0614a28f65ea56b70363cea9ae475f5
+  - index: 4
+    level: 2
+    source: 174862a5c77ad7baf7fa5c44d7d53d2693cc7a044b41da53abd51111a19edbc5
+    translation: ed3291d9848369581aba67c70b0ca25eb82a55c23719a7a515d1e32cee9d1ee7
+  - index: 5
+    level: 2
+    source: 3291aea3a438795dc31bff5eb92a675e44d11aa485eb80ec940a1dd7fb91a5b4
+    translation: 2a89c99e7e0fd82727c5b170f9ae81ce62cf673b053fa32b3973920fab13119b
+  - index: 6
+    level: 2
+    source: 9e25772e2291f4c95c97cbca50123543a59d3c48cb89c6e35d81fd92f23704c5
+    translation: 700596dd3f5fc917a92930ab0862a065d8b779b09b1ec34f843c788fbd3851d1
+  - index: 7
+    level: 2
+    source: 3b8650d1596502fb9a77372ca36f6657ad7120bad9f87ce4e213a14b40619fe1
+    translation: 42a3a57404a45ed6aa653949df86d8024c8a3b798462211023f8770a5c3d16e5

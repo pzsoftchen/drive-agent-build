@@ -115,6 +115,28 @@ afterEach(async () => {
 });
 
 describe('detectProject', () => {
+  it('keeps a missing Claude overlay a configuration error', async () => {
+    const project = await initialized();
+    await rm(join(project.root, '.agents/adapters/claude-code.yaml'));
+
+    await expect(detectProject(detectOptions(project))).rejects.toMatchObject({
+      code: 'policy.missing',
+      exitCode: 2,
+    });
+  });
+
+  it('keeps a damaged Claude overlay a governed configuration error', async () => {
+    const project = await initialized();
+    const overlay = join(project.root, '.agents/adapters/claude-code.yaml');
+    await rm(overlay);
+    await symlink('/nonexistent-dab-overlay', overlay);
+
+    await expect(detectProject(detectOptions(project))).rejects.toMatchObject({
+      code: 'policy.missing',
+      exitCode: 2,
+    });
+  });
+
   it('passes a clean initialized project', async () => {
     const project = await initialized();
     const result = await detectProject(detectOptions(project));

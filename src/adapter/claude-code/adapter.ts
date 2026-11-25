@@ -7,6 +7,7 @@ import {
   checkSettings,
 } from '../../detect/checks.ts';
 import { getGeneratedTarget } from '../../model/project-manifest.ts';
+import { loadClaudeCodePolicy } from '../../model/policy.ts';
 import type {
   GeneratedTarget,
   Projection,
@@ -69,6 +70,21 @@ function hasBackendVersionError(diagnostics: readonly Diagnostic[]): boolean {
   );
 }
 
+function emptyPlan(diagnostics: Diagnostic[]): TargetNormalizePlan {
+  return {
+    provider: 'claude-code',
+    diagnostics,
+    actions: [],
+    generated: {
+      provider: 'claude-code',
+      settings: null,
+      instructions: null,
+      projections: [],
+    },
+    apply: async () => ({ applied: 0, backups: [] }),
+  };
+}
+
 function projectionKey(kind: Projection['kind'], name: string): string {
   return `${kind}\0${name}`;
 }
@@ -92,22 +108,12 @@ function projectedStatus(
 async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePlan> {
   const options = parseClaudeTargetOptions(input.target);
   const generatedRecord = getGeneratedTarget(input.manifest, 'claude-code');
+  const targetPolicy = await loadClaudeCodePolicy(input.paths);
   const backend = await checkClaudeCode(options.minVersion, input.runner);
   const diagnostics: Diagnostic[] = [...backend.diagnostics];
 
   if (hasBackendVersionError(diagnostics)) {
-    return {
-      provider: 'claude-code',
-      diagnostics,
-      actions: [],
-      generated: {
-        provider: 'claude-code',
-        settings: null,
-        instructions: null,
-        projections: [],
-      },
-      apply: async () => ({ applied: 0, backups: [] }),
-    };
+    return emptyPlan(diagnostics);
   }
 
   const discovered = await discoverProjections(input.paths.root, input.paths, {
@@ -118,8 +124,8 @@ async function normalize(input: TargetNormalizeInput): Promise<TargetNormalizePl
   diagnostics.push(...discovered.diagnostics);
 
   const compiled = compilePolicy(
-    input.facts.policies.project,
-    input.facts.policies.adapter,
+    input.facts.policy,
+    targetPolicy.policy,
     input.facts.hooks.items,
   );
   diagnostics.push(...compiled.diagnostics);
@@ -269,6 +275,7 @@ async function detect(input: TargetContext): Promise<TargetDetectOutcome> {
   const generated = getGeneratedTarget(input.manifest, 'claude-code');
   const diagnostics: Diagnostic[] = [];
 
+  const targetPolicy = await loadClaudeCodePolicy(input.paths);
   const backend = await checkClaudeCode(options.minVersion, input.runner);
   diagnostics.push(...backend.diagnostics);
 
@@ -280,8 +287,8 @@ async function detect(input: TargetContext): Promise<TargetDetectOutcome> {
   diagnostics.push(...discovered.diagnostics);
 
   const compiled = compilePolicy(
-    input.facts.policies.project,
-    input.facts.policies.adapter,
+    input.facts.policy,
+    targetPolicy.policy,
     input.facts.hooks.items,
   );
   diagnostics.push(...compiled.diagnostics);

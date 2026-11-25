@@ -67,7 +67,7 @@ The route is a capability ladder. Versions are milestones, not the route itself.
 
 | Layer | Question | Evidence gate |
 |---|---|---|
-| L1 Config governance and target isolation | Can authored facts be projected into each target without drift or cross-agent leakage? | `detect --strict`, idempotent `normalize`, foreign-edit detection, target-neutral shared instructions, cross-agent contract test. |
+| L1 Config governance and target isolation | Can authored facts be projected into each target without drift or cross-agent leakage? | `detect --strict`, idempotent `normalize`, foreign-edit detection, shared instructions passed through without target-specific injection, cross-agent contract test. |
 | L2 Engineering discipline | Are the project's rules explicit, enforceable where possible, and portable across targets? | Every rule has an enforcement level; gate rules have checks; target-specific rules live in adapter overlays. |
 | L3 Single-task delivery | Can one development task be completed and accepted with reproducible evidence? | Fixed task suite, baseline comparison, stable harness events, recorded time/cost/interventions/scope violations. |
 | L4 Goal-level delivery | Can multiple tasks be integrated into one accepted goal? | Recurring goal-level failures from L3 use, then a minimal goal-loop prototype. |
@@ -154,6 +154,7 @@ Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/
 - [Agent Note 0003](.agents/notes/implemented/architecture/2026-11-23-practice-layer.md)
 - [Agent Note 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.md)
 - [Agent Note 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md)
+- [Agent Note 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.md)
 
 ## License
 

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { claudeCodeAdapter } from '../../src/adapter/claude-code/adapter.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
-import { discoverSourceFacts } from '../../src/model/facts.ts';
+import { discoverCommonFacts } from '../../src/model/facts.ts';
 import {
   getTarget,
   loadProjectManifest,
@@ -35,7 +35,7 @@ async function manifestAndFacts(project: ProjectFixture) {
   if (target === undefined) {
     throw new Error('missing target');
   }
-  const facts = await discoverSourceFacts(project.root, paths);
+  const facts = await discoverCommonFacts(project.root, paths);
   return { manifest, paths, target, facts };
 }
 

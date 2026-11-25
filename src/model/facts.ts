@@ -1,24 +1,26 @@
 import { isAuthoredPathProblem } from '../core/practice-paths.ts';
 import { discoverAgents } from './agents.ts';
 import { discoverHooks } from './hooks.ts';
-import { loadPolicySources, type LoadedPolicySources } from './policy.ts';
+import { loadCommonPolicy } from './policy.ts';
 import { discoverRules } from './rules.ts';
 import { discoverSkills } from './skills.ts';
 import type {
   AgentDefinition,
   DiscoveryResult,
   LoadedHook,
+  PolicySpec,
   ProjectPaths,
   RuleDefinition,
   SkillDefinition,
 } from './types.ts';
 
-export interface SourceFacts {
+export interface CommonFacts {
   agents: DiscoveryResult<AgentDefinition>;
   skills: DiscoveryResult<SkillDefinition>;
   rules: DiscoveryResult<RuleDefinition>;
   hooks: DiscoveryResult<LoadedHook>;
-  policies: LoadedPolicySources;
+  policy: PolicySpec;
+  policyPath: string;
 }
 
 /**
@@ -43,16 +45,23 @@ async function discoverOrEmpty<T>(
   }
 }
 
-export async function discoverSourceFacts(
+export async function discoverCommonFacts(
   root: string,
   paths: ProjectPaths,
-): Promise<SourceFacts> {
+): Promise<CommonFacts> {
   const [agents, skills, rules, hooks] = await Promise.all([
     discoverOrEmpty(root, () => discoverAgents(root, paths.agents)),
     discoverOrEmpty(root, () => discoverSkills(root, paths.agents)),
     discoverOrEmpty(root, () => discoverRules(root, paths.agents)),
     discoverOrEmpty(root, () => discoverHooks(root, paths.agents)),
   ]);
-  const policies = await loadPolicySources(paths);
-  return { agents, skills, rules, hooks, policies };
+  const policy = await loadCommonPolicy(paths);
+  return {
+    agents,
+    skills,
+    rules,
+    hooks,
+    policy: policy.policy,
+    policyPath: policy.path,
+  };
 }

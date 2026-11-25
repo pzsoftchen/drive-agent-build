@@ -154,6 +154,7 @@ generated:
 - Target adapter 把 common facts 映射到一个 harness，并解析该 target 的 provider options。Adapter 绝不拥有 agent、skill 或 rule 定义。
 - 当前 adapter 基础层是过渡性的：共享命令仍包含 Claude 专属的预检查与路径假设，后续 target 必须把这些能力收进各自 adapter。
 - Common facts 位于 `.agents/`；provider 专属策略位于 `.agents/adapters/<provider>.yaml`；provider options 位于 target 的 `targets` 条目。
+- 公共事实发现只读取 `.agents/` 的 common facts 和 `.agents/policies/project.yaml`；每个 adapter 自己加载 `.agents/adapters/<provider>.yaml`。
 - 每个 target 在 `generated.targets` 下按 provider 记录自己的 settings、instructions 和 projections。
 - 本阶段只有 `claude-code` 有 adapter。启用 `codex` 或 `dsh` target 会以 `target.unsupported` 失败，而不是跳过或写入部分配置。
 - Codex、DSH 和 global settings adoption/merge 属于后续计划系列，不在本阶段。

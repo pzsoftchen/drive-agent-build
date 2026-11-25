@@ -154,6 +154,7 @@ generated:
 - A target adapter maps common facts into one harness and parses that target's provider options. Adapters never own agent, skill or rule definitions.
 - The current adapter foundation is transitional: shared command code still contains Claude-specific prechecks and path assumptions that future targets must isolate.
 - Common facts live in `.agents/`; provider-specific policy lives in `.agents/adapters/<provider>.yaml`; provider options live in the target's `targets` entry.
+- Common fact discovery reads only `.agents/` common facts and `.agents/policies/project.yaml`; each adapter loads its own `.agents/adapters/<provider>.yaml`.
 - Each target records its own settings, instructions and projections under `generated.targets`, keyed by provider.
 - Only `claude-code` has an adapter in this phase. An enabled `codex` or `dsh` target fails with `target.unsupported` instead of being skipped or partially written.
 - Codex, DSH and global settings adoption/merge are later plan series, not part of this phase.
