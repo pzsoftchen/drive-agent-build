@@ -147,24 +147,21 @@ const JAVA_BUILD_IDS: ReadonlySet<ScanStackId> = new Set([
   'android',
 ]);
 
-function mavenCommands(hasWrapper: boolean): ScanCommandSet {
-  const runner = hasWrapper ? './mvnw' : 'mvn';
+function mavenCommands(runner: string): ScanCommandSet {
   return {
     test: `${runner} test`,
     build: `${runner} -DskipTests compile`,
   };
 }
 
-function gradleCommands(hasWrapper: boolean): ScanCommandSet {
-  const runner = hasWrapper ? './gradlew' : 'gradle';
+function gradleCommands(runner: string): ScanCommandSet {
   return {
     test: `${runner} test`,
     build: `${runner} classes`,
   };
 }
 
-function androidCommands(hasWrapper: boolean): ScanCommandSet {
-  const runner = hasWrapper ? './gradlew' : 'gradle';
+function androidCommands(runner: string): ScanCommandSet {
   return {
     test: `${runner} test`,
     lint: `${runner} lint`,
@@ -305,10 +302,11 @@ async function mavenStack(root: string): Promise<ScanStack | undefined> {
     return undefined;
   }
   const wrapper = await firstExisting(root, ['mvnw', 'mvnw.cmd']);
+  const runner = wrapper === 'mvnw' ? './mvnw' : 'mvn';
   return {
     id: 'java-maven',
     language: 'java',
-    commands: mavenCommands(wrapper !== undefined),
+    commands: mavenCommands(runner),
     evidence: ['pom.xml', ...(wrapper === undefined ? [] : [wrapper])],
     diagnostics: [],
   };
@@ -324,11 +322,12 @@ async function gradleStack(
       ...(facts.hasManifest ? [ANDROID_MANIFEST] : []),
       ...(facts.wrapper === undefined ? [] : [facts.wrapper]),
     ];
+    const runner = facts.wrapper === 'gradlew' ? './gradlew' : 'gradle';
     return {
       id: 'android',
       language: await androidLanguage(root, facts.content),
       platform: 'android',
-      commands: androidCommands(facts.wrapper !== undefined),
+      commands: androidCommands(runner),
       evidence,
       diagnostics: [],
     };
@@ -336,10 +335,11 @@ async function gradleStack(
   if (facts.files.length === 0) {
     return undefined;
   }
+  const runner = facts.wrapper === 'gradlew' ? './gradlew' : 'gradle';
   return {
     id: 'java-gradle',
     language: 'java',
-    commands: gradleCommands(facts.wrapper !== undefined),
+    commands: gradleCommands(runner),
     evidence: [...facts.files, ...(facts.wrapper === undefined ? [] : [facts.wrapper])],
     diagnostics: [],
   };

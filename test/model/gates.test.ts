@@ -215,4 +215,24 @@ describe('GateConfigSchema', () => {
     gates.docs = { mode: 'check', command: '' };
     expect(GateConfigSchema.safeParse(docs).success).toBe(false);
   });
+
+  it('rejects whitespace-only and comment-only commands', () => {
+    for (const command of ['   ', '# TODO restore tests', '\n# only comments\n']) {
+      const config = withTestCommand({ command, mode: 'required' });
+      expect(GateConfigSchema.safeParse(config).success).toBe(false);
+    }
+
+    const docs = validConfig();
+    const gates = docs.gates as Record<string, Record<string, unknown>>;
+    gates.docs = { mode: 'check', command: '# TODO docs' };
+    expect(GateConfigSchema.safeParse(docs).success).toBe(false);
+  });
+
+  it('accepts a command with a comment followed by an executable line', () => {
+    const config = withTestCommand({
+      command: '# run the suite\npnpm test',
+      mode: 'required',
+    });
+    expect(GateConfigSchema.safeParse(config).success).toBe(true);
+  });
 });

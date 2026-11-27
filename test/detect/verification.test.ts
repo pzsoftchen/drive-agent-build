@@ -658,4 +658,22 @@ describe('inspectVerification', () => {
     ]);
     expect(strictWouldFail(result)).toBe(true);
   });
+
+  it('surfaces scanner diagnostics instead of hiding a corrupted package.json', async () => {
+    const scan = nodeScan();
+    scan.diagnostics = [{
+      code: 'scan.package-json',
+      severity: 'warning',
+      message: 'package.json is not valid JSON',
+      file: 'package.json',
+    }];
+
+    const result = await inspectVerification({ root, scan, version: VERSION });
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'scan.package-json',
+      severity: 'warning',
+      file: 'package.json',
+    }));
+  });
 });

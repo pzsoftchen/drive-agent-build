@@ -1324,4 +1324,29 @@ describe('init gates', () => {
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
   });
+
+  it('blocks a gate artifact path conflict before writing the skeleton', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    await mkdir(join(root, 'scripts'), { recursive: true });
+    await writeFile(join(root, 'scripts/shared-runner.mjs'), '// shared\n');
+    await symlink('shared-runner.mjs', join(root, 'scripts/dab-check.mjs'));
+
+    const dryRun = await initializeProject({ cwd: root, dryRun: true });
+    expect(dryRun.ok).toBe(false);
+    expect(dryRun.exitCode).toBe(3);
+    expect(dryRun.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'verification.artifact-path',
+      severity: 'error',
+      file: 'scripts/dab-check.mjs',
+    }));
+    expect(await lstatOrNull(join(root, '.agents/gates.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+
+    const real = await initializeProject({ cwd: root });
+    expect(real.ok).toBe(false);
+    expect(await lstatOrNull(join(root, '.agents/gates.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'scripts/dab-gates.json'))).toBeNull();
+  });
 });

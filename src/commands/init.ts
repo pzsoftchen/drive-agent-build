@@ -13,7 +13,7 @@ import {
 import { ConfigError, DabError, UsageError, ValidationError } from '../core/errors.ts';
 import { ExitCode } from '../core/exit-codes.ts';
 import { ensureDir, lstatOrNull, writeFileAtomic } from '../core/fs-atomic.ts';
-import { loadGateConfig } from '../core/gate-config.ts';
+import { planGateArtifacts } from '../init/gate-artifacts.ts';
 import { contractJson } from '../core/json.ts';
 import { DAB_VERSION } from '../core/version.ts';
 import {
@@ -703,10 +703,17 @@ export async function initializeProject(options: InitOptions): Promise<InitResul
   // An existing `.agents/gates.yaml` is authored and authoritative. An invalid
   // one blocks every init write instead of being overwritten or silently
   // ignored, so no runner or snapshot is scaffolded from scanner defaults.
-  // Global scope has no project gate files, so it is never validated here.
-  const gateDiagnostics = scope === 'project'
-    ? (await loadGateConfig(layout.scopeRoot)).diagnostics
-    : [];
+  // Inspecting the full artifact plan also surfaces a path conflict on
+  // `scripts/` before init writes any part of the skeleton.
+  // Global scope has no project gate files, so it is never inspected here.
+  const gatePlan = scope === 'project'
+    ? await planGateArtifacts({
+      root: layout.scopeRoot,
+      scan,
+      version: DAB_VERSION,
+    })
+    : undefined;
+  const gateDiagnostics = gatePlan?.diagnostics ?? [];
   const authoredErrors = [
     ...authoredConflicts,
     ...authored.filter((item) => item.severity === 'error'),

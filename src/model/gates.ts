@@ -32,13 +32,27 @@ export interface GateConfig {
 
 export const GateModeSchema = z.enum(GATE_MODES);
 
+const NonBlankStringSchema = z.string().refine(
+  (value) => value.trim().length > 0,
+  { message: 'must not be blank' },
+);
+
+const RunnableCommandSchema = z.string().min(1).refine(
+  (value) => value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .some((line) => !line.startsWith('#')),
+  { message: 'command must contain an executable line, not only comments or whitespace' },
+);
+
 export const XcodeBuildConfigSchema = z
   .object({
-    project: z.string().min(1).optional(),
-    workspace: z.string().min(1).optional(),
-    scheme: z.string().min(1),
-    destination: z.string().min(1),
-    configuration: z.string().min(1).optional(),
+    project: NonBlankStringSchema.optional(),
+    workspace: NonBlankStringSchema.optional(),
+    scheme: NonBlankStringSchema,
+    destination: NonBlankStringSchema,
+    configuration: NonBlankStringSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -55,7 +69,7 @@ export const XcodeBuildConfigSchema = z
 
 export const GateCommandConfigSchema = z
   .object({
-    command: z.string().min(1).nullable().optional(),
+    command: RunnableCommandSchema.nullable().optional(),
     xcodebuild: XcodeBuildConfigSchema.optional(),
     mode: GateModeSchema,
     needs: z.string().min(1).optional(),
@@ -100,7 +114,7 @@ export const GateConfigSchema = z
         docs: z
           .object({
             mode: GateModeSchema,
-            command: z.string().min(1).optional(),
+            command: RunnableCommandSchema.optional(),
           })
           .strict(),
       })

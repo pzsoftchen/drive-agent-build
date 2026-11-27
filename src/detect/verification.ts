@@ -465,7 +465,7 @@ export async function inspectVerification(input: {
     scan: input.scan,
     version: input.version,
   });
-  const diagnostics: Diagnostic[] = [];
+  const diagnostics: Diagnostic[] = [...input.scan.diagnostics];
   const rows = new Map<string, ArtifactRow>();
   const extraEntries: ChecklistEntry[] = [];
 

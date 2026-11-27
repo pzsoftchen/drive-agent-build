@@ -330,4 +330,38 @@ describe('scanProject', () => {
     expect(scan.diagnostics.map((item) => item.code))
       .not.toContain('scan.ios-xcode-needs-config');
   });
+
+  it('falls back to system Maven when only a Windows wrapper exists', async () => {
+    const root = await tempDir();
+    await writeFile(join(root, 'pom.xml'), '<project />\n');
+    await writeFile(join(root, 'mvnw.cmd'), '@echo off\r\n');
+
+    const scan = await scanProject(root);
+
+    expect(scan.stacks[0]).toMatchObject({
+      id: 'java-maven',
+      commands: {
+        test: 'mvn test',
+        build: 'mvn -DskipTests compile',
+      },
+    });
+    expect(scan.stacks[0]?.evidence).toContain('mvnw.cmd');
+  });
+
+  it('falls back to system Gradle when only a Windows wrapper exists', async () => {
+    const root = await tempDir();
+    await writeFile(join(root, 'build.gradle'), 'plugins { id "java" }\n');
+    await writeFile(join(root, 'gradlew.bat'), '@echo off\r\n');
+
+    const scan = await scanProject(root);
+
+    expect(scan.stacks[0]).toMatchObject({
+      id: 'java-gradle',
+      commands: {
+        test: 'gradle test',
+        build: 'gradle classes',
+      },
+    });
+    expect(scan.stacks[0]?.evidence).toContain('gradlew.bat');
+  });
 });
