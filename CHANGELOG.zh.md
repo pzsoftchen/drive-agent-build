@@ -9,6 +9,7 @@
 - 新增 Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode 技术栈检测，优先 wrapper，Android 优先于 Gradle，SwiftPM 优先于 Xcode。Xcode 只从显式的 shared scheme 和 destination 或 Fastlane 命令解析；在配置之前不猜测并报告 `CONFIG`。
 - `dab detect` 增加 project-only 的 `Verification` 组，为 config、runner、快照和命令接线提供 strict 映射；缺失或过期产物会让 `--strict` 失败，而被修改、无版本和较新的产物、空命令集和缺少 CI 接线保持非 strict。
 - DAB 不生成 CI 文件，也不为 `dab` 增加门禁命令。项目在自己的 CI provider 中调用 `node scripts/dab-check.mjs --strict`；DAB 自己也 dogfood 同一个 runner。
+- GitHub Release 正文现在支持中英文：release workflow 组合英文 `CHANGELOG.md` 和中文 `CHANGELOG.zh.md` 的对应版本章节，通过 `node dist/release/cli.js`，使用 `--notes-file` 写入，并在重跑时刷新已有 Release。
 
 ## 0.1.2 — 2026-11-24
 

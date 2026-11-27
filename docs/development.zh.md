@@ -51,4 +51,6 @@ pnpm test
 
 把 `package.json` 更新到发布版本，然后运行 `pnpm build && node dist/cli.js normalize`，刷新 dogfood `dab-*` skill markers 和 `dab.yaml` source 哈希。更新 `CHANGELOG.md` 及其中文配对、README/roadmap 的发布状态和链接，运行完整测试、`pnpm doc-sync`、`npm pack`，并在临时目录安装 tarball 做 CLI 冒烟测试。提交 normalize 后的树，再打 `v<version>` tag。
 
-Release workflow 由 `v*` tag 触发。它检查 tag 与 `package.json` 一致，运行 normalize 并拒绝生成漂移，运行完整测试和 pack 冒烟测试，以 npm provenance 发布 `@saydone/dab`，通过 `npm-release` environment，并创建 GitHub Release。`npm-release` environment 需要维护者批准。0.1.1 的 bootstrap 是手动发布；0.1.2 及以后使用 GitHub OIDC。新包或新仓库仍需为该 workflow 的 `.github/workflows/release.yml` 和 `npm-release` environment 做一次性的 npm Trusted Publisher 配置。
+发布日志由英文和中文 changelog 中对应版本章节通过 `node dist/release/cli.js v<version>` 生成。两个 `CHANGELOG.md` 与 `CHANGELOG.zh.md` 必须包含该版本章节；缺失或为空会 fail loud。workflow 使用 `--notes-file` 写入双语正文，并在重跑时更新已有的 GitHub Release。
+
+Release workflow 由 `v*` tag 触发。它检查 tag 与 `package.json` 一致，运行 normalize 并拒绝生成漂移，运行完整测试和 pack 冒烟测试，以 npm provenance 发布 `@saydone/dab`，通过 `npm-release` environment，并创建或更新双语 GitHub Release。`npm-release` environment 需要维护者批准。0.1.1 的 bootstrap 是手动发布；0.1.2 及以后使用 GitHub OIDC。新包或新仓库仍需为该 workflow 的 `.github/workflows/release.yml` 和 `npm-release` environment 做一次性的 npm Trusted Publisher 配置。

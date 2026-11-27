@@ -9,6 +9,7 @@ English | [中文](CHANGELOG.zh.md)
 - Added Java Maven, Java Gradle, Android, iOS SwiftPM and iOS Xcode stack detection with wrapper preference, Android-over-Gradle precedence and SwiftPM-over-Xcode precedence. Xcode resolves only from an explicit shared scheme and destination or a Fastlane command; it never guesses and reports `CONFIG` until configured.
 - `dab detect` adds a project-only `Verification` group with strict mapping for config, runner, snapshot and command wiring; missing or stale artifacts fail `--strict`, while modified, unversioned and newer artifacts, empty command sets and missing CI wiring stay non-strict.
 - DAB does not generate CI files or add a `dab` gate command. Projects call `node scripts/dab-check.mjs --strict` from their CI provider; DAB dogfoods the same runner.
+- GitHub Release bodies are now bilingual: the release workflow composes the matching English `CHANGELOG.md` and Chinese `CHANGELOG.zh.md` sections with `node dist/release/cli.js`, writes them with `--notes-file`, and refreshes an existing release on rerun.
 
 ## 0.1.2 — 2026-11-24
 

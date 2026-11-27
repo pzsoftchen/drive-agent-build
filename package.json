@@ -48,6 +48,7 @@
     "verify-md-wrap": "node dist/docs/cli.js wrap",
     "verify-doc-budgets": "node dist/docs/cli.js budgets",
     "verify-agent-note-format": "node dist/docs/cli.js notes",
+    "release-notes": "node dist/release/cli.js",
     "doc-sync": "pnpm build && node dist/docs/cli.js all"
   },
   "dependencies": {
