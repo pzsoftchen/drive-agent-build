@@ -100,6 +100,20 @@ dab --version
 
 npm 包名是 `@saydone/dab`；`npx dab` 会解析到另一个包。
 
+## 升级 DAB
+
+DAB 不提供 `dab upgrade` 自更新命令。使用管理安装的包管理器升级，再刷新项目中的受管产物：
+
+```bash
+npx @saydone/dab@latest --version
+npm install -g @saydone/dab@latest
+pnpm add -D @saydone/dab@latest
+```
+
+用 `dab --version`、`npm view @saydone/dab version` 或 `npm outdated -g @saydone/dab` 查看已安装和已发布版本。
+
+升级 CLI 后，在每个项目中运行 `dab normalize`，然后运行 `dab detect --strict`。normalize 会刷新未修改的受管 skills 和 gate runner/snapshot；被修改、无版本或较新的文件会保留并 warning，绝不会被覆盖。
+
 从源码开发：
 
 ```bash
