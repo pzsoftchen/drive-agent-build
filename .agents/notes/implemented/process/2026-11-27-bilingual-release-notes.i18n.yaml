@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/process/2026-11-27-bilingual-release-notes.md
+translation: .agents/notes/implemented/process/2026-11-27-bilingual-release-notes.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: dd93227738ba8ab4c402f1025fe8df2cee17c86081bfba302c94ae582f421cde
+    translation: c6c9c7cb71f1404d6dc9ffc40a9bcc573d7ac4142d000ba5bbd65a771f592fc1
+  - index: 2
+    level: 2
+    source: 23b8bd3f4e8918ff1daf1e0876a66ccd2fde1fc6967602f111ee938b3339aa8f
+    translation: 72163991ddc33e04f37468b6e677ebda971bb7fb800217abc91601fe185d1c14
+  - index: 3
+    level: 2
+    source: c888a53ee270281798f68462cbe473fd6acc0a05d782a2eb9eee04665cf32574
+    translation: d22956af907c13fc029c5846ff734a292e80d5187f185f23e51ef9c68917b52f
+  - index: 4
+    level: 2
+    source: 86071045958a07cbb69411fe08fd4a65dfbb37a165bd5a8fc8ec67545f4ae603
+    translation: 0e11f52a2dd67492d4311752fa728713ae5de6833776522380d4cb4fae87f647
+  - index: 5
+    level: 2
+    source: e838e71f5337d2de030beeaa7797d6d3929fbe2519888bf0a02686a08c3244dd
+    translation: b9d4755060fa2a5e7891efa57751aefc258ade61fae96d6ffee0a3327d48702e
+  - index: 6
+    level: 2
+    source: 4a875eb83d0ce6a605bf316d4599f3a88e0cb07b8d97e67004bb43dac8f1a5d7
+    translation: 511c9e193239816c2ed6c54c4ddb5d2a8c2bfb5107a8f5614ce4fe0b60e7ad9e
+  - index: 7
+    level: 2
+    source: 334736417052c83cb90584e38bd1ef3770124e79db9f465ca0914cd56ddc576f
+    translation: 9f17ac41d986d05ade4ae54f1b984c6969efc75c4a557ae8864d131c77a9bb16

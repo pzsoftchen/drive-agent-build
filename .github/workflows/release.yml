@@ -104,6 +104,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Build release tooling
+        run: pnpm build
       - name: Publish if this version is new
         run: |
           version=$(node -p "require('./package.json').version")
@@ -112,12 +114,18 @@ jobs:
           else
             npm publish --provenance --access public
           fi
+      - name: Generate bilingual release notes
+        run: node dist/release/cli.js "$GITHUB_REF_NAME" > release-notes.md
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists."
+            gh release edit "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md \
+              --title "$GITHUB_REF_NAME"
           else
-            gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME"
+            gh release create "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md \
+              --title "$GITHUB_REF_NAME"
           fi

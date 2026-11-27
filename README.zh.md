@@ -174,6 +174,7 @@ node scripts/dab-check.mjs --json
 - [Agent 决策记录 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.zh.md)
 - [Agent 决策记录 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.zh.md)
 - [Agent 决策记录 0007](.agents/notes/implemented/architecture/2026-11-25-g1-gates.zh.md)
+- [Agent 决策记录 0008](.agents/notes/implemented/process/2026-11-27-bilingual-release-notes.zh.md)
 
 ## 许可证
 

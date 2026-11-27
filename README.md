@@ -174,6 +174,7 @@ Full documentation: [docs](https://github.com/pzsoftchen/drive-agent-build/tree/
 - [Agent Note 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md)
 - [Agent Note 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.md)
 - [Agent Note 0007](.agents/notes/implemented/architecture/2026-11-25-g1-gates.md)
+- [Agent Note 0008](.agents/notes/implemented/process/2026-11-27-bilingual-release-notes.md)
 
 ## License
 

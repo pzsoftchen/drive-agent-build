@@ -23,7 +23,7 @@ generated:
       instructions:
         path: .claude/CLAUDE.md
         mode: symlink
-        sha256: 01543ccd33f451e561457ad6055c77cc2764d6fb44a6cb4cbce42a9a52371fd9
+        sha256: 8e0f9496a29b8c8979c5909b87c6a2d6eecb1869279522fff6493f3596cc3ecc
       projections:
         - kind: agent
           name: implementer
