@@ -1,6 +1,6 @@
 {
   "name": "@saydone/dab",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DAB turns AGENTS.md and .agents/ into governed Claude Code configuration.",
   "type": "module",
   "bin": {

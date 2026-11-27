@@ -2,7 +2,7 @@
 
 # 变更日志
 
-## Unreleased
+## 0.1.3 — 2026-11-27
 
 - 新增项目门禁：authored `.agents/gates.yaml`、生成的 `scripts/dab-check.mjs` 和 `scripts/dab-gates.json`，以及执行固定 `dab detect --strict` source gate 和已配置 code、docs 命令的 runner。门禁 mode 为 `required`、`check`、`advisory` 和 `off`；runner 退出码为 `0`、`1` 和 `2`。
 - `dab init` 和 `dab normalize` 创建缺失的门禁产物，更新未修改的较旧 runner 和过期快照，并保留被修改、无版本和较新的生成文件且产生 warning。无效门禁配置会阻止所有写入。

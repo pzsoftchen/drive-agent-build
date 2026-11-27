@@ -11,7 +11,7 @@ The route has four layers. A layer is not complete because a release shipped; it
 | Layer | Problem | DAB mechanism | Evidence gate | Status |
 |---|---|---|---|---|
 | L1 Config governance and target isolation | Configuration drifts across targets, generated files are edited by hand, and target-specific semantics leak into shared instructions. | Authored source, per-target projections, ownership records, drift detection, adapter overlays. | `detect --strict` is clean; `normalize` is idempotent; foreign edits are detected without silent overwrite; common fact discovery does not read provider overlays; shared instructions are passed through without target-specific injection; the cross-agent contract test passes. | Claude Code implementation released; common fact discovery is provider-independent and the cross-agent contract test passes. |
-| L2 Engineering discipline | Rules live in prompts and conversations and cannot be reproduced. | Explicit rules with enforcement levels; docs, notes and managed skills; gates where possible. | Every rule has an enforcement level; every gate rule has a check; behavioral rules are labeled; target-specific rules live in adapter overlays. | Practice layer released; enforcement matrix documented in [Engineering discipline](concepts/engineering-discipline.md). |
+| L2 Engineering discipline | Rules live in prompts and conversations and cannot be reproduced. | Explicit rules with enforcement levels; docs, notes and managed skills; project gates where possible. | Every rule has an enforcement level; every gate rule has a check; behavioral rules are labeled; target-specific rules live in adapter overlays. | Practice layer and project gates released; enforcement matrix documented in [Engineering discipline](concepts/engineering-discipline.md). |
 | L3 Single-task delivery | Agent activity is confused with accepted work; acceptance is not reproducible. | Task evidence, fixed task suite, baseline comparison and stable harness events. | Three existing-repository tasks with deterministic tests; baseline comparison; recorded time, attempts, cost, interventions and scope violations. | Planned for v0.2. |
 | L4 Goal-level delivery | Decomposition, integration, overall acceptance and cross-task learning have no model. | DAB goal loop, only after L3 evidence. | Real DAD use produces recurring goal-level failures; a minimal prototype addresses them. | Research; not scheduled. |
 
@@ -40,8 +40,8 @@ A status is a snapshot, not a gate. The evidence gate decides whether a layer is
 - Generated output: `.claude/`.
 - Commands: `dab init`, `dab detect`, `dab normalize`, `dab policy explain`.
 - Bilingual documentation gates.
-- Status: released as `v0.1.2` on 2026-11-24.
-- Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
+- Status: released as `v0.1.3` on 2026-11-27.
+- Release: [npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.3)
 
 ### v0.1.x DAD Foundation
 
@@ -61,7 +61,9 @@ A status is a snapshot, not a gate. The evidence gate decides whether a layer is
 - Projects with `.agents/rules/docs-bilingual.md` keep the rule and are policy-skipped for generated docs.
 - The generic profile focuses on configuration drift and the documentation, notes and skills discipline.
 - Hooks and shared memory are advanced, opt-in capabilities. `init` and adoption do not scaffold them; existing hooks are validated and compiled where applicable, and existing memory is preserved by `init` and `normalize` and validated by `init` and `detect`.
-- Status: released in `0.1.2`.
+- Project gates add authored `.agents/gates.yaml`, a stable `scripts/dab-check.mjs`, a generated snapshot, Java/iOS/Android detection and a project-only Verification group in `detect`; they are released in `0.1.3`.
+- GitHub Release notes compose the paired English and Chinese changelog sections into one bilingual body; they are released in `0.1.3`.
+- Status: practice layer released in `0.1.2`; project gates and bilingual release notes released in `0.1.3`.
 
 ### v0.2 DAD Task Evidence
 

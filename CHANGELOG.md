@@ -2,7 +2,7 @@ English | [中文](CHANGELOG.zh.md)
 
 # Changelog
 
-## Unreleased
+## 0.1.3 — 2026-11-27
 
 - Added project gates: authored `.agents/gates.yaml`, generated `scripts/dab-check.mjs` and `scripts/dab-gates.json`, and a runner that executes the fixed `dab detect --strict` source gate plus configured code and docs commands. Gate modes are `required`, `check`, `advisory` and `off`; runner exit codes are `0`, `1` and `2`.
 - `dab init` and `dab normalize` create missing gate artifacts, update an unmodified older runner and stale snapshot, and preserve modified, unversioned and newer generated files with warnings. Invalid gate config blocks every write.

@@ -76,7 +76,7 @@ The evidence gates and release mapping are in [Roadmap](docs/roadmap.md).
 
 ## Current status
 
-The current release `0.1.2` includes the Claude Code governance foundation and the practice layer. Capability and milestone status is tracked in [Roadmap](docs/roadmap.md).
+The current release `0.1.3` includes the Claude Code governance foundation, the practice layer, project gates and bilingual release notes. Capability and milestone status is tracked in [Roadmap](docs/roadmap.md).
 
 ## Quick start
 

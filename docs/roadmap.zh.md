@@ -11,7 +11,7 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 | 层 | 问题 | DAB 的机制 | 证据门禁 | 状态 |
 |---|---|---|---|---|
 | L1 配置治理与目标隔离 | 配置在多个 target 之间漂移，生成文件被手改，target 专属语义混进共享指令。 | 编写源、逐 target 投影、所有权记录、漂移检测、adapter overlay。 | `detect --strict` 干净；`normalize` 幂等；外部手改能被发现且不静默覆盖；公共事实发现不读取 provider overlay；共享指令原样透传，不注入 target 专属内容；跨 Agent 合同测试通过。 | Claude Code 实现已发布；公共事实发现与 provider 无关，跨 Agent 合同测试通过。 |
-| L2 工程纪律 | 规则只存在于提示词和对话中，无法复现。 | 带强制级别的显式规则；docs、notes 和受管 skills；能强制的地方使用门禁。 | 每条规则都有强制级别；每条 gate 规则都有检查；行为约定有标注；target 专属规则放在 adapter overlay。 | 实践层已发布；强制矩阵记录在 [工程纪律](concepts/engineering-discipline.zh.md)。 |
+| L2 工程纪律 | 规则只存在于提示词和对话中，无法复现。 | 带强制级别的显式规则；docs、notes、受管 skills 和项目门禁。 | 每条规则都有强制级别；每条 gate 规则都有检查；行为约定有标注；target 专属规则放在 adapter overlay。 | 实践层和项目门禁已发布；强制矩阵记录在 [工程纪律](concepts/engineering-discipline.zh.md)。 |
 | L3 单任务交付 | Agent 活动被误认为已接受的工作；验收不可复现。 | 任务证据、固定任务集、基线对比和稳定的 harness 事件。 | 三个存量仓库任务和确定性测试；基线对比；记录耗时、尝试次数、成本、人工干预和范围越界。 | 计划在 v0.2。 |
 | L4 目标级交付 | 拆解、集成、整体验收和跨任务学习没有模型。 | 只在 L3 证据之后启动的 DAB 目标循环。 | 真实 DAD 使用产生反复出现的目标级失败；最小原型能解决这些失败。 | 研究阶段；未排期。 |
 
@@ -40,8 +40,8 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 - 生成输出：`.claude/`。
 - 命令：`dab init`、`dab detect`、`dab normalize`、`dab policy explain`。
 - 双语文档门禁。
-- 状态：已于 2026-11-24 发布 `v0.1.2`。
-- 发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.2)
+- 状态：已于 2026-11-27 发布 `v0.1.3`。
+- 发布：[npm](https://www.npmjs.com/package/@saydone/dab) · [GitHub Release](https://github.com/pzsoftchen/drive-agent-build/releases/tag/v0.1.3)
 
 ### v0.1.x DAD 基础层
 
@@ -61,7 +61,9 @@ DAB 是长期方向。产品路线先走 DAD：先证明单个开发任务能够
 - 已有 `.agents/rules/docs-bilingual.md` 的项目保留该规则，生成的 docs 被 policy skip。
 - Generic profile 聚焦配置漂移，以及 docs、notes 和 skills 纪律。
 - Hooks 与共享记忆是高级、可选能力。`init` 和 adoption 不生成它们；已有 hooks 会被校验并在适用时编译，已有记忆由 `init` 和 `normalize` 保留，并由 `init` 和 `detect` 校验。
-- 状态：已在 `0.1.2` 发布。
+- 项目门禁新增 authored `.agents/gates.yaml`、稳定的 `scripts/dab-check.mjs`、生成快照、Java/iOS/Android 检测和 `detect` 的 project-only Verification 组；它们已在 `0.1.3` 发布。
+- GitHub Release 正文把英文和中文 changelog 的对应章节组合为一份双语正文；该能力已在 `0.1.3` 发布。
+- 状态：实践层在 `0.1.2` 发布；项目门禁和双语发布日志在 `0.1.3` 发布。
 
 ### v0.2 DAD 任务证据
 

@@ -172,16 +172,16 @@ Agents
   [OK] reviewer
 
 Skills
-  [OK] dab-doc-writing (version 0.1.2)
-  [OK] dab-architecture-writing (version 0.1.2)
-  [OK] dab-decision-notes (version 0.1.2)
+  [OK] dab-doc-writing (version 0.1.3)
+  [OK] dab-architecture-writing (version 0.1.3)
+  [OK] dab-decision-notes (version 0.1.3)
   [OK] doc-sync
   [OK] feature-delivery
 
 Verification
   [OK] .agents/gates.yaml (version 1)
-  [OK] scripts/dab-check.mjs (version 0.1.2)
-  [OK] scripts/dab-gates.json (version 0.1.2)
+  [OK] scripts/dab-check.mjs (version 0.1.3)
+  [OK] scripts/dab-gates.json (version 0.1.3)
   [OK] code.test (npm test)
   [OK] code.typecheck (npm run typecheck)
   [WARN] CI (no CI call; add node scripts/dab-check.mjs --strict to a CI workflow)
