@@ -2,7 +2,7 @@
 name: dab-decision-notes
 description: Use when recording a durable project decision, its alternatives, consequences, verification or supersession.
 ---
-<!-- dab-skill: dab-decision-notes@0.1.2 sha256=8fe97fb4bea69e2b9923c370ff4d0f20daa7e522b31b181473e2951a44cabb9f -->
+<!-- dab-skill: dab-decision-notes@0.1.3 sha256=8fe97fb4bea69e2b9923c370ff4d0f20daa7e522b31b181473e2951a44cabb9f -->
 # Decision notes
 
 ## When to use

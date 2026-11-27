@@ -15,8 +15,8 @@ sections:
     translation: f0937d474cd2c85e748bd497bf6eb7604ea1a915d2f6f18b3554c19a8a77b544
   - index: 2
     level: 2
-    source: 058f0d483cbe87d4fbf8919b49bcde83173824188d4e6bbbe6acb22e15edcbed
-    translation: 3b9466e881afc624e439cd99fa56110cda22873e70ea96e241ea5530f8074f4e
+    source: 665a6c7c9d3961ad22be4210eb489a29f07761c09063cddce77a53e86c24f312
+    translation: 2e5928a1b8b3ffc482d28a5e07e849f3094b775ed9ed964086a881855d51504e
   - index: 3
     level: 2
     source: f2d4651167b05c9e860b7ac46f13ab2d437800f87b576ab68f48c642af295fcc
@@ -31,16 +31,16 @@ sections:
     translation: 61b163049886a79346f40a3b0c12863c3dd0fe91b7d8a6c3a72e5542a244a2fd
   - index: 6
     level: 3
-    source: 088fb7f082c35cc528cbce5f446173e44df0eca590dc4f3055dce840e1371fc0
-    translation: 96ddf8e213a624df4f39d2b17a4aa32e40332d0f3f2f664a5ca6f415b08cf54d
+    source: 76c63f6e45a7661a46df6051f6492489550017749b548cb36aa82282787a520f
+    translation: 09f23910bb4f43e8e1cb4e9f103d341615753e4b042157241a3ec0b636156f4f
   - index: 7
     level: 3
     source: bca9ff68bc69fecbaa5f978c98d2714e27fbf582b2015da5a33455202513dc36
     translation: 6d7e41501486cbc62654ed27b4defcdf71569e9549d0872aa227fdfeec912d4f
   - index: 8
     level: 3
-    source: c6cb92b7abe650bf1ae6d81961d789d945b9816f3514f0e1fb658c3cf1e65b9d
-    translation: 16accbf1c7f431a6a3558fe7f11e5c2588cfe2aa0b21848d5661637e431e9ad0
+    source: 24d19591e7e6576b427c33db6a9cee0b8e5ab13c3174ece1b7cb30c74460c77d
+    translation: 9e29ca29059cc85bfbdb2a3eb5f80307466f592abe99ef4efd86f7c885a2249d
   - index: 9
     level: 3
     source: a88bc4740795e6d2d5263b6afd86f509ce57eae073b66ed14483b6b589e2793f

@@ -1,4 +1,4 @@
-// dab-gate-runner: 0.1.2 sha256=8ac4eb9b9032550fef987ffce155f769c776b508a7c5cc7428b47d7dc249fe51
+// dab-gate-runner: 0.1.3 sha256=8ac4eb9b9032550fef987ffce155f769c776b508a7c5cc7428b47d7dc249fe51
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
