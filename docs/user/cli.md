@@ -18,7 +18,7 @@ npm install -g @saydone/dab
 dab --version
 ```
 
-The npm package is `@saydone/dab`; `npx dab` resolves to a different package. Requires Node.js `>=24.9`, Claude Code `>=2.1.277`, macOS or Linux.
+The npm package is `@saydone/dab`; `npx dab` resolves to a different package. Requires Node.js `>=24.9`, Claude Code `>=2.1.277`, macOS or Linux. For upgrade steps, see [Upgrading DAB](../../README.md).
 
 ## Scope and root discovery
 

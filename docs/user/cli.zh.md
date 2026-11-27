@@ -18,7 +18,7 @@ npm install -g @saydone/dab
 dab --version
 ```
 
-npm 包名是 `@saydone/dab`；`npx dab` 会解析到另一个包。需要 Node.js `>=24.9`、Claude Code `>=2.1.277`、macOS 或 Linux。
+npm 包名是 `@saydone/dab`；`npx dab` 会解析到另一个包。需要 Node.js `>=24.9`、Claude Code `>=2.1.277`、macOS 或 Linux。升级步骤见 [升级 DAB](../../README.zh.md)。
 
 ## Scope 与 Root 发现
 

@@ -100,6 +100,20 @@ dab --version
 
 The npm package is `@saydone/dab`; `npx dab` resolves to a different package.
 
+## Upgrading DAB
+
+DAB does not self-update with a `dab upgrade` command. Use the package manager that owns the installation, then refresh project-managed artifacts:
+
+```bash
+npx @saydone/dab@latest --version
+npm install -g @saydone/dab@latest
+pnpm add -D @saydone/dab@latest
+```
+
+Check the installed and published versions with `dab --version`, `npm view @saydone/dab version`, or `npm outdated -g @saydone/dab`.
+
+After upgrading the CLI, run `dab normalize` in each project and then `dab detect --strict`. Normalize refreshes unmodified managed skills and gate runner/snapshot artifacts; modified, unversioned or newer files are preserved with warnings and are never overwritten.
+
 For source development:
 
 ```bash
