@@ -4,13 +4,46 @@ import { join } from 'node:path';
 import { initializeProject, runInit } from '../../src/commands/init.ts';
 import { normalizeProject } from '../../src/commands/normalize.ts';
 import type { CommandRunner } from '../../src/core/command.ts';
+import {
+  parseGateRunnerMarker,
+  parseGateSnapshot,
+} from '../../src/core/gate-artifacts.ts';
 import { lstatOrNull } from '../../src/core/fs-atomic.ts';
+import { DAB_VERSION } from '../../src/core/version.ts';
+import { renderGateStarter } from '../../src/init/gate-templates.ts';
+import { renderGateRunner } from '../../src/init/gate-runner-template.ts';
+import { scanProject } from '../../src/init/scanner.ts';
 import { renderAuthoringSkill } from '../../src/init/skill-templates.ts';
 import {
   getGeneratedTarget,
   loadProjectManifest,
 } from '../../src/model/project-manifest.ts';
 import { makeTempDir } from '../helpers/tmp.ts';
+
+const goodRunner: CommandRunner = async () => ({
+  stdout: '2.1.325 (Claude Code)\n',
+  stderr: '',
+  exitCode: 0,
+});
+
+const GATE_FILES = [
+  '.agents/gates.yaml',
+  'scripts/dab-check.mjs',
+  'scripts/dab-gates.json',
+] as const;
+
+const VALID_GATE_CONFIG = `version: 1
+gates:
+  source:
+    mode: required
+  code:
+    commands:
+      test:
+        command: custom-test
+        mode: required
+  docs:
+    mode: check
+`;
 
 const dirs: string[] = [];
 const canDenyRead = process.platform !== 'win32'
@@ -1163,5 +1196,157 @@ describe('runInit', () => {
     expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
     expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
     expect(await lstatOrNull(join(root, '.agents/skills/dab-doc-writing'))).toBeNull();
+  });
+});
+
+describe('init gates', () => {
+  it('creates the project gate verification files', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    const expectedStarter = renderGateStarter(await scanProject(root));
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.created).toEqual(expect.arrayContaining([...GATE_FILES]));
+    expect(await readFile(join(root, '.agents/gates.yaml'), 'utf8')).toBe(expectedStarter);
+
+    const runner = await readFile(join(root, 'scripts/dab-check.mjs'), 'utf8');
+    expect(parseGateRunnerMarker(runner)).toMatchObject({ version: DAB_VERSION });
+
+    const snapshot = parseGateSnapshot(await readFile(join(root, 'scripts/dab-gates.json'), 'utf8'));
+    expect(snapshot.ok).toBe(true);
+    if (snapshot.ok) {
+      expect(snapshot.snapshot.gates.code.commands.test).toEqual({
+        command: 'npm test',
+        mode: 'required',
+      });
+    }
+  });
+
+  it('lists gate files in --dry-run without writing', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+
+    const result = await initializeProject({ cwd: root, dryRun: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.created).toEqual(expect.arrayContaining([...GATE_FILES]));
+    expect(await lstatOrNull(join(root, '.agents/gates.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'scripts'))).toBeNull();
+  });
+
+  it('skips existing gate files instead of overwriting them', async () => {
+    const root = await tempDir();
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await mkdir(join(root, 'scripts'), { recursive: true });
+    const existingRunner = 'authored runner\n';
+    const existingSnapshot = '{"authored":true}\n';
+    await writeFile(join(root, '.agents/gates.yaml'), VALID_GATE_CONFIG);
+    await writeFile(join(root, 'scripts/dab-check.mjs'), existingRunner);
+    await writeFile(join(root, 'scripts/dab-gates.json'), existingSnapshot);
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    for (const file of GATE_FILES) {
+      expect(result.created).not.toContain(file);
+      expect(result.skipped).toContain(file);
+    }
+    expect(await readFile(join(root, '.agents/gates.yaml'), 'utf8')).toBe(VALID_GATE_CONFIG);
+    expect(await readFile(join(root, 'scripts/dab-check.mjs'), 'utf8')).toBe(existingRunner);
+    expect(await readFile(join(root, 'scripts/dab-gates.json'), 'utf8')).toBe(existingSnapshot);
+  });
+
+  it('does not create gate files in global scope', async () => {
+    const home = await tempDir();
+
+    const result = await initializeProject({
+      cwd: home,
+      path: '.agents',
+      home,
+      runner: goodRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.scope).toBe('global');
+    for (const file of GATE_FILES) {
+      expect(result.created).not.toContain(file);
+    }
+    expect(await lstatOrNull(join(home, '.agents/gates.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(home, 'scripts'))).toBeNull();
+  });
+
+  it('does not update an existing stale runner during init', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await mkdir(join(root, 'scripts'), { recursive: true });
+    const staleRunner = renderGateRunner('0.0.1');
+    await writeFile(join(root, '.agents/gates.yaml'), VALID_GATE_CONFIG);
+    await writeFile(join(root, 'scripts/dab-check.mjs'), staleRunner);
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    expect(result.normalize).not.toBeNull();
+    expect(await readFile(join(root, 'scripts/dab-check.mjs'), 'utf8')).toBe(staleRunner);
+    // The missing snapshot is created from the authored config, never from the
+    // scanner, and the stale runner is not replaced by init or its normalize.
+    const snapshot = parseGateSnapshot(await readFile(join(root, 'scripts/dab-gates.json'), 'utf8'));
+    expect(snapshot.ok).toBe(true);
+    if (snapshot.ok) {
+      expect(snapshot.snapshot.gates.code.commands.test).toEqual({
+        command: 'custom-test',
+        mode: 'required',
+      });
+    }
+  });
+
+  it('refuses all writes when .agents/gates.yaml is invalid', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/gates.yaml'), 'version: nope\n');
+
+    const result = await initializeProject({ cwd: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(3);
+    expect(result.diagnostics.some(
+      (item) => item.severity === 'error'
+        && item.file === '.agents/gates.yaml'
+        && item.code.startsWith('gate.config'),
+    )).toBe(true);
+    expect(await readFile(join(root, '.agents/gates.yaml'), 'utf8')).toBe('version: nope\n');
+    expect(await lstatOrNull(join(root, 'scripts'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+  });
+
+  it('blocks a gate artifact path conflict before writing the skeleton', async () => {
+    const root = await tempDir();
+    await packageJson(root);
+    await mkdir(join(root, 'scripts'), { recursive: true });
+    await writeFile(join(root, 'scripts/shared-runner.mjs'), '// shared\n');
+    await symlink('shared-runner.mjs', join(root, 'scripts/dab-check.mjs'));
+
+    const dryRun = await initializeProject({ cwd: root, dryRun: true });
+    expect(dryRun.ok).toBe(false);
+    expect(dryRun.exitCode).toBe(3);
+    expect(dryRun.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'verification.artifact-path',
+      severity: 'error',
+      file: 'scripts/dab-check.mjs',
+    }));
+    expect(await lstatOrNull(join(root, '.agents/gates.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'AGENTS.md'))).toBeNull();
+
+    const real = await initializeProject({ cwd: root });
+    expect(real.ok).toBe(false);
+    expect(await lstatOrNull(join(root, '.agents/gates.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'dab.yaml'))).toBeNull();
+    expect(await lstatOrNull(join(root, 'scripts/dab-gates.json'))).toBeNull();
   });
 });

@@ -1,0 +1,39 @@
+version: 1
+source: .agents/notes/implemented/architecture/2026-11-25-g1-gates.md
+translation: .agents/notes/implemented/architecture/2026-11-25-g1-gates.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - index: 1
+    level: 1
+    source: f575bfad79f3b353e7f217abbdf5a11846e9c7e078f14e9ad0b26107b3be5a6b
+    translation: f82eca0dec19d28f4a643ceeed7c6d9516be7203c5b4997bd26e6d57f45e0f2c
+  - index: 2
+    level: 2
+    source: e9cc20ec339d653e2457497d587632fcbbe7c409cf1e70570b5e304f1b00081e
+    translation: 4bb92190eb60b7981e7bfe1546a1b5297c0146aa699915bd321637e257685ed3
+  - index: 3
+    level: 2
+    source: 8dc0ed5c354e0cc06acb1f44e54c0722ff5e420c16b437e6a4945bdd7e9a4ac5
+    translation: a3892e5bc635ac80a5bdacdd69edeee28fbfb886152833ccb9e97e12d0a9148e
+  - index: 4
+    level: 2
+    source: 5754bfd63d5683e764a1d1031e6840be10f19978abeec7543867da17e30ca6cf
+    translation: f48363a8875279a5c4a7dd6dc7118486b3132c98635b94b960fbe3c5f658d3bb
+  - index: 5
+    level: 2
+    source: f97dccc155fff686121757a2c1f8b6268251b4a8e80d1794abd96743409ee847
+    translation: c32e93a7644b664c0193239378da92be109aa6379908cacae249cba76decf1ce
+  - index: 6
+    level: 2
+    source: 7ae9c4693752879f4645ead345e9e96956f91b5a090d7ad48c37e5406e2f2321
+    translation: fd9d4aca8c87334ba017ad9d15e61d21b23cd64a8035d62f0b420f971cb92f5a
+  - index: 7
+    level: 2
+    source: eb8fbdb2251ce5da56e24894513dbf031b0e9e05f761d97a6a5bc603e754e5df
+    translation: 83071d437beef4a87b1ba1b8deb05680f61dcc5303f13206179966ad87af68d6

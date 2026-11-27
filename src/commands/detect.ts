@@ -53,7 +53,13 @@ import {
   PRACTICE_NON_STRICT_WARNING_CODES,
 } from '../detect/practice.ts';
 import { preflightProject, type PreflightResult } from '../detect/preflight.ts';
+import {
+  inspectVerification,
+  VERIFICATION_NON_STRICT_WARNING_CODES,
+  type VerificationCheckResult,
+} from '../detect/verification.ts';
 import { resolveAdoptionRoot, type AdoptionPhase } from '../init/adoption.ts';
+import { scanProject } from '../init/scanner.ts';
 import { discoverCommonFacts } from '../model/facts.ts';
 import {
   getEnabledTargets,
@@ -251,9 +257,12 @@ function nextFromHint(hint: string | undefined): string | undefined {
 
 function diagnosticEntries(diagnostics: readonly Diagnostic[]): ChecklistEntry[] {
   return diagnostics
-    // Practice diagnostics are represented by the practice entries built from
-    // the same check results. Mapping them again would duplicate the report.
-    .filter((item) => !REPRESENTED_CODES.has(item.code) && !item.code.startsWith('practice.'))
+    // Practice and Verification diagnostics are represented by the entries
+    // built from the same check results. Mapping them again would duplicate
+    // the report (and break the one-row-per-gate-path rule).
+    .filter((item) => !REPRESENTED_CODES.has(item.code)
+      && !item.code.startsWith('practice.')
+      && !item.code.startsWith('verification.'))
     .map((diagnostic) => {
       const next = nextFromHint(diagnostic.hint);
       return {
@@ -412,7 +421,8 @@ function buildResult(input: {
     && diagnostics.some(
       (item) => item.severity === 'warning'
         && !ENVIRONMENT_WARNING_CODES.has(item.code)
-        && !PRACTICE_NON_STRICT_WARNING_CODES.has(item.code),
+        && !PRACTICE_NON_STRICT_WARNING_CODES.has(item.code)
+        && !VERIFICATION_NON_STRICT_WARNING_CODES.has(item.code),
     );
   const exitCode = backendError
     ? ExitCode.Backend
@@ -573,6 +583,18 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
   );
   diagnostics.push(...practice.diagnostics);
 
+  // The Verification group is project-only. It reads the gate config, runner
+  // and snapshot through the shared gate plan; the plan is never applied, and
+  // the `source` gate is checked by detect itself, not by this inspection.
+  const verification: VerificationCheckResult = sourceRoot.scope === 'project'
+    ? await inspectVerification({
+      root,
+      scan: await scanProject(root),
+      version: DAB_VERSION,
+    })
+    : { entries: [], diagnostics: [] };
+  diagnostics.push(...verification.diagnostics);
+
   // Imports run on every normalize, including initialized scopes. Detect runs
   // the same read-only plan so an importable physical entry is reported as
   // [IMPORTABLE] instead of as an unmanaged or physical-copy projection.
@@ -657,6 +679,7 @@ export async function detectProject(options: DetectOptions): Promise<DetectResul
     entries: [
       ...await inventoryEntries(root, paths, diagnostics),
       ...practice.entries,
+      ...verification.entries,
       ...importPlan.entries.map((entry) => importEntry(entry)),
       ...targets.flatMap((outcome) =>
         outcome.statuses

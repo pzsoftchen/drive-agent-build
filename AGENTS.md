@@ -11,6 +11,10 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - `src/model/scope.ts`: scope and source-root resolution.
 - `src/model/facts.ts`: common fact discovery without provider overlays.
 - `src/model/policy.ts`: common policy and Claude adapter policy loaders.
+- `src/model/gates.ts`: gate configuration schema.
+- `src/core/gate-config.ts` and `src/core/gate-artifacts.ts`: gate config loading, snapshot canonicalization and hashing.
+- `src/init/gate-templates.ts`, `src/init/gate-artifacts.ts` and `src/init/gate-runner-template.ts`: gate starter, generated artifact planning and stable runner.
+- `src/detect/verification.ts`: gate Verification checks.
 - `src/core/skill-marker.ts`: managed skill marker parsing, insertion and body hashing.
 - `src/adapter/types.ts`: target adapter contract.
 - `src/adapter/claude-code/adapter.ts`: Claude target adapter.
@@ -35,6 +39,7 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - Docs gate: `pnpm doc-sync`
 - Normalize generated config: `node dist/cli.js normalize`
 - Detect drift: `node dist/cli.js detect`
+- Project gates: `node scripts/dab-check.mjs --strict`
 
 ## Rules
 
@@ -56,6 +61,7 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
 - [CLI](docs/user/cli.md)
+- [Project gates](docs/user/gates.md)
 - [Claude Code integration](docs/user/claude-code.md)
 - [Superpowers docs](docs/superpowers/README.md)
 - [Agent Note 0001](.agents/notes/implemented/architecture/2026-11-16-agents-source-tree.md)
@@ -64,3 +70,4 @@ DAB turns `AGENTS.md` and `.agents/` into governed Claude Code configuration.
 - [Agent Note 0004](.agents/notes/implemented/architecture/2026-11-24-managed-skills.md)
 - [Agent Note 0005](.agents/notes/implemented/process/2026-11-24-route-and-discipline-docs.md)
 - [Agent Note 0006](.agents/notes/implemented/architecture/2026-11-25-cross-agent-contract.md)
+- [Agent Note 0007](.agents/notes/implemented/architecture/2026-11-25-g1-gates.md)

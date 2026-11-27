@@ -2,6 +2,14 @@
 
 # 变更日志
 
+## Unreleased
+
+- 新增项目门禁：authored `.agents/gates.yaml`、生成的 `scripts/dab-check.mjs` 和 `scripts/dab-gates.json`，以及执行固定 `dab detect --strict` source gate 和已配置 code、docs 命令的 runner。门禁 mode 为 `required`、`check`、`advisory` 和 `off`；runner 退出码为 `0`、`1` 和 `2`。
+- `dab init` 和 `dab normalize` 创建缺失的门禁产物，更新未修改的较旧 runner 和过期快照，并保留被修改、无版本和较新的生成文件且产生 warning。无效门禁配置会阻止所有写入。
+- 新增 Java Maven、Java Gradle、Android、iOS SwiftPM 和 iOS Xcode 技术栈检测，优先 wrapper，Android 优先于 Gradle，SwiftPM 优先于 Xcode。Xcode 只从显式的 shared scheme 和 destination 或 Fastlane 命令解析；在配置之前不猜测并报告 `CONFIG`。
+- `dab detect` 增加 project-only 的 `Verification` 组，为 config、runner、快照和命令接线提供 strict 映射；缺失或过期产物会让 `--strict` 失败，而被修改、无版本和较新的产物、空命令集和缺少 CI 接线保持非 strict。
+- DAB 不生成 CI 文件，也不为 `dab` 增加门禁命令。项目在自己的 CI provider 中调用 `node scripts/dab-check.mjs --strict`；DAB 自己也 dogfood 同一个 runner。
+
 ## 0.1.2 — 2026-11-24
 
 - `dab init` 默认写入 `profile: generic` 和 `docs.language: auto`。`--profile generic|feature` 选择 manifest profile；`feature` 是行为相同的兼容别名。`docs.language` 接受 `auto`、`en` 或 `zh`；`auto` 从项目内容和 locale 解析，并在人类输出和 JSON 中报告 `{ value, source }`。

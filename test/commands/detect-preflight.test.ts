@@ -658,4 +658,34 @@ paths:
     expect(await lstatOrNull(join(home, '.agents/dab.yaml'))).toBeNull();
     expect(await lstatOrNull(join(home, 'AGENTS.md'))).toBeNull();
   });
+
+  it('keeps the Verification group out of preflight checklists', async () => {
+    const uninitialized = await tempDir();
+    const uninitializedResult = await detectProject({
+      cwd: uninitialized,
+      home: dirname(uninitialized),
+    });
+
+    expect(uninitializedResult.phase).toBe('uninitialized');
+    expect(uninitializedResult.checklist.some(
+      (entry) => entry.group === 'Verification',
+    )).toBe(false);
+    expect(uninitializedResult.diagnostics.some(
+      (item) => item.code.startsWith('verification.'),
+    )).toBe(false);
+
+    const partial = await projectFixture();
+    const partialResult = await detectProject({
+      cwd: partial.root,
+      home: dirname(partial.root),
+    });
+
+    expect(partialResult.phase).toBe('partial');
+    expect(partialResult.checklist.some(
+      (entry) => entry.group === 'Verification',
+    )).toBe(false);
+    expect(partialResult.diagnostics.some(
+      (item) => item.code.startsWith('verification.'),
+    )).toBe(false);
+  });
 });

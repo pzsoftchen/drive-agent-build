@@ -68,7 +68,11 @@ describe('normalizeProject targets', () => {
 
     expect(result.targets.map((item) => item.provider)).toEqual(['claude-code']);
     expect(result.targets[0]?.settings?.path).toBe('.claude/settings.json');
-    expect(result.actions).toEqual(result.targets.flatMap((item) => item.actions));
+    expect(result.actions).toEqual([
+      ...['.agents/gates.yaml', 'scripts/dab-check.mjs', 'scripts/dab-gates.json']
+        .map((path) => `create gate ${path}`),
+      ...result.targets.flatMap((item) => item.actions),
+    ]);
     expect(await lstatOrNull(join(project.root, '.claude/settings.json'))).toBeNull();
   });
 

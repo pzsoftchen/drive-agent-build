@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "generated": {
+    "dabVersion": "0.1.2",
+    "sha256": "a33119ec8e169e790d0dc8ab02bdb525ed7d2e54f5c3399831e55ecd38cfabd5"
+  },
+  "gates": {
+    "source": {
+      "mode": "required"
+    },
+    "code": {
+      "commands": {
+        "test": {
+          "command": "pnpm test",
+          "mode": "required"
+        },
+        "typecheck": {
+          "command": "pnpm typecheck",
+          "mode": "required"
+        },
+        "build": {
+          "command": "pnpm build",
+          "mode": "advisory"
+        }
+      }
+    },
+    "docs": {
+      "mode": "check"
+    }
+  }
+}

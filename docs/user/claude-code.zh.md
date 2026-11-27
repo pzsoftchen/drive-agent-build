@@ -67,6 +67,14 @@ targets:
 - 每个已安装副本带 `<!-- dab-skill: <name>@<version> sha256=<hash> -->` 标记。`dab init` 只安装缺失 skills。`dab normalize` 更新 marker 版本较旧且未修改的副本，并在无 hash 的 legacy marker 去掉后 body 与当前模板一致时迁移它。已修改副本、较新或无法比较的版本、缺失 marker、marker 不匹配和 body 不同的 legacy marker 会保留并警告；受管更新不创建备份。
 - `dab detect` 报告 current、stale、newer、modified、legacy、unversioned 和 marker-mismatch 状态。`practice.skill-stale` 会让 `--strict` 失败；保留类状态不会。
 
+## 项目门禁
+
+- `dab init` 和 `dab normalize` 生成 project-only 的 `.agents/gates.yaml`、`scripts/dab-check.mjs` 和 `scripts/dab-gates.json`。Claude Code 不读取这些文件；它们是项目本地和 CI 的门禁入口。
+- runner 先调用 `dab detect --strict` 作为固定 `source` gate，再执行项目的 code 和 docs 命令。`dab detect` 在 project-only 的 `Verification` 组中报告同一批文件。
+- Xcode 项目在配置 shared scheme 和 destination 或 Fastlane 命令之前保持 `command: null` 和 `needs` 说明。runner 报告 `CONFIG`，永不报告假通过。
+- CI 接线需要手动完成，例如 `node scripts/dab-check.mjs --strict`。DAB 不写入 `.github/workflows/` 或任何其他 CI 文件。
+- 完整模型见[项目门禁](gates.zh.md)。
+
 ## 记忆模型
 
 - 共享记忆是高级、可选能力。DAB 默认不生成 `.agents/memory/`；已有文件仍会被保留和校验。

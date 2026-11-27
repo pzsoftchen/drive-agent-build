@@ -1,0 +1,51 @@
+version: 1
+source: docs/user/gates.md
+translation: docs/user/gates.zh.md
+frontmatter:
+  source: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  translation: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sections:
+  - index: 0
+    level: 0
+    source: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+    translation: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+  - index: 1
+    level: 1
+    source: 78e65a918328616efa3d1eb1faf0a7d41583f4980cb6a06d40d589b45df15c0a
+    translation: e6bb827bbb04fbae86ef8d40a3a6fc4047a0dbe00ea557a2ddcd633fd099b7ac
+  - index: 2
+    level: 2
+    source: 866aff073f371a420687083aa6708b6dc6d94ab4bf675b1c7d8d50a786ed0df6
+    translation: 4d7e1e737194cb155d246311efad1c0d21f80b8c3b91c6d8381d0144bca34366
+  - index: 3
+    level: 2
+    source: ca1e5671ff6a5420f72d76d233a449affa92a0f760cf9c9fd03e00ab6308dffb
+    translation: 137bc1ce492236860025ad14bfe1384a3514da7eb9bee25cfe796b036fdc18f3
+  - index: 4
+    level: 2
+    source: 7724dafa64f763b48d84b018c9632e20edb5cfc409456768687a5aaf016fe5cd
+    translation: 4999f0111a59702291cc4eb6e926d3d7bc958f677db8c17dbe10aa2c4a9f1742
+  - index: 5
+    level: 2
+    source: 4b32c0a564adf40ae2f206715f6782479c67688275615cfc0f34bac23e6b1379
+    translation: 81518cb6adc18939da6d0109bf21b5b2e1fd1bc6e1725bb47a5ff00a8bc04638
+  - index: 6
+    level: 2
+    source: 7ec40d98ff01b606122352da46a5ab5f92a00710ebc34ded396024ca89adae87
+    translation: 183b36949b5d78b51dc2f2a654b7fb63d9d69ebd853f64370a830e496059f3d8
+  - index: 7
+    level: 2
+    source: 146920ec01190edc3c43911d9fafbf3b18fdf357430d3652802da91446cce6a7
+    translation: f648b14b40fe96146f8c151357be1a93f6bc95f2afc7418331a4c38f1036a4bc
+  - index: 8
+    level: 2
+    source: bb218a887e2716f5beeffad11bc08f0baaf1a930e758ed05986a996081a7ae66
+    translation: f95b5e195c88423f2be069cb5008b9a141bb610a8b25335e3f84b6d9813ee42d
+  - index: 9
+    level: 2
+    source: 01054fa97978c736b294e529f07f033e6776f22172ad10066deda3a432f32417
+    translation: bc179c9b11ff6cf42132f9453d3d53d90bbaf7f3951b0e2b2bee705c2695834c
+  - index: 10
+    level: 2
+    source: 91542ac90e35a621feeaf493738eb9028d06f6053c49288206d62b5afd48f0b9
+    translation: 149cf3c9926c2b3b6e5cc1b30651084295462524bad8050fcaa94b6a9ea87706

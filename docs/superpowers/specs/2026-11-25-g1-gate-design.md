@@ -169,8 +169,11 @@ gates:
 - `command` 是项目可信的命令字符串；DAB 不执行 shell 拼接之外的动态求值。
 - `command` 与 `xcodebuild` 二选一；`xcodebuild` 必须提供 `scheme` 和 `destination`，并且 `project`/`workspace` 二选一；缺任何必需字段都是 `needs-config`，不能降级为通过。
 - `xcodebuild` 由 normalize 规范化为等价的 `xcodebuild test ...` 命令写入快照；项目应提交 shared scheme。
-- `command: null` 表示需要项目配置，不得当作跳过；required 时 runner 输出 `CONFIG` 并非零退出。
 - `docs.command` 可选；没有项目 docs 命令时输出 `SKIP`，并说明生成的 docs/practice 已由 `source` gate 检查，不视为失败。
+- `test` 和 `typecheck` 是 scanner 默认的必需维度。scanner 检测到对应命令而配置省略该维度时，`detect` 报 error（`verification.command-missing`）；唯一的豁免方式是显式写入 `mode: off`，不能通过删除键静默通过。
+- `mode: off` 是显式豁免：runner 在任何命令状态下先输出 `SKIP`，不检查 `command: null`，也不把未配置当成通过。
+- `command: null` 表示需要项目配置，不得当作跳过；除 `mode: off` 外，runner 输出 `CONFIG` 并以 `2` 退出，不区分配置的 mode。
+- 配置和 scanner 都没有命令时允许 `code.commands: {}`：`detect` 报非 strict warning（`verification.commands-empty`），runner 报 `WARN`。runner 的 `--strict` 会让该 `WARN` 导致退出码 `1`，而 `detect` 不会让 `commands-empty` 失败；空命令集是项目状态，不是配置漂移。
 - 配置键未知、类型错误、命令为空字符串是 error。
 - `.agents/gates.yaml` 不存在时，`init`/`normalize` 按 scanner 结果生成 starter；已存在时永不覆盖。
 - 生成文件 `scripts/dab-check.mjs` 和 `scripts/dab-gates.json` 不属于 authored source；它们由 normalize 管理，具体更新规则见 7.1 和 10.2。
@@ -178,7 +181,7 @@ gates:
 ### 6.2 配置来源优先级
 
 1. `.agents/gates.yaml` 中显式的 `command` 或 `xcodebuild`；
-2. scanner 的检测结果（仅用于生成 starter 和 normalize 的默认快照）；
+2. scanner 的检测结果（仅在 `.agents/gates.yaml` 缺失时用于生成 starter，不回填已有配置）；
 3. 无命令：明确 `SKIP`/`CONFIG`，不猜测。
 
 项目可以在配置里覆盖 scanner 的检测，例如 iOS 项目必须提供 scheme/destination，或 Java 项目使用自定义 Maven profile。
@@ -206,7 +209,7 @@ runner 不直接解析 YAML，而是读取 normalize 生成的无依赖 JSON 快
 }
 ```
 
-- 快照是生成物，不是 authored source；source of truth 始终是 `.agents/gates.yaml` 加 scanner 默认值。
+- 快照是生成物，不是 authored source；source of truth 始终是 `.agents/gates.yaml`，scanner 只用于配置缺失时的 starter。
 - `sha256` 覆盖规范化后的 `gates` 对象，不覆盖 `generated` 元数据。
 - `normalize` 从 authored 配置编译快照；runner 只读快照。
 - 手工修改快照会被 detect 报告为 modified；normalize 不静默覆盖用户修改，除非快照仍是 DAB 管理的未修改版本。
@@ -217,7 +220,7 @@ runner 不直接解析 YAML，而是读取 normalize 生成的无依赖 JSON 快
 ### 7.1 文件职责
 
 - `scripts/dab-check.mjs`：稳定 runner，负责执行和聚合，不嵌入项目命令。
-- `scripts/dab-gates.json`：由 `.agents/gates.yaml` 和 scanner 默认值编译出的配置快照，runner 只读它。
+- `scripts/dab-gates.json`：由 `.agents/gates.yaml` 编译出的配置快照，runner 只读它。
 
 这是主流工具常见的“稳定 runner + 声明式配置”形态（`pre-commit`、`lefthook`、Nx、Turborepo 都是 runner 稳定、配置留在仓库）。把命令嵌进生成 runner 虽然也能工作，但每次改命令都要重写代码，难 review，也违背配置与执行分离。
 
@@ -330,23 +333,43 @@ interface ScanStack {
 
 ## 9. `dab detect` 的 Verification 组
 
-在 `dab detect` 的 checklist 增加 `Verification` 组：
+在 `dab detect` 的 checklist 增加 `Verification` 组。实际诊断码和 strict 映射如下：
 
-| 检查 | 默认级别 | strict |
+| 检查 | 级别 | `--strict` |
 |---|---|---|
-| `verification.runner-missing` | warning | 失败 |
 | `verification.config-missing` | warning | 失败 |
-| `verification.snapshot-missing` | warning | 失败 |
-| `verification.snapshot-stale` | warning | 失败 |
-| `verification.snapshot-modified` | warning | 不失败 |
+| `verification.config-invalid` | error | 失败 |
+| `verification.config-unreadable` | error | 失败 |
+| `verification.config-yaml` | error | 失败 |
+| `verification.starter-invalid` | error | 失败 |
+| `verification.runner-missing` | warning | 失败 |
 | `verification.runner-stale` | warning | 失败 |
 | `verification.runner-modified` | warning | 不失败 |
 | `verification.runner-unversioned` | warning | 不失败 |
+| `verification.runner-newer` | warning | 不失败 |
+| `verification.snapshot-missing` | warning | 失败 |
+| `verification.snapshot-stale` | warning | 失败 |
+| `verification.snapshot-modified` | warning | 不失败 |
+| `verification.snapshot-unversioned` | warning | 不失败 |
+| `verification.snapshot-newer` | warning | 不失败 |
 | `verification.command-needs-config` | warning | 失败 |
-| `verification.command-missing`（required） | error | 失败 |
+| `verification.command-missing` | error | 失败 |
+| `verification.commands-empty` | warning | 不失败 |
 | `verification.ci-missing` | warning | 不失败 |
+| `verification.artifact-path` | error | 失败 |
+| `verification.artifact-concurrent-change` | warning | 不适用 |
+
+映射规则：
+
+- 任何 error 都使 `detect` 以校验失败退出，`--strict` 不改变这一点。
+- warning 默认使 `--strict` 失败；`runner-modified`、`runner-unversioned`、`runner-newer`、`snapshot-modified`、`snapshot-unversioned`、`snapshot-newer`、`commands-empty` 和 `ci-missing` 是保留状态或项目状态，保持非 strict。
+- `artifact-path` 表示配置、runner 或快照路径冲突，是阻断性 error。
+- `artifact-concurrent-change` 不会由 `detect` 产生：它表示 plan 与 apply 之间文件被并发修改，只在 `normalize` 写入阶段报告为 warning；写入被保留，不会覆盖用户修改。
+- `starter-invalid` 表示 scanner 默认值生成了无效 starter，是 DAB 自身错误，不应由项目配置修复。
 
 `source` gate 始终由 `dab detect --strict` 自己检查；Verification 组只检查 runner、snapshot、config 和命令接线，不执行项目命令。
+
+升级既有项目时先运行 `dab normalize` 补齐或更新配置、runner 和快照，再运行 `dab detect --strict`；否则缺失或过期的生成物会让 strict 失败。`normalize` 保留 modified、unversioned 和 newer 生成物，这些状态不会因重跑而自动消失，需要人工核对。
 
 ### 9.1 报告内容
 
@@ -378,9 +401,9 @@ project scope：
 
 - adoption/converge 补齐缺失的 gates 配置、runner 和快照；
 - 配置存在时只校验，不覆盖；
-- runner 未修改且版本/hash 较旧时更新；
-- runner 被修改时保留并报告 `verification.runner-modified`；
-- 从 authored 配置和 scanner 默认值重编译快照；快照被修改时保留并报告 `verification.snapshot-modified`；
+- runner 未修改且版本较旧时更新；
+- runner 被修改时保留并报告 `verification.runner-modified`；runner 无 marker 时保留并报告 `verification.runner-unversioned`；版本较新或无法比较时保留并报告 `verification.runner-newer`；
+- 从 authored 配置重编译快照；快照被修改时保留并报告 `verification.snapshot-modified`；快照无生成元数据时保留并报告 `verification.snapshot-unversioned`；版本较新或无法比较时保留并报告 `verification.snapshot-newer`；
 - 配置与快照不一致时报告 `verification.snapshot-stale`，等待 normalize 重渲染；
 - 配置无效时阻止写入（all-or-nothing），不写部分 runner 或快照。
 

@@ -2,6 +2,14 @@ English | [中文](CHANGELOG.zh.md)
 
 # Changelog
 
+## Unreleased
+
+- Added project gates: authored `.agents/gates.yaml`, generated `scripts/dab-check.mjs` and `scripts/dab-gates.json`, and a runner that executes the fixed `dab detect --strict` source gate plus configured code and docs commands. Gate modes are `required`, `check`, `advisory` and `off`; runner exit codes are `0`, `1` and `2`.
+- `dab init` and `dab normalize` create missing gate artifacts, update an unmodified older runner and stale snapshot, and preserve modified, unversioned and newer generated files with warnings. Invalid gate config blocks every write.
+- Added Java Maven, Java Gradle, Android, iOS SwiftPM and iOS Xcode stack detection with wrapper preference, Android-over-Gradle precedence and SwiftPM-over-Xcode precedence. Xcode resolves only from an explicit shared scheme and destination or a Fastlane command; it never guesses and reports `CONFIG` until configured.
+- `dab detect` adds a project-only `Verification` group with strict mapping for config, runner, snapshot and command wiring; missing or stale artifacts fail `--strict`, while modified, unversioned and newer artifacts, empty command sets and missing CI wiring stay non-strict.
+- DAB does not generate CI files or add a `dab` gate command. Projects call `node scripts/dab-check.mjs --strict` from their CI provider; DAB dogfoods the same runner.
+
 ## 0.1.2 — 2026-11-24
 
 - `dab init` now writes `profile: generic` and `docs.language: auto` by default. `--profile generic|feature` selects the manifest profile; `feature` is a compatibility alias with the same practice behavior. `docs.language` accepts `auto`, `en` or `zh`, is resolved from project content and locale when `auto`, and reports `{ value, source }` in human output and JSON.

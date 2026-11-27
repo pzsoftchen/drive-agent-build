@@ -37,13 +37,16 @@ import {
   planManagedSkillWrites,
   planSourceWrites,
   prepareNormalizeAdoption,
+  summarizeGates,
   summarizeManagedSkills,
   writeSourceFiles,
   type ManagedSkillSummary,
   type MinimalSourcePlan,
   type NormalizeAdoptionResult,
+  type NormalizeGateSummary,
 } from '../init/adoption.ts';
 import type { DocsLanguageResolution } from '../init/docs-language.ts';
+import { applyGateArtifacts } from '../init/gate-artifacts.ts';
 import { applyManagedSkillWrites } from '../init/managed-skills.ts';
 import type { AuthoredScaffoldPlan } from '../init/practice.ts';
 import { checkAgentsMd } from '../model/agents-md.ts';
@@ -83,6 +86,12 @@ export interface NormalizeOptions {
    * owns managed updates.
    */
   suppressManagedSkills?: boolean;
+  /**
+   * Internal: skip managed gate runner/snapshot updates. `dab init` sets it so
+   * its nested normalize never replaces an existing generated gate artifact;
+   * init still creates missing files through its own practice plan.
+   */
+  suppressGateUpdates?: boolean;
 }
 
 export interface NormalizeIO {
@@ -130,6 +139,19 @@ export interface NormalizePracticesResult {
     markerMismatch: string[];
     /** Targets changed between planning and applying; preserved with a warning. */
     concurrent: string[];
+  };
+  /** Project gate artifacts. Absent when no gate plan exists (global scope). */
+  gates?: {
+    /** Missing artifacts created by this run (or planned by a dry run). */
+    created: string[];
+    /** Stale but unmodified generated artifacts replaced by this run. */
+    updated: string[];
+    /** Existing gate artifacts left untouched, including preserved states. */
+    skipped: string[];
+    /** User-edited runner/snapshot bytes preserved with a warning. */
+    modified: string[];
+    /** Task 3 plan and apply diagnostics for the gate artifacts. */
+    diagnostics: Diagnostic[];
   };
   diagnostics: Diagnostic[];
 }
@@ -213,6 +235,7 @@ function buildPractices(
   skipped: readonly string[],
   diagnostics: readonly Diagnostic[],
   managed: ManagedSkillSummary = summarizeManagedSkills(undefined),
+  gates?: NormalizeGateSummary,
 ): NormalizePracticesResult {
   const practiceCreated = created.filter(
     (path) => isDocsPracticePath(path) || isAuthoringSkillPath(path),
@@ -255,7 +278,18 @@ function buildPractices(
       markerMismatch: managed.markerMismatch,
       concurrent: managed.concurrent,
     },
-    diagnostics: [...diagnostics],
+    ...(gates === undefined ? {} : {
+      gates: {
+        created: gates.created,
+        updated: gates.updated,
+        skipped: gates.skipped,
+        modified: gates.modified,
+        diagnostics: gates.diagnostics,
+      },
+    }),
+    // A gate plan shares practice and apply diagnostics (its own summary and
+    // the run report), so exact duplicates are removed here.
+    diagnostics: dedupeDiagnostics([...diagnostics]),
   };
 }
 
@@ -464,6 +498,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.suppressImports === true ? { suppressImports: true } : {}),
     ...(options.suppressManagedSkills === true ? { suppressManagedSkills: true } : {}),
+    ...(options.suppressGateUpdates === true ? { suppressGateUpdates: true } : {}),
   });
   const root = preparation.sourceRoot.root;
   const scope = preparation.sourceRoot.scope;
@@ -471,6 +506,9 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   const practicePlan = preparation.practicePlan;
   const sourceProblems = preparation.sourceProblems ?? [];
   const managedDiagnostics = preparation.managedSkills?.diagnostics ?? [];
+  // Task 3 gate diagnostics (modified/unversioned/newer/path) are surfaced by
+  // normalize even though the practice pack intentionally drops them.
+  const gateDiagnostics = preparation.gates?.diagnostics ?? [];
   // The authoring pack creates missing skills it planned; the managed writer
   // owns existing stale/legacy files and missing SKILL.md under a user-owned
   // directory. Exactly one writer therefore plans each skill file.
@@ -481,10 +519,16 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       new Set(Object.keys(practicePlan?.files ?? {})),
     );
   let managed = summarizeManagedSkills(managedWritePlan);
+  // Blocked returns never claim a gate write: the practice/source phase has not
+  // run, so only diagnostics, modified and skipped states stay in the report.
+  const blockedGates = preparation.gates === undefined
+    ? undefined
+    : summarizeGates(preparation.gates, { mode: 'blocked' });
   const practiceWarnings = scope === 'project' ? policySkipWarnings(practicePlan) : [];
   const practiceDiagnostics = [
     ...(practicePlan?.diagnostics ?? []),
     ...managedDiagnostics,
+    ...gateDiagnostics,
     ...practiceWarnings,
     ...sourceProblems,
   ];
@@ -515,6 +559,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       created: readonly string[],
       skipped: readonly string[],
       managedSummary: ManagedSkillSummary = managed,
+      gateSummary: NormalizeGateSummary | undefined = blockedGates,
     ): NormalizePracticesResult | undefined => practicePlan === undefined
       ? undefined
       : buildPractices(
@@ -523,6 +568,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         skipped,
         practiceDiagnostics,
         managedSummary,
+        gateSummary,
       );
 
     // Any invalid import candidate gates the minimal source copy as well, so a
@@ -540,8 +586,8 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       { ...preparation, claudePlan: undefined, managedSkills: managedWritePlan },
       { dryRun: options.dryRun === true, backupRoot },
     );
-    // Apply-time managed warnings (a concurrent change) belong to the run and
-    // the practice report, not only to the adoption step.
+    // Apply-time managed and gate warnings (a concurrent change) belong to the
+    // run and the practice report, not only to the adoption step.
     preparationDiagnostics.push(...applied.diagnostics);
     practiceDiagnostics.push(...applied.diagnostics);
     adoption = {
@@ -549,10 +595,21 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       sourceActions: applied.actions,
       diagnostics: [...adoption.diagnostics, ...applied.diagnostics],
     };
-    practices = practicesFor(applied.created, applied.skipped, applied.managed);
+    const appliedGates = applied.gates ?? blockedGates;
+    practices = practicesFor(
+      applied.created,
+      applied.skipped,
+      applied.managed,
+      appliedGates,
+    );
     if (hasErrors(applied.diagnostics)) {
       const planned = await planSourceWrites(root, sourcePlan);
-      practices = practicesFor(planned.create, planned.skip);
+      practices = practicesFor(
+        planned.create,
+        planned.skip,
+        managed,
+        appliedGates,
+      );
       return blockedResult(
         root,
         scope,
@@ -594,8 +651,19 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   // practice error returns before anything is written.
   let practiceSourcePlan: MinimalSourcePlan | undefined;
   if (preparation.phase === 'initialized' && practicePlan !== undefined) {
-    if (hasErrors(practicePlan.diagnostics) || hasErrors(managedDiagnostics)) {
-      practices = buildPractices(practicePlan, [], [], practiceDiagnostics, managed);
+    if (
+      hasErrors(practicePlan.diagnostics)
+      || hasErrors(managedDiagnostics)
+      || hasErrors(gateDiagnostics)
+    ) {
+      practices = buildPractices(
+        practicePlan,
+        [],
+        [],
+        practiceDiagnostics,
+        managed,
+        blockedGates,
+      );
       return blockedResult(root, scope, options, preparationDiagnostics, {
         ...adoptionExtras(adoption),
         ...practiceExtras(scope, practices),
@@ -613,6 +681,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
       planned.skip,
       practiceDiagnostics,
       managed,
+      blockedGates,
     );
   }
 
@@ -623,7 +692,14 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   if (sourceProblems.length > 0) {
     practices = practicePlan === undefined
       ? undefined
-      : buildPractices(practicePlan, [], [], practiceDiagnostics, managed);
+      : buildPractices(
+        practicePlan,
+        [],
+        [],
+        practiceDiagnostics,
+        managed,
+        blockedGates,
+      );
     return blockedResult(root, scope, options, preparationDiagnostics, {
       ...adoptionExtras(adoption),
       ...practiceExtras(scope, practices),
@@ -681,6 +757,7 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   // without touching bytes.
   if (practiceSourcePlan !== undefined && practicePlan !== undefined
     && !blockedBeforePlanning) {
+    let gateSummary = blockedGates;
     if (options.dryRun !== true) {
       const written = await writeSourceFiles(root, practiceSourcePlan);
       if (managedWritePlan !== undefined) {
@@ -695,18 +772,66 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
         practiceDiagnostics.push(...appliedManaged.diagnostics);
         diagnostics.push(...appliedManaged.diagnostics);
       }
+      if (preparation.gates !== undefined) {
+        const appliedGates = await applyGateArtifacts(
+          root,
+          preparation.gates.plan,
+          { dryRun: false },
+        );
+        gateSummary = summarizeGates(preparation.gates, {
+          mode: 'apply',
+          practiceCreated: new Set(written.created),
+          practiceSkipped: new Set(written.skipped),
+          applied: appliedGates,
+        });
+        // The summary carries plan, apply-time and practice-phase concurrent
+        // diagnostics in one deduped list.
+        practiceDiagnostics.push(...gateSummary.diagnostics);
+        diagnostics.push(...gateSummary.diagnostics);
+      }
       practices = buildPractices(
         practicePlan,
         written.created,
         written.skipped,
         practiceDiagnostics,
         managed,
+        gateSummary,
+      );
+    } else if (preparation.gates !== undefined) {
+      // A dry run applies nothing, but revalidates the same plan so the report
+      // matches the real run and concurrent edits are already surfaced.
+      const appliedGates = await applyGateArtifacts(
+        root,
+        preparation.gates.plan,
+        { dryRun: true },
+      );
+      const planned = await planSourceWrites(root, practiceSourcePlan);
+      gateSummary = summarizeGates(preparation.gates, {
+        mode: 'dry-run',
+        practiceCreated: new Set(Object.keys(practicePlan.files)),
+        practiceSkipped: new Set(planned.skip),
+        applied: appliedGates,
+      });
+      practiceDiagnostics.push(...gateSummary.diagnostics);
+      diagnostics.push(...gateSummary.diagnostics);
+      practices = buildPractices(
+        practicePlan,
+        planned.create,
+        planned.skip,
+        practiceDiagnostics,
+        managed,
+        gateSummary,
       );
     }
-    if (managed.actions.length > 0) {
+    const gateActions = gateSummary?.actions ?? [];
+    if (managed.actions.length > 0 || gateActions.length > 0) {
       adoption = {
         ...adoption,
-        sourceActions: [...adoption.sourceActions, ...managed.actions],
+        sourceActions: [
+          ...adoption.sourceActions,
+          ...managed.actions,
+          ...gateActions,
+        ],
       };
     }
   }
@@ -841,7 +966,13 @@ export async function normalizeProject(options: NormalizeOptions): Promise<Norma
   // after every plan is clean; `.claude` stays untouched on earlier failures.
   if (preparation.claudePlan !== undefined) {
     const imported = await applyNormalizeAdoption(
-      { ...preparation, sourcePlan: undefined, managedSkills: undefined },
+      {
+        ...preparation,
+        sourcePlan: undefined,
+        managedSkills: undefined,
+        // The practice/source phase already applied this plan.
+        gates: undefined,
+      },
       { dryRun: false, backupRoot },
     );
     // Apply returns absolute paths; NormalizeResult paths are root-relative.

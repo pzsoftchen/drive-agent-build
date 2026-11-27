@@ -25,6 +25,7 @@ DAB is conceptually a driving system for Builder-directed agent work. This repos
 | Shared memory (optional, advanced) | `.agents/memory/` | Read on demand |
 | Personal memory | Claude Code auto memory | Machine-local |
 | Decisions | `.agents/notes/` | Read on demand |
+| Project gates | `.agents/gates.yaml` | `scripts/dab-gates.json` snapshot read by `scripts/dab-check.mjs` |
 | Metadata | `dab.yaml` | Per-target generated records |
 
 The same shape applies at global scope with `~/.agents/` as the authored home and `$HOME` as the target root. Project and global scopes are independent: DAB never merges them and offers no `dab global` command.
@@ -61,7 +62,7 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 
 ## Detect checklist
 
-- `dab detect` groups entries as Instructions, Documentation, Agents, Skills, Rules, Policy, Hooks, Memory, Notes, Generated target and Safety.
+- `dab detect` groups entries as Instructions, Documentation, Agents, Skills, Verification, Rules, Policy, Hooks, Memory, Notes, Generated target and Safety.
 - The Hooks and Memory groups never report a missing optional file; a project that never opted in is not reported as missing.
 - Statuses are `[OK]`, `[MISSING]`, `[WARN]`, `[ERROR]` and `[IMPORTABLE]`. `[IMPORTABLE]` means a physical `.claude/agents` or `.claude/skills` entry can be imported into `.agents`.
 - Detect runs the read-only import plan in every phase, including `initialized`; an importable entry is not also reported as unmanaged or physical-copy projection drift.
@@ -109,10 +110,20 @@ The same shape applies at global scope with `~/.agents/` as the authored home an
 
 - `normalize --json` adds `practices.skills.updated`, `migrated`, `modified`, `newer`, `legacy`, `unversioned`, `markerMismatch` and `concurrent` as additive fields under `schemaVersion: 1`; human output uses `update skill`, `migrate skill` and `skip skill ... (...)` actions.
 
+## Project gates
+
+- `.agents/gates.yaml` is the authored, project-only gate definition. `source` is always `required`; `code` accepts `test`, `typecheck`, `lint` and `build`; `docs` requires a `mode`, and only `docs.command` is optional. Modes are `required`, `check`, `advisory` and `off`.
+- Normalize compiles the authored config into `scripts/dab-gates.json`; the hash covers the canonical `gates` object. Scanner output only seeds a missing starter and never backfills an existing config. `scripts/dab-check.mjs` is a stable runner generated with a `dab-gate-runner` marker. The runner reads only the snapshot and embeds no project commands.
+- The runner executes the fixed `source` gate first (`dab detect --strict`), then every configured code and docs command without short-circuiting. A missing DAB binary is `ERROR`; an unresolved command, invalid snapshot or missing snapshot is `CONFIG`; both exit `2`. Required failures exit `1`; `--strict` also promotes check and advisory warnings.
+- Init and normalize create missing config, runner and snapshot. Normalize updates an unmodified older runner and a stale snapshot; modified, unversioned and newer generated files are preserved with warnings. An invalid authored config blocks every write.
+- The scanner detects Node, Python, Go, Rust, Java Maven, Java Gradle, Android, iOS SwiftPM and iOS Xcode without running build tools. Wrappers are preferred, Android suppresses duplicate Java Gradle commands, SwiftPM wins over Xcode evidence, and Xcode-only projects stay `needs-config` until an explicit `project` or `workspace`, a shared `scheme` and `destination`, or a Fastlane command is configured.
+- `dab detect` inspects the same files in a project-only `Verification` group. Missing or stale artifacts fail `--strict`; malformed config, path conflicts and dropped scanner-required `test`/`typecheck` commands are errors; modified, unversioned and newer artifacts, `commands-empty` and `ci-missing` stay non-strict.
+- CI is not generated. Projects call `node scripts/dab-check.mjs --strict` from their own provider; missing CI wiring is a non-strict detect warning.
+
 ## Core loop
 
 1. `dab init` scans a repository and writes the full authored skeleton for one scope.
-2. `dab normalize` adopts missing minimal source, imports physical Claude agents and skills, fills missing practice files and updates unmodified older managed authoring skills, then prechecks every enabled target and writes target output only when all prechecks pass.
+2. `dab normalize` adopts missing minimal source, imports physical Claude agents and skills, fills missing practice files, manages project gate artifacts and updates unmodified older managed authoring skills, then prechecks every enabled target and writes target output only when all prechecks pass.
 3. `dab detect` checks drift, ownership, phase and scope without writing.
 4. `dab policy explain --target <provider>` shows the effective result for one target.
 
@@ -212,6 +223,8 @@ generated:
 - `src/init/practice.ts` owns the authored scaffold planner and pack registry; `practice-docs.ts` and `practice-authoring.ts` render the documentation and authoring packs, and `docs-language.ts` resolves `docs.language`.
 - `src/core/skill-marker.ts` parses, inserts and removes the managed skill marker and hashes the marker-stripped body.
 - `src/init/skill-templates.ts` loads canonical templates from the packaged `skills/` directory; `src/init/managed-skills.ts` classifies installed authoring skills and applies managed creates, updates and migrations.
+- `src/model/gates.ts` validates the authored gate schema; `src/core/gate-config.ts` loads `.agents/gates.yaml`; `src/core/gate-artifacts.ts` canonicalizes and hashes the snapshot.
+- `src/init/gate-templates.ts` renders the scanner starter; `src/init/gate-artifacts.ts` plans and applies generated files; `src/init/gate-runner-template.ts` renders the stable runner; `src/detect/verification.ts` inspects the Verification group.
 - `skills/` holds the canonical authoring-skill templates published with the package.
 - `src/docs/` runs the bilingual documentation gates.
 
@@ -222,6 +235,7 @@ generated:
 - `.claude/agents/`, `.claude/skills/` and `.claude/rules/` contain per-entry symlinks.
 - `docs/AGENTS.md` and `docs/architecture.md` are authored project documentation; DAB creates a missing skeleton once and never overwrites it.
 - `.agents/skills/dab-*` are managed authoring copies with a version/hash marker, projected as `.claude/skills/` symlinks.
+- `scripts/dab-check.mjs` and `scripts/dab-gates.json` are project-scope generated gate artifacts with a runner marker and a canonical snapshot hash; `.agents/gates.yaml` remains authored.
 - `dab.yaml` stores `scope`, `targets` and per-target generated records with source hashes, target hashes and projection lists.
 - `.dab/backups/` stores originals before `--fix` adopts an unmanaged path and before an import replaces a `.claude` entry.
 
@@ -274,6 +288,7 @@ Every published product document uses `foo.md`, `foo.zh.md` and `foo.i18n.yaml`.
 - DAB imports only `.claude/agents` and `.claude/skills` in this phase; rules, settings, hooks and instructions are not adopted.
 - DAB never overwrites authored docs or modified managed skills; `normalize` updates an unmodified older `dab-*` skill, while modified, newer and legacy forks are preserved.
 - DAB does not run an agent or LLM to fill documentation content; `normalize` scaffolds skeletons and `detect` checks structure.
+- DAB does not generate CI files, does not add a gate command to the `dab` CLI, and never treats an unresolved or missing project command as a pass. Gates are project-only; global scope has no config, runner or snapshot.
 - Global imports write under `$HOME` but never manage `~/.claude/settings.json` or `$HOME/.gitignore`.
 - Path deny rules are tool-level guardrails, not a sandbox; `Bash`, `Grep`, `Glob`, `NotebookEdit` and wrapper commands can bypass them.
 - Hooks are trusted executable code; DAB checks metadata and static safety, not runtime behavior.

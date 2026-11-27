@@ -14,6 +14,7 @@ This file is an AGENTS file: it is written in English only and is exempt from tr
 - [docs/roadmap.md](roadmap.md) — direction and planned milestones. Paired.
 - [docs/development.md](development.md) — setup, checks, development loop and release procedure. Paired.
 - [docs/user/cli.md](user/cli.md) — CLI commands, flags, output contracts and exit codes. Paired.
+- [docs/user/gates.md](user/gates.md) — project gate files, configuration, runner, exit codes, stack detection and CI snippets. Paired.
 - [docs/user/claude-code.md](user/claude-code.md) — Claude Code integration behavior. Paired.
 - `docs/i18n/` — terminology and style rules, maintained directly in both languages and excluded from the pairing gate.
 - [docs/superpowers/README.md](superpowers/README.md) — Chinese-only specs and plans for the superpowers workflow; [.agents/rules/docs-bilingual.md](../.agents/rules/docs-bilingual.md) exempts them from pairing while link and wrap checks still apply.

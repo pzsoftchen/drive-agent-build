@@ -10,6 +10,7 @@ import type { AiProposalAgent } from './ai-proposal.ts';
 import { resolveDocsLanguage, type DocsLanguageResolution } from './docs-language.ts';
 import { minimalSourcePlan } from './minimal-source.ts';
 import { authoringPack } from './practice-authoring.ts';
+import { verificationPack } from './practice-gates.ts';
 import { documentationPack } from './practice-docs.ts';
 import {
   authoredDirectoryState,
@@ -187,6 +188,7 @@ export const PRACTICE_PACKS: readonly PracticePack[] = [
   corePack,
   documentationPack,
   authoringPack,
+  verificationPack,
 ];
 
 function templateManifest(input: AuthoredScaffoldInput): ProjectManifest | undefined {
