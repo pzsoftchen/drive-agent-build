@@ -27,7 +27,7 @@ v1 设计覆盖：`generic` profile、`feature` 别名、core baseline + documen
 | G6 | Subtree AGENTS 生成 | root、packages/、docs/、.agents/notes/ 的子树指令 | v1 只有 root 和 docs/；多包/多子系统项目缺少就近规则 | D | 扫描顶层源码目录，生成缺失的 subtree AGENTS，不覆盖，detect 检查 |
 | G7 | 架构文档深度 | subsystems 页、package README、生成 API、config catalog | v1 只有 architecture 骨架；复杂项目需要分层 owner | D | subsystem/package 模板、按语言生成 catalog/API 的可选 pack、链接检查 |
 | G8 | 可选 bilingual pack | terminology、style guide、translate skill、line-aligned pairs | 有些项目确实需要双语，但默认强加会增加复杂度和维护；用户选择不纳入 generic | 可选，不排期 | 仅在显式启用时生成配对、术语/翻译检查 |
-| G9 | 同变更更新门禁 | 文档/notes/tests 在同一 PR 更新 | 没有门禁，agent 容易只改代码不改文档 | A，[设计草案](2026-11-27-g9-change-gate-design.md) | pre-push 或 CI 检查变更范围与 docs/notes/tests 的关联；至少提供 PR checklist 和 detect 提示；不新增 `dab` 命令 |
+| G9 | 同变更更新门禁 | 文档/notes/tests 在同一 PR 更新 | 没有门禁，agent 容易只改代码不改文档 | A，设计已批准；[设计](2026-11-27-g9-change-gate-design.md) / [计划](../plans/2026-11-28-g9-change-gate.md) | pre-push 或 CI 检查变更范围与 docs/notes/tests 的关联；至少提供 PR checklist 和 detect 提示；不新增 `dab` 命令 |
 | G10 | 项目规则与防御模式 | root AGENTS standing orders、defensive patterns、secrets/.env | v1 生成通用规则；项目特定约束仍靠人补 | B | 规则/防御模式模板、项目命令/边界注入、detect 链接/大小检查 |
 | G11 | Review ownership 与审批策略 | `.github/review-ownership`、approval tests | v1 没有评审归属和审批规则；团队规模变大后失控 | C | 可选的 CODEOWNERS/审批策略模板和检查；保持 GitHub-specific 可选 |
 | G12 | 任务证据与 eval | 测试/CI/评审证据链 | 这是 DAB/DAD 的 L3；practice layer 只覆盖配置和文档 | E | `dab run --record`、`dab eval --suite`、时间/尝试/成本/干预/越界记录 |
