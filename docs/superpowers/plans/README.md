@@ -9,7 +9,7 @@ Spec 批准后在此编写实现计划。
 - [Detect Checklist 与 Normalize Adoption](2026-11-23-detect-normalize-adoption.md)：设计已批准，计划已实现（detect checklist、normalize adoption/import、global 规则和文档）。
 - [Practice Layer](2026-11-23-practice-layer.md)：设计已批准，计划已实现（generic profile、单语 docs、authoring skills、共享 planner、detect/normalize 和文档）。
 - [Managed Skills Pack](2026-11-24-managed-skills.md)：设计已批准，计划已实现（`skills/` 模板、hash marker、managed update、apply-time revalidation 和 0.1.2 发布准备）。
-- [G1 Gate](2026-11-25-g1-gate.md)：设计已批准，计划已实现（stable runner、gate snapshot、Java/iOS/Android 检测、init/normalize/detect、文档和 dogfood；预发布，未升版本）。
+- [G1 Gate](2026-11-25-g1-gate.md)：设计已批准，计划已实现并随 `0.1.3` 发布（stable runner、gate snapshot、Java/iOS/Android 检测、init/normalize/detect、文档和 dogfood）。
 - Codex adapter：待 adapter contract 实现后编写。
 - DSH adapter：待 Codex adapter 完成后编写。
 - Global settings adoption/merge：待 spec 的 open question 解决后编写。
